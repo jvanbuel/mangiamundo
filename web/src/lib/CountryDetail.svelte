@@ -165,7 +165,7 @@
 	.check[aria-pressed='true'] {
 		background: var(--completed);
 		border-color: var(--completed);
-		color: #06281a;
+		color: var(--on-completed);
 	}
 
 	.check:disabled {

@@ -73,3 +73,9 @@ sends it as `Authorization: Bearer <token>`.
 Country borders: Natural Earth via `world-atlas`. Country metadata:
 `world-countries`. Restaurant data: © OpenStreetMap contributors (ODbL) when using
 the `osm` provider.
+
+## Look and feel
+
+The app follows the system colour scheme and has an Auto / Light / Dark switch on
+the map. All colours, including the map's, are CSS custom properties in
+`web/src/app.css`. The app icon is `web/static/icon.svg`.

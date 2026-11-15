@@ -11,6 +11,9 @@ import {
 const LOCATION_KEY = 'mangiamundo.location';
 const RADIUS_KEY = 'mangiamundo.radius';
 const PROJECTION_KEY = 'mangiamundo.projection';
+const THEME_KEY = 'mangiamundo.theme';
+
+export type Theme = 'system' | 'light' | 'dark';
 
 export const RADII = [5, 10, 25];
 
@@ -43,6 +46,7 @@ export const app = $state({
 	locating: false,
 	locateError: null as string | null,
 	projection: 'globe' as 'globe' | 'mercator',
+	theme: 'system' as Theme,
 	toasts: [] as Toast[]
 });
 
@@ -70,6 +74,7 @@ function message(error: unknown): string {
 export async function init() {
 	app.radiusKm = load<number>(RADIUS_KEY) ?? 10;
 	app.projection = load<'globe' | 'mercator'>(PROJECTION_KEY) ?? 'globe';
+	app.theme = load<Theme>(THEME_KEY) ?? 'system';
 	try {
 		app.catalog = await api.catalog();
 	} catch (error) {
@@ -90,6 +95,14 @@ export async function init() {
 export function setProjection(projection: 'globe' | 'mercator') {
 	app.projection = projection;
 	localStorage.setItem(PROJECTION_KEY, JSON.stringify(projection));
+}
+
+export function setTheme(theme: Theme) {
+	// The attribute goes first so anything reacting to `app.theme` already sees the new colours.
+	if (theme === 'system') delete document.documentElement.dataset.theme;
+	else document.documentElement.dataset.theme = theme;
+	localStorage.setItem(THEME_KEY, JSON.stringify(theme));
+	app.theme = theme;
 }
 
 export async function setLocation(location: Location) {

@@ -7,7 +7,7 @@
 	import Passport from '#lib/Passport.svelte';
 	import Toasts from '#lib/Toasts.svelte';
 	import WorldMap from '#lib/WorldMap.svelte';
-	import { app, init, refresh, select, setProjection, toast } from '#lib/state.svelte.ts';
+	import { app, init, refresh, select, setProjection, setTheme, toast, type Theme } from '#lib/state.svelte.ts';
 
 	let tab = $state<'countries' | 'badges'>('countries');
 	let pickerOpen = $state(false);
@@ -16,7 +16,26 @@
 	const earned = $derived(app.discover?.badges.filter((b) => b.earned).length ?? 0);
 	const place = $derived(app.location?.name ?? (app.location ? 'your location' : null));
 
-	onMount(init);
+	const THEMES: { id: Theme; label: string }[] = [
+		{ id: 'system', label: 'Auto' },
+		{ id: 'light', label: 'Light' },
+		{ id: 'dark', label: 'Dark' }
+	];
+	const theme = $derived(THEMES.find((t) => t.id === app.theme) ?? THEMES[0]);
+	let systemDark = $state(false);
+
+	onMount(() => {
+		init();
+		const media = matchMedia('(prefers-color-scheme: dark)');
+		const update = () => (systemDark = media.matches);
+		update();
+		media.addEventListener('change', update);
+		return () => media.removeEventListener('change', update);
+	});
+
+	function nextTheme() {
+		setTheme(THEMES[(THEMES.indexOf(theme) + 1) % THEMES.length].id);
+	}
 
 	function pick(code: string, name: string, available: boolean) {
 		if (available) {
@@ -39,11 +58,16 @@
 				selected={app.selected}
 				location={app.location}
 				projection={app.projection}
+				theme={`${app.theme}-${systemDark}`}
 				onselect={pick}
 			/>
 		{/if}
 
 		<div class="controls">
+			<button class="theme" onclick={nextTheme} aria-label="Colour theme: {theme.label}. Click to change.">
+				<span class="muted">Theme</span>
+				{theme.label}
+			</button>
 			<div class="toggle" role="group" aria-label="Map projection">
 				<button aria-pressed={app.projection === 'globe'} onclick={() => setProjection('globe')}>Globe</button>
 				<button aria-pressed={app.projection === 'mercator'} onclick={() => setProjection('mercator')}>Flat</button>
@@ -60,7 +84,7 @@
 
 	<aside>
 		<header>
-			<h1>Mangia<span>mundo</span></h1>
+			<h1><img src="/icon.svg" alt="" width="34" height="34" />Mangia<span>mundo</span></h1>
 			{#if app.location}
 				<button class="where" aria-expanded={pickerOpen} onclick={() => (pickerOpen = !pickerOpen)}>
 					<span aria-hidden="true">{app.location.source === 'gps' ? '◎' : '⌖'}</span>
@@ -154,6 +178,16 @@
 		letter-spacing: -0.01em;
 	}
 
+	h1 {
+		display: flex;
+		align-items: center;
+	}
+
+	h1 img {
+		margin-right: 10px;
+		border-radius: 9px;
+	}
+
 	h1 span {
 		color: var(--accent);
 		font-style: italic;
@@ -218,7 +252,7 @@
 		padding: 8px 14px;
 		border-radius: 10px;
 		background: var(--accent);
-		color: #1b0f08;
+		color: var(--on-accent);
 		font-weight: 600;
 	}
 
@@ -253,13 +287,31 @@
 		top: 16px;
 		right: 16px;
 		z-index: 1;
+		display: flex;
+		gap: 8px;
+	}
+
+	.theme {
+		display: flex;
+		align-items: center;
+		gap: 6px;
+		padding: 0 14px;
+		border-radius: 999px;
+		background: var(--glass);
+		border: 1px solid var(--line);
+		font-size: 13px;
+		font-weight: 600;
+	}
+
+	.theme span {
+		font-weight: 400;
 	}
 
 	.toggle {
 		display: flex;
 		padding: 3px;
 		border-radius: 999px;
-		background: rgb(20 31 51 / 0.9);
+		background: var(--glass);
 		border: 1px solid var(--line);
 	}
 
@@ -273,7 +325,7 @@
 
 	.toggle button[aria-pressed='true'] {
 		background: var(--accent);
-		color: #1b0f08;
+		color: var(--on-accent);
 	}
 
 	.legend {
@@ -288,7 +340,7 @@
 		flex-wrap: wrap;
 		gap: 4px 14px;
 		border-radius: 10px;
-		background: rgb(20 31 51 / 0.9);
+		background: var(--glass);
 		border: 1px solid var(--line);
 		font-size: 12px;
 		color: var(--muted);

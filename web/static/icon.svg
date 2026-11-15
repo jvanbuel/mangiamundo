@@ -1,0 +1,20 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="Mangiamundo">
+	<defs>
+		<clipPath id="globe"><circle cx="256" cy="300" r="150" /></clipPath>
+	</defs>
+	<rect width="512" height="512" rx="112" fill="#111b2e" />
+	<!-- The globe, with the fork's handle standing in for its central meridian. -->
+	<circle cx="256" cy="300" r="150" fill="#ff8a5c" />
+	<g clip-path="url(#globe)" fill="none" stroke="#111b2e" stroke-width="11">
+		<ellipse cx="256" cy="300" rx="82" ry="150" />
+		<path d="M96 300h320M96 232q160 26 320 0M96 368q160 -26 320 0" />
+	</g>
+	<g fill="#fff4e6">
+		<rect x="204" y="52" width="17" height="92" rx="8.5" />
+		<rect x="233" y="52" width="17" height="92" rx="8.5" />
+		<rect x="262" y="52" width="17" height="92" rx="8.5" />
+		<rect x="291" y="52" width="17" height="92" rx="8.5" />
+		<path d="M204 124h104v12a52 52 0 0 1 -104 0z" />
+		<rect x="243" y="160" width="26" height="312" rx="13" />
+	</g>
+</svg>

@@ -91,7 +91,7 @@
 		padding: 10px;
 		border-radius: 10px;
 		background: var(--accent);
-		color: #1b0f08;
+		color: var(--on-accent);
 		font-weight: 600;
 	}
 
@@ -147,7 +147,7 @@
 	}
 
 	.error {
-		color: #ff9d8a;
+		color: var(--danger);
 	}
 
 	.radius {

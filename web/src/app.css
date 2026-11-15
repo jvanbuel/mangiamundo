@@ -2,6 +2,58 @@
 @import 'maplibre-gl/dist/maplibre-gl.css';
 
 :root {
+	/* Light theme. The map colours are read by WorldMap.svelte. */
+	--bg: #f4efe6;
+	--panel: #fffdf9;
+	--panel-raised: #f3ece0;
+	--line: #dfd5c4;
+	--text: #1c2333;
+	--muted: #626b7f;
+	--accent: #c5481f;
+	--on-accent: #ffffff;
+	--danger: #b3261e;
+	--glass: rgb(255 253 249 / 0.92);
+	--shadow: rgb(60 45 20 / 0.18);
+	--space: #fbf8f2;
+	--ocean: #dce8f1;
+	--land: #c3cbd6;
+	--available: #e8694a;
+	--discovered: #efa51c;
+	--completed: #27a872;
+	--on-completed: #ffffff;
+	color-scheme: light;
+
+	--radius: 14px;
+	--display: 'Fraunces Variable', 'Iowan Old Style', Georgia, serif;
+	font-family: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+}
+
+/* Dark theme: by system preference unless light was chosen, or when chosen explicitly. */
+@media (prefers-color-scheme: dark) {
+	:root:not([data-theme='light']) {
+		--bg: #0b1220;
+		--panel: #141f33;
+		--panel-raised: #1b2942;
+		--line: #2a3a58;
+		--text: #eef2f8;
+		--muted: #96a5be;
+		--accent: #ff8a5c;
+		--on-accent: #1b0f08;
+		--danger: #ff9d8a;
+		--glass: rgb(20 31 51 / 0.9);
+		--shadow: rgb(0 0 0 / 0.45);
+		--space: #16233b;
+		--ocean: #0f1a2e;
+		--land: #223150;
+		--available: #e8694a;
+		--discovered: #f4b942;
+		--completed: #3ecf8e;
+		--on-completed: #06281a;
+		color-scheme: dark;
+	}
+}
+
+:root[data-theme='dark'] {
 	--bg: #0b1220;
 	--panel: #141f33;
 	--panel-raised: #1b2942;
@@ -9,17 +61,17 @@
 	--text: #eef2f8;
 	--muted: #96a5be;
 	--accent: #ff8a5c;
-
-	/* Map and status colours; WorldMap.svelte reads these from the document. */
+	--on-accent: #1b0f08;
+	--danger: #ff9d8a;
+	--glass: rgb(20 31 51 / 0.9);
+	--shadow: rgb(0 0 0 / 0.45);
+	--space: #16233b;
 	--ocean: #0f1a2e;
 	--land: #223150;
 	--available: #e8694a;
 	--discovered: #f4b942;
 	--completed: #3ecf8e;
-
-	--radius: 14px;
-	--display: 'Fraunces Variable', 'Iowan Old Style', Georgia, serif;
-	font-family: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+	--on-completed: #06281a;
 	color-scheme: dark;
 }
 

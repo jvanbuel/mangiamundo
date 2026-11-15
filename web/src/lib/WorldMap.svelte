@@ -10,10 +10,12 @@
 		selected: string | null;
 		location: Location | null;
 		projection: 'globe' | 'mercator';
+		/** Changes whenever the colour scheme does, so the map can repaint. */
+		theme: string;
 		onselect: (code: string, name: string, available: boolean) => void;
 	}
 
-	let { countries, progress, selected, location, projection, onselect }: Props = $props();
+	let { countries, progress, selected, location, projection, theme, onselect }: Props = $props();
 
 	const SOURCE = 'countries';
 	let container: HTMLDivElement;
@@ -51,6 +53,30 @@
 		return geometry;
 	}
 
+	const featureState = (key: string, fallback: unknown) => ['coalesce', ['feature-state', key], fallback];
+	const flag = (key: string) => ['boolean', featureState(key, false), false];
+
+	/** Paint properties that depend on the theme, read from the CSS custom properties. */
+	function paint(): Record<string, Record<string, unknown>> {
+		const css = getComputedStyle(document.documentElement);
+		const color = (name: string) => css.getPropertyValue(name).trim();
+		return {
+			ocean: { 'background-color': color('--ocean') },
+			fill: {
+				'fill-color': [
+					'match', featureState('status', 'none'),
+					'available', color('--available'),
+					'discovered', color('--discovered'),
+					'completed', color('--completed'),
+					color('--land')
+				]
+			},
+			borders: { 'line-color': ['case', flag('selected'), color('--text'), color('--ocean')] },
+			'here-halo': { 'circle-color': color('--text') },
+			here: { 'circle-color': color('--text'), 'circle-stroke-color': color('--panel') }
+		};
+	}
+
 	onMount(() => {
 		let disposed = false;
 		let instance: MapLibreMap | null = null;
@@ -78,9 +104,7 @@
 					return { ...f, geometry: unwrap(f.geometry), properties: { code: known?.code ?? `x-${f.properties.name}`, name: known?.name ?? f.properties.name } };
 				});
 
-			const css = getComputedStyle(document.documentElement);
-			const color = (name: string) => css.getPropertyValue(name).trim();
-			const state = (key: string, fallback: unknown) => ['coalesce', ['feature-state', key], fallback];
+			const themed = paint() as any;
 
 			instance = new MapLibre({
 				container,
@@ -98,20 +122,14 @@
 						here: { type: 'geojson', data: { type: 'FeatureCollection', features: [] } }
 					},
 					layers: [
-						{ id: 'ocean', type: 'background', paint: { 'background-color': color('--ocean') } },
+						{ id: 'ocean', type: 'background', paint: themed.ocean },
 						{
 							id: 'fill',
 							type: 'fill',
 							source: SOURCE,
 							paint: {
-								'fill-color': [
-									'match', state('status', 'none'),
-									'available', color('--available'),
-									'discovered', color('--discovered'),
-									'completed', color('--completed'),
-									color('--land')
-								] as any,
-								'fill-opacity': ['case', ['boolean', state('hover', false), false], 1, 0.86] as any
+								...themed.fill,
+								'fill-opacity': ['case', flag('hover'), 1, 0.86] as any
 							}
 						},
 						{
@@ -119,21 +137,21 @@
 							type: 'line',
 							source: SOURCE,
 							paint: {
-								'line-color': ['case', ['boolean', state('selected', false), false], '#ffffff', color('--ocean')] as any,
-								'line-width': ['case', ['boolean', state('selected', false), false], 2, 0.6] as any
+								...themed.borders,
+								'line-width': ['case', flag('selected'), 2, 0.6] as any
 							}
 						},
 						{
 							id: 'here-halo',
 							type: 'circle',
 							source: 'here',
-							paint: { 'circle-radius': 13, 'circle-color': '#ffffff', 'circle-opacity': 0.25 }
+							paint: { ...themed['here-halo'], 'circle-radius': 13, 'circle-opacity': 0.25 }
 						},
 						{
 							id: 'here',
 							type: 'circle',
 							source: 'here',
-							paint: { 'circle-radius': 5, 'circle-color': '#ffffff', 'circle-stroke-width': 2, 'circle-stroke-color': color('--bg') }
+							paint: { ...themed.here, 'circle-radius': 5, 'circle-stroke-width': 2 }
 						}
 					]
 				}
@@ -202,6 +220,14 @@
 	});
 
 	$effect(() => {
+		void theme;
+		if (!map) return;
+		for (const [layer, properties] of Object.entries(paint())) {
+			for (const [name, value] of Object.entries(properties)) map.setPaintProperty(layer, name as any, value);
+		}
+	});
+
+	$effect(() => {
 		if (!map) return;
 		map.setProjection({ type: projection });
 	});
@@ -236,7 +262,7 @@
 	.map {
 		position: absolute;
 		inset: 0;
-		background: radial-gradient(circle at 50% 40%, #16233b 0%, var(--bg) 70%);
+		background: radial-gradient(circle at 50% 40%, var(--space) 0%, var(--bg) 70%);
 	}
 
 	.tip {
@@ -249,7 +275,7 @@
 		border-radius: 10px;
 		background: var(--panel-raised);
 		border: 1px solid var(--line);
-		box-shadow: 0 8px 24px rgb(0 0 0 / 0.4);
+		box-shadow: 0 8px 24px var(--shadow);
 		font-size: 13px;
 		white-space: nowrap;
 	}
@@ -259,7 +285,7 @@
 	}
 
 	.map :global(.maplibregl-ctrl-attrib) {
-		background: rgb(20 31 51 / 0.8);
+		background: var(--glass);
 		color: var(--muted);
 	}
 
