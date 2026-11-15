@@ -1,0 +1,4 @@
+<resources>
+    <!-- Only the window chrome; all colours come from the Compose theme. -->
+    <style name="Theme.Mangiamundo" parent="android:Theme.Material.Light.NoActionBar" />
+</resources>

@@ -7,6 +7,8 @@ continents and earn badges.
 
 - `backend/` — Rust (axum + SQLite) API: place lookup, caching, accounts, game logic.
 - `web/` — SvelteKit single-page app with a MapLibre map.
+- `mobile/` — native Android (Kotlin, Jetpack Compose) and iOS (Swift, SwiftUI) apps;
+  see `mobile/README.md`.
 
 ## Run it
 

@@ -1,0 +1,54 @@
+# Generate the Xcode project with XcodeGen:  brew install xcodegen && xcodegen
+name: Mangiamundo
+options:
+  bundleIdPrefix: app.mangiamundo
+  deploymentTarget:
+    iOS: "17.0"
+settings:
+  base:
+    SWIFT_VERSION: "5.10"
+    MARKETING_VERSION: "0.1.0"
+    CURRENT_PROJECT_VERSION: "1"
+targets:
+  Mangiamundo:
+    type: application
+    platform: iOS
+    sources:
+      - Mangiamundo
+      # The country outlines are shared with the Android app.
+      - path: ../shared/world.json
+        buildPhase: resources
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: app.mangiamundo
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+    info:
+      path: Mangiamundo/Info.plist
+      properties:
+        CFBundleDisplayName: Mangiamundo
+        UILaunchScreen: {}
+        UISupportedInterfaceOrientations:
+          - UIInterfaceOrientationPortrait
+        NSLocationWhenInUseUsageDescription: Mangiamundo uses your location to find restaurants from around the world near you.
+        # Where the app finds the backend. The simulator shares the Mac's localhost.
+        APIBaseURL: http://localhost:8080
+        NSAppTransportSecurity:
+          NSAllowsLocalNetworking: true
+  MangiamundoTests:
+    type: bundle.unit-test
+    platform: iOS
+    sources:
+      - MangiamundoTests
+    dependencies:
+      - target: Mangiamundo
+    settings:
+      base:
+        GENERATE_INFOPLIST_FILE: YES
+schemes:
+  Mangiamundo:
+    build:
+      targets:
+        Mangiamundo: all
+    test:
+      targets:
+        - MangiamundoTests
