@@ -9,12 +9,25 @@ use crate::catalog;
 
 pub struct Overpass {
     http: reqwest::Client,
-    url: String,
+    urls: Vec<String>,
 }
 
 impl Overpass {
-    pub fn new(http: reqwest::Client, url: String) -> Self {
-        Self { http, url }
+    pub fn new(http: reqwest::Client, urls: Vec<String>) -> Self {
+        Self { http, urls }
+    }
+
+    async fn fetch(&self, url: &str, query: &str) -> anyhow::Result<Vec<FoundPlace>> {
+        let body = self
+            .http
+            .post(url)
+            .form(&[("data", query)])
+            .send()
+            .await?
+            .error_for_status()?
+            .text()
+            .await?;
+        parse(&body)
     }
 }
 
@@ -103,16 +116,18 @@ impl PlacesProvider for Overpass {
     }
 
     async fn search(&self, lat: f64, lng: f64, radius_m: u32) -> anyhow::Result<Vec<FoundPlace>> {
-        let body = self
-            .http
-            .post(&self.url)
-            .form(&[("data", query(lat, lng, radius_m))])
-            .send()
-            .await?
-            .error_for_status()?
-            .text()
-            .await?;
-        parse(&body)
+        let query = query(lat, lng, radius_m);
+        let mut last_error = anyhow::anyhow!("no Overpass server configured");
+        for url in &self.urls {
+            match self.fetch(url, &query).await {
+                Ok(places) => return Ok(places),
+                Err(error) => {
+                    tracing::warn!(url, error = format!("{error:#}"), "overpass server failed, trying the next");
+                    last_error = error;
+                }
+            }
+        }
+        Err(last_error)
     }
 }
 

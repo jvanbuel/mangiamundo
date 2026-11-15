@@ -32,7 +32,7 @@ Set `PLACES_PROVIDER` (see `backend/.env.example` for all settings).
 
 | Provider | Key | Coverage |
 | --- | --- | --- |
-| `osm` (default) | none | OpenStreetMap `cuisine=*` tags via Overpass, geocoding via Nominatim. About 110 national cuisines. Quality depends on local mappers. |
+| `osm` (default) | none | OpenStreetMap `cuisine=*` tags via Overpass (the main server plus two mirrors, tried in order; override with `OVERPASS_URLS`), geocoding via Nominatim. About 110 national cuisines. Quality depends on local mappers. |
 | `google` | `GOOGLE_MAPS_API_KEY` | Places API (New) Nearby Search plus the Geocoding API. Only the ~50 cuisines Google has a place type for, at most 20 places per cuisine. One request per cuisine per area refresh, billed by Google. |
 | `demo` | none | Deterministic fake data for development and tests. |
 

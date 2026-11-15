@@ -14,13 +14,19 @@ pub struct Config {
     pub database_url: String,
     pub provider: ProviderKind,
     pub google_api_key: Option<String>,
-    pub overpass_url: String,
+    /// Overpass servers, tried in order until one answers.
+    pub overpass_urls: Vec<String>,
     pub nominatim_url: String,
     /// How long a cached area stays fresh before the provider is asked again.
     pub cache_ttl_secs: i64,
     /// Directory with the built web app, served at `/` when it exists.
     pub static_dir: Option<PathBuf>,
 }
+
+/// The main public instance is often overloaded, so community mirrors back it up.
+const DEFAULT_OVERPASS_URLS: &str = "https://overpass-api.de/api/interpreter,\
+    https://overpass.private.coffee/api/interpreter,\
+    https://overpass.kumi.systems/api/interpreter";
 
 fn var(name: &str) -> Option<String> {
     env::var(name).ok().filter(|v| !v.trim().is_empty())
@@ -42,8 +48,12 @@ impl Config {
             database_url: var("DATABASE_URL").unwrap_or_else(|| "sqlite://mangiamundo.db".into()),
             provider,
             google_api_key,
-            overpass_url: var("OVERPASS_URL")
-                .unwrap_or_else(|| "https://overpass-api.de/api/interpreter".into()),
+            overpass_urls: var("OVERPASS_URLS")
+                .unwrap_or_else(|| DEFAULT_OVERPASS_URLS.into())
+                .split(',')
+                .map(|url| url.trim().to_string())
+                .filter(|url| !url.is_empty())
+                .collect(),
             nominatim_url: var("NOMINATIM_URL")
                 .unwrap_or_else(|| "https://nominatim.openstreetmap.org".into()),
             cache_ttl_secs: var("CACHE_TTL_DAYS")

@@ -49,13 +49,15 @@ pub trait Geocoder: Send + Sync {
 pub fn build(config: &Config) -> anyhow::Result<(Arc<dyn PlacesProvider>, Arc<dyn Geocoder>)> {
     let http = reqwest::Client::builder()
         .user_agent(concat!("mangiamundo/", env!("CARGO_PKG_VERSION")))
-        .timeout(std::time::Duration::from_secs(90))
+        // Fail over quickly from a server that is down, but allow slow Overpass queries.
+        .connect_timeout(std::time::Duration::from_secs(10))
+        .timeout(std::time::Duration::from_secs(75))
         .build()?;
 
     Ok(match config.provider {
         ProviderKind::Demo => (Arc::new(demo::Demo), Arc::new(demo::Demo)),
         ProviderKind::Osm => (
-            Arc::new(osm::Overpass::new(http.clone(), config.overpass_url.clone())),
+            Arc::new(osm::Overpass::new(http.clone(), config.overpass_urls.clone())),
             Arc::new(osm::Nominatim::new(http, config.nominatim_url.clone())),
         ),
         ProviderKind::Google => {
