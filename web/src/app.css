@@ -1,0 +1,93 @@
+@import '@fontsource-variable/fraunces/index.css';
+@import 'maplibre-gl/dist/maplibre-gl.css';
+
+:root {
+	--bg: #0b1220;
+	--panel: #141f33;
+	--panel-raised: #1b2942;
+	--line: #2a3a58;
+	--text: #eef2f8;
+	--muted: #96a5be;
+	--accent: #ff8a5c;
+
+	/* Map and status colours; WorldMap.svelte reads these from the document. */
+	--ocean: #0f1a2e;
+	--land: #223150;
+	--available: #e8694a;
+	--discovered: #f4b942;
+	--completed: #3ecf8e;
+
+	--radius: 14px;
+	--display: 'Fraunces Variable', 'Iowan Old Style', Georgia, serif;
+	font-family: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+	color-scheme: dark;
+}
+
+* {
+	box-sizing: border-box;
+}
+
+html,
+body {
+	height: 100%;
+	margin: 0;
+	background: var(--bg);
+	color: var(--text);
+	font-size: 15px;
+	line-height: 1.45;
+}
+
+h1,
+h2,
+h3 {
+	font-family: var(--display);
+	font-weight: 600;
+	margin: 0;
+	text-wrap: balance;
+}
+
+button {
+	font: inherit;
+	color: inherit;
+	cursor: pointer;
+	border: 0;
+	background: none;
+	padding: 0;
+}
+
+button:focus-visible,
+input:focus-visible,
+a:focus-visible {
+	outline: 2px solid var(--accent);
+	outline-offset: 2px;
+}
+
+a {
+	color: var(--accent);
+}
+
+.muted {
+	color: var(--muted);
+}
+
+.bar {
+	height: 6px;
+	border-radius: 3px;
+	background: var(--line);
+	overflow: hidden;
+}
+
+.bar > span {
+	display: block;
+	height: 100%;
+	border-radius: 3px;
+	background: var(--accent);
+	transition: width 0.4s ease;
+}
+
+@media (prefers-reduced-motion: reduce) {
+	* {
+		transition: none !important;
+		animation: none !important;
+	}
+}
