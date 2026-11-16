@@ -215,18 +215,18 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
             val now = after.countries.firstOrNull { it.code == code } ?: continue
             val info = country(code) ?: continue
             if (now.status == Status.COMPLETED && was.status != Status.COMPLETED) {
-                messageChannel.trySend("${info.flag} ${info.name} completed!")
+                messageChannel.trySend("${info.flag} ${info.name} complete")
             } else if (was.visited == 0) {
-                messageChannel.trySend("${info.flag} ${info.name} discovered! ${now.places - now.visited} more to complete it.")
+                messageChannel.trySend("${info.flag} ${info.name} tasted. ${now.places - now.visited} more to complete it.")
             }
         }
         for (badge in after.badges) {
             if (badge.earned && before.badges.none { it.id == badge.id && it.earned }) {
-                messageChannel.trySend("${badge.icon} Badge earned: ${badge.title}")
+                messageChannel.trySend("Badge earned: ${badge.title}")
             }
         }
         if (after.profile.level > before.profile.level) {
-            messageChannel.trySend("⬆️ Level ${after.profile.level}")
+            messageChannel.trySend("Level ${after.profile.level}")
         }
     }
 }

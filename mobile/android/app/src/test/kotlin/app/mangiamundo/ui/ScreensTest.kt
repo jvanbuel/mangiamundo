@@ -14,6 +14,7 @@ import app.cash.paparazzi.DeviceConfig
 import app.cash.paparazzi.Paparazzi
 import app.mangiamundo.SavedLocation
 import app.mangiamundo.core.Badge
+import app.mangiamundo.core.BadgeKind
 import app.mangiamundo.core.Camera
 import app.mangiamundo.core.Country
 import app.mangiamundo.core.CountryProgress
@@ -60,8 +61,11 @@ class ScreensTest {
         world = GroupProgress("WORLD", "World", 10, 4, 1),
         places = 35, placesVisited = 10,
         badges = listOf(
-            Badge("first-bite", "🍴", "First bite", "Check in at your first place.", 1, 1, true),
-            Badge("flags-5", "🧭", "Curious palate", "Taste 5 different countries.", 4, 5, false),
+            Badge("first-bite", BadgeKind.VISITS, "First check-in", "Check in at any place.", 1, 1, true),
+            Badge("flags-5", BadgeKind.COUNTRIES, "5 countries", "Eat the food of 5 countries.", 4, 5, false),
+            Badge("complete-1", BadgeKind.COMPLETED, "1 country complete", "", 1, 1, true),
+            Badge("continent-EU", BadgeKind.CONTINENT, "Europe", "", 2, 3, false),
+            Badge("world", BadgeKind.WORLD, "Whole world", "", 4, 10, false),
         ),
         profile = Profile(xp = 300, level = 2, levelXp = 100, nextLevelXp = 400, visits = 10, countries = 4),
     )
@@ -119,8 +123,7 @@ class ScreensTest {
             PlaceRow(Place("a", "Sushi Kaito", 50.88, 4.70, "Naamsestraat 12, Leuven", "https://example.org", listOf("JP"), 420, 1, true), busy = false) {}
             PlaceRow(Place("b", "Ramen Bar Ichi", 50.87, 4.71, "Bondgenotenlaan 40", null, listOf("JP"), 1250, 1, false), busy = false) {}
             PlaceRow(Place("c", "Izakaya Kumo", 50.86, 4.69, null, null, listOf("JP"), 3400), busy = false) {}
-            BadgeRow(discover.badges[0])
-            BadgeRow(discover.badges[1])
+            BadgeGrid(discover.badges)
         }
     }
 }

@@ -39,9 +39,14 @@ struct GroupProgress: Decodable, Identifiable {
     var id: String { code }
 }
 
+/// What a badge rewards. The app picks the badge's icon and colour from it.
+enum BadgeKind: String, Decodable {
+    case visits, countries, completed, continent, world, everything
+}
+
 struct Badge: Decodable, Identifiable {
     let id: String
-    let icon: String
+    let kind: BadgeKind
     let title: String
     let description: String
     let progress: Int

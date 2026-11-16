@@ -224,18 +224,18 @@ final class AppModel {
                   let now = after.countries.first(where: { $0.code == code }),
                   let info = country(code) else { continue }
             if now.status == .completed, was.status != .completed {
-                toast("\(info.flag) \(info.name) completed!")
+                toast("\(info.flag) \(info.name) complete")
             } else if was.visited == 0 {
-                toast("\(info.flag) \(info.name) discovered! \(now.places - now.visited) more to complete it.")
+                toast("\(info.flag) \(info.name) tasted. \(now.places - now.visited) more to complete it.")
             }
         }
         for badge in after.badges where badge.earned {
             if !before.badges.contains(where: { $0.id == badge.id && $0.earned }) {
-                toast("\(badge.icon) Badge earned: \(badge.title)")
+                toast("Badge earned: \(badge.title)")
             }
         }
         if after.profile.level > before.profile.level {
-            toast("⬆️ Level \(after.profile.level)")
+            toast("Level \(after.profile.level)")
         }
     }
 

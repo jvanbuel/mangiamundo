@@ -108,7 +108,7 @@ struct ContentView: View {
                     if tab == 0 {
                         CountryList(discover: discover)
                     } else {
-                        ForEach(discover.badges.sorted { $0.earned && !$1.earned }) { BadgeRow(badge: $0) }
+                        BadgeGrid(badges: discover.badges)
                     }
                 }
             }

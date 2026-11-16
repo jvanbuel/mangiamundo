@@ -162,7 +162,7 @@ fun AppScreen(vm: AppViewModel = viewModel()) {
                                     }
                                 }
                             } else {
-                                items(discover.badges.sortedByDescending { it.earned }, key = { it.id }) { BadgeRow(it) }
+                                item(key = "badges") { BadgeGrid(discover.badges) }
                             }
                         }
                     }

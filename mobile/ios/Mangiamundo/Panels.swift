@@ -1,5 +1,6 @@
 import SwiftUI
 
+/// A panel with a solid outline and a heavier lower edge, rather than a soft tinted card.
 struct Card<Content: View>: View {
     private let content: Content
 
@@ -11,8 +12,97 @@ struct Card<Content: View>: View {
         content
             .padding(16)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .background(Theme.panelRaised.opacity(0.55), in: RoundedRectangle(cornerRadius: 14))
-            .overlay(RoundedRectangle(cornerRadius: 14).stroke(Theme.line))
+            .background(Theme.panel, in: RoundedRectangle(cornerRadius: 14))
+            .padding(EdgeInsets(top: 2, leading: 2, bottom: 4, trailing: 2))
+            .background(Theme.line, in: RoundedRectangle(cornerRadius: 16))
+    }
+}
+
+/// A solid, pressable button face on a darker lower edge; the face drops onto the edge while pressed.
+struct ChunkyButtonStyle: ButtonStyle {
+    var face = Theme.accent
+    var content = Theme.onAccent
+
+    func makeBody(configuration: Configuration) -> some View {
+        let pressed = configuration.isPressed
+        configuration.label
+            .font(Theme.font(.subheadline, .extraBold))
+            .foregroundStyle(content)
+            .padding(.horizontal, 14)
+            .padding(.vertical, 9)
+            .background(face, in: RoundedRectangle(cornerRadius: 12))
+            .offset(y: pressed ? 3 : 0)
+            .padding(.bottom, 3)
+            .background(alignment: .bottom) {
+                RoundedRectangle(cornerRadius: 12).fill(face).brightness(-0.18)
+            }
+    }
+}
+
+extension BadgeKind {
+    var symbol: String {
+        switch self {
+        case .visits: return "fork.knife"
+        case .countries: return "flag.fill"
+        case .completed: return "checkmark.seal.fill"
+        case .continent: return "map.fill"
+        case .world: return "globe.europe.africa.fill"
+        case .everything: return "crown.fill"
+        }
+    }
+
+    var color: Color {
+        switch self {
+        case .visits, .countries: return Theme.available
+        case .completed, .world: return Theme.completed
+        case .continent, .everything: return Theme.discovered
+        }
+    }
+}
+
+/// A solid token with a darker lower edge, so it reads as something you collect.
+struct Medal: View {
+    let kind: BadgeKind
+    var earned = true
+    var size: CGFloat = 64
+
+    var body: some View {
+        let face = earned ? kind.color : Theme.line
+        ZStack {
+            Circle().fill(face).brightness(-0.18)
+            Circle().fill(face).padding(.bottom, size * 0.07)
+            Image(systemName: kind.symbol)
+                .font(.system(size: size * 0.4, weight: .bold))
+                .foregroundStyle(earned ? Color.white : Theme.muted)
+                .offset(y: -size * 0.035)
+        }
+        .frame(width: size, height: size)
+        .accessibilityHidden(true)
+    }
+}
+
+struct BadgeGrid: View {
+    let badges: [Badge]
+
+    var body: some View {
+        LazyVGrid(columns: Array(repeating: GridItem(.flexible(), alignment: .top), count: 3), spacing: 20) {
+            ForEach(badges.sorted { $0.earned && !$1.earned }) { badge in
+                VStack(spacing: 4) {
+                    Medal(kind: badge.kind, earned: badge.earned)
+                    Text(badge.title)
+                        .font(Theme.font(.subheadline, .extraBold))
+                        .multilineTextAlignment(.center)
+                        .padding(.top, 4)
+                    Text(badge.earned ? "Earned" : "\(badge.progress) / \(badge.target)")
+                        .font(Theme.font(.footnote))
+                        .monospacedDigit()
+                        .foregroundStyle(Theme.muted)
+                }
+                .accessibilityElement(children: .combine)
+                .accessibilityHint(badge.description)
+            }
+        }
+        .padding(.top, 8)
     }
 }
 
@@ -131,13 +221,9 @@ struct LocationPicker: View {
                 }
             } label: {
                 Label(model.locating ? "Finding you…" : "Use my current location", systemImage: "location.fill")
-                    .font(Theme.font(.body, .extraBold))
                     .frame(maxWidth: .infinity)
-                    .padding(.vertical, 10)
-                    .foregroundStyle(Theme.onAccent)
-                    .background(Theme.accent, in: RoundedRectangle(cornerRadius: 10))
             }
-            .buttonStyle(.plain)
+            .buttonStyle(ChunkyButtonStyle())
             .disabled(model.locating)
 
             if let error = model.locateError {
@@ -327,8 +413,10 @@ struct CountryDetail: View {
     var body: some View {
         let info = model.country(progress.code)
         VStack(alignment: .leading, spacing: 10) {
-            Button("← All countries") { model.select(nil) }
-                .font(Theme.font(.footnote))
+            Button { model.select(nil) } label: {
+                Label("All countries", systemImage: "chevron.left")
+            }
+                .font(Theme.font(.subheadline, .bold))
                 .foregroundStyle(Theme.muted)
                 .buttonStyle(.plain)
 
@@ -368,82 +456,57 @@ struct PlaceRow: View {
     let place: Place
 
     var body: some View {
-        HStack(spacing: 12) {
-            VStack(alignment: .leading, spacing: 3) {
-                Text(place.name).font(Theme.font(.body, .bold))
-                Text(distance + (place.address.map { " · \($0)" } ?? ""))
-                    .font(Theme.font(.footnote))
-                    .foregroundStyle(Theme.muted)
-                HStack(spacing: 14) {
-                    Button("Directions") {
-                        if let url = URL(string: "https://maps.apple.com/?daddr=\(place.lat),\(place.lng)") {
-                            openURL(url)
+        VStack(spacing: 0) {
+            HStack(spacing: 12) {
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(place.name).font(Theme.font(.headline, .extraBold))
+                    Text(details)
+                        .font(Theme.font(.subheadline))
+                        .foregroundStyle(Theme.muted)
+                    HStack(spacing: 16) {
+                        Button("Directions") {
+                            if let url = URL(string: "https://maps.apple.com/?daddr=\(place.lat),\(place.lng)") {
+                                openURL(url)
+                            }
+                        }
+                        if let link = place.url, let url = URL(string: link) {
+                            Button("Website") { openURL(url) }
                         }
                     }
-                    if let link = place.url, let url = URL(string: link) {
-                        Button("Website") { openURL(url) }
-                    }
-                    if place.verified {
-                        Text("✓ verified").foregroundStyle(Theme.completed)
+                    .font(Theme.font(.subheadline, .extraBold))
+                    .buttonStyle(.plain)
+                    .foregroundStyle(Theme.accent)
+                    .padding(.top, 2)
+                }
+                Spacer(minLength: 0)
+                Button {
+                    Task { await model.toggleVisit(place) }
+                } label: {
+                    if place.visited {
+                        Label("Visited", systemImage: "checkmark")
+                    } else {
+                        Text("Check in")
                     }
                 }
-                .font(Theme.font(.footnote))
-                .buttonStyle(.plain)
-                .foregroundStyle(Theme.accent)
+                .buttonStyle(place.visited
+                    ? ChunkyButtonStyle(face: Theme.completed, content: Theme.onCompleted)
+                    : ChunkyButtonStyle())
+                .disabled(model.busyPlace != nil)
+                .opacity(model.busyPlace == place.id ? 0.6 : 1)
             }
-            Spacer(minLength: 0)
-            Button {
-                Task { await model.toggleVisit(place) }
-            } label: {
-                Text(place.visited ? "✓ Visited" : "Check in")
-                    .font(Theme.font(.footnote, .extraBold))
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 8)
-                    .foregroundStyle(place.visited ? Theme.onCompleted : Theme.accent)
-                    .background(place.visited ? Theme.completed : Color.clear, in: Capsule())
-                    .overlay(Capsule().stroke(place.visited ? Theme.completed : Theme.accent))
-            }
-            .buttonStyle(.plain)
-            .disabled(model.busyPlace != nil)
+            .padding(.vertical, 14)
+            Divider().overlay(Theme.line)
         }
-        .padding(12)
-        .background(Theme.panelRaised, in: RoundedRectangle(cornerRadius: 12))
-        .overlay(RoundedRectangle(cornerRadius: 12).stroke(place.visited ? Theme.completed.opacity(0.45) : .clear))
     }
 
-    private var distance: String {
-        place.distanceM < 1000
+    private var details: String {
+        let distance = place.distanceM < 1000
             ? "\(place.distanceM / 10 * 10) m"
             : String(format: "%.1f km", Double(place.distanceM) / 1000)
+        var parts = [distance]
+        if let address = place.address { parts.append(address) }
+        if place.verified { parts.append("checked in on the spot") }
+        return parts.joined(separator: " · ")
     }
 }
 
-struct BadgeRow: View {
-    let badge: Badge
-
-    var body: some View {
-        HStack(spacing: 12) {
-            Text(badge.icon)
-                .font(.system(size: 26))
-                .opacity(badge.earned ? 1 : 0.45)
-                .grayscale(badge.earned ? 0 : 1)
-            VStack(alignment: .leading, spacing: 2) {
-                Text(badge.title).font(Theme.font(.body, .bold))
-                Text(badge.description).font(Theme.font(.footnote)).foregroundStyle(Theme.muted)
-                if !badge.earned {
-                    HStack(spacing: 8) {
-                        Bar(part: badge.progress, whole: badge.target)
-                        Text("\(badge.progress)/\(badge.target)").font(Theme.font(.caption)).foregroundStyle(Theme.muted)
-                    }
-                    .padding(.top, 4)
-                }
-            }
-            Spacer(minLength: 0)
-            if badge.earned {
-                Image(systemName: "checkmark").fontWeight(.bold).foregroundStyle(Theme.completed)
-            }
-        }
-        .padding(12)
-        .background(Theme.panelRaised, in: RoundedRectangle(cornerRadius: 12))
-    }
-}

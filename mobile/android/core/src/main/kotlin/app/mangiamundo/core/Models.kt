@@ -43,10 +43,21 @@ data class GroupProgress(
     val completed: Int,
 )
 
+/** What a badge rewards. Clients pick the badge's icon and colour from it. */
+@Serializable
+enum class BadgeKind {
+    @SerialName("visits") VISITS,
+    @SerialName("countries") COUNTRIES,
+    @SerialName("completed") COMPLETED,
+    @SerialName("continent") CONTINENT,
+    @SerialName("world") WORLD,
+    @SerialName("everything") EVERYTHING,
+}
+
 @Serializable
 data class Badge(
     val id: String,
-    val icon: String,
+    val kind: BadgeKind,
     val title: String,
     val description: String,
     val progress: Int,

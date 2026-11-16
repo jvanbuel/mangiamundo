@@ -21,7 +21,21 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.rounded.ArrowBack
+import androidx.compose.material.icons.rounded.Check
+import androidx.compose.material.icons.rounded.EmojiEvents
+import androidx.compose.material.icons.rounded.Flag
+import androidx.compose.material.icons.rounded.Map
+import androidx.compose.material.icons.rounded.NearMe
+import androidx.compose.material.icons.rounded.Place
+import androidx.compose.material.icons.rounded.Public
+import androidx.compose.material.icons.rounded.Restaurant
+import androidx.compose.material.icons.rounded.Verified
 import androidx.compose.material3.Button
+import androidx.compose.material3.Icon
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ButtonDefaults
@@ -42,6 +56,10 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.lerp
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.buildAnnotatedString
@@ -55,6 +73,7 @@ import androidx.compose.ui.unit.sp
 import app.mangiamundo.AppViewModel
 import app.mangiamundo.SavedLocation
 import app.mangiamundo.core.Badge
+import app.mangiamundo.core.BadgeKind
 import app.mangiamundo.core.Country
 import app.mangiamundo.core.CountryProgress
 import app.mangiamundo.core.Discover
@@ -66,6 +85,7 @@ import kotlinx.coroutines.launch
 
 private val CardShape = RoundedCornerShape(14.dp)
 
+/** A panel with a solid outline and a heavier lower edge, rather than a soft tinted card. */
 @Composable
 private fun Card(modifier: Modifier = Modifier, content: @Composable () -> Unit) {
     val colors = LocalAppColors.current
@@ -74,10 +94,43 @@ private fun Card(modifier: Modifier = Modifier, content: @Composable () -> Unit)
             .fillMaxWidth()
             .padding(vertical = 6.dp)
             .clip(CardShape)
-            .background(colors.panelRaised.copy(alpha = 0.55f))
-            .border(1.dp, colors.line, CardShape)
+            .background(colors.line)
+            .padding(start = 2.dp, top = 2.dp, end = 2.dp, bottom = 4.dp)
+            .clip(RoundedCornerShape(14.dp))
+            .background(colors.panel)
             .padding(16.dp),
     ) { content() }
+}
+
+/** A solid, pressable-looking button face on a darker lower edge. */
+@Composable
+fun ChunkyButton(
+    text: String,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    face: Color = LocalAppColors.current.accent,
+    content: Color = LocalAppColors.current.onAccent,
+    enabled: Boolean = true,
+    icon: ImageVector? = null,
+) {
+    val shape = RoundedCornerShape(12.dp)
+    Box(
+        modifier
+            .alpha(if (enabled) 1f else 0.6f)
+            .clip(shape)
+            .background(lerp(face, Color.Black, 0.3f))
+            .padding(bottom = 3.dp)
+            .clip(shape)
+            .background(face)
+            .clickable(enabled = enabled, onClick = onClick)
+            .padding(horizontal = 14.dp, vertical = 9.dp),
+        contentAlignment = Alignment.Center,
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+            if (icon != null) Icon(icon, contentDescription = null, tint = content, modifier = Modifier.size(18.dp))
+            Text(text, color = content, style = MaterialTheme.typography.labelLarge)
+        }
+    }
 }
 
 @Composable
@@ -139,6 +192,12 @@ fun Header(location: SavedLocation?, radiusKm: Int, onChange: () -> Unit) {
                     .padding(horizontal = 12.dp, vertical = 10.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
+                Icon(
+                    if (location.fromGps) Icons.Rounded.NearMe else Icons.Rounded.Place,
+                    contentDescription = null,
+                    tint = colors.text,
+                    modifier = Modifier.size(16.dp).padding(end = 2.dp),
+                )
                 Text(
                     location.name ?: "Your location",
                     fontWeight = FontWeight.Bold,
@@ -214,14 +273,16 @@ fun LocationPicker(vm: AppViewModel, onUseGps: () -> Unit, onDone: () -> Unit) {
     }
 
     Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-        Button(
+        ChunkyButton(
+            if (vm.locating) "Finding you…" else "Use my current location",
             onClick = {
                 onUseGps()
                 onDone()
             },
             enabled = !vm.locating,
+            icon = Icons.Rounded.NearMe,
             modifier = Modifier.fillMaxWidth(),
-        ) { Text(if (vm.locating) "Finding you…" else "Use my current location") }
+        )
         vm.locateError?.let { Text(it, color = colors.danger, fontSize = 13.sp) }
 
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -367,7 +428,10 @@ fun CountryRow(progress: CountryProgress, info: Country?, onClick: () -> Unit) {
 fun CountryHeader(progress: CountryProgress, info: Country?, onBack: () -> Unit) {
     val colors = LocalAppColors.current
     Column(Modifier.padding(top = 4.dp, bottom = 8.dp)) {
-        TextButton(onClick = onBack) { Text("← All countries", color = colors.muted) }
+        TextButton(onClick = onBack) {
+            Icon(Icons.AutoMirrored.Rounded.ArrowBack, contentDescription = null, tint = colors.muted, modifier = Modifier.size(18.dp))
+            Text(" All countries", color = colors.muted, style = MaterialTheme.typography.labelLarge)
+        }
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text(info?.flag.orEmpty(), fontSize = 44.sp)
             Column(Modifier.padding(start = 14.dp)) {
@@ -398,79 +462,108 @@ fun PlaceRow(place: Place, busy: Boolean, onToggle: () -> Unit) {
     val colors = LocalAppColors.current
     val context = LocalContext.current
     val open = { url: String -> context.startActivity(Intent(Intent.ACTION_VIEW, url.toUri())) }
-    Row(
-        Modifier
-            .fillMaxWidth()
-            .padding(vertical = 4.dp)
-            .clip(RoundedCornerShape(12.dp))
-            .background(colors.panelRaised)
-            .border(
-                1.dp,
-                if (place.visited) colors.completed.copy(alpha = 0.45f) else Color.Transparent,
-                RoundedCornerShape(12.dp),
-            )
-            .padding(12.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Column(Modifier.weight(1f)) {
-            Text(place.name, fontWeight = FontWeight.Bold, color = colors.text)
-            Text(
-                distance(place.distanceM) + (place.address?.let { " · $it" } ?: ""),
-                fontSize = 13.sp,
-                color = colors.muted,
-            )
-            Row(horizontalArrangement = Arrangement.spacedBy(14.dp), modifier = Modifier.padding(top = 4.dp)) {
+    Column {
+        Row(Modifier.fillMaxWidth().padding(vertical = 14.dp), verticalAlignment = Alignment.CenterVertically) {
+            Column(Modifier.weight(1f).padding(end = 12.dp)) {
+                Text(place.name, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.ExtraBold, color = colors.text)
                 Text(
-                    "Directions",
-                    fontSize = 13.sp,
-                    color = colors.accent,
-                    modifier = Modifier.clickable {
-                        open("https://www.google.com/maps/dir/?api=1&destination=${place.lat},${place.lng}")
-                    },
+                    distance(place.distanceM) + (place.address?.let { " · $it" } ?: "") +
+                        if (place.verified) " · checked in on the spot" else "",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = colors.muted,
                 )
-                place.url?.let { url ->
-                    Text("Website", fontSize = 13.sp, color = colors.accent, modifier = Modifier.clickable { open(url) })
+                Row(horizontalArrangement = Arrangement.spacedBy(16.dp), modifier = Modifier.padding(top = 4.dp)) {
+                    Text(
+                        "Directions",
+                        style = MaterialTheme.typography.labelLarge,
+                        color = colors.accent,
+                        modifier = Modifier.clickable {
+                            open("https://www.google.com/maps/dir/?api=1&destination=${place.lat},${place.lng}")
+                        },
+                    )
+                    place.url?.let { url ->
+                        Text("Website", style = MaterialTheme.typography.labelLarge, color = colors.accent, modifier = Modifier.clickable { open(url) })
+                    }
                 }
-                if (place.verified) Text("✓ verified", fontSize = 13.sp, color = colors.completed)
+            }
+            if (place.visited) {
+                ChunkyButton("Visited", onToggle, face = colors.completed, content = colors.onCompleted, enabled = !busy, icon = Icons.Rounded.Check)
+            } else {
+                ChunkyButton("Check in", onToggle, enabled = !busy)
             }
         }
-        if (place.visited) {
-            Button(
-                onClick = onToggle,
-                enabled = !busy,
-                colors = ButtonDefaults.buttonColors(containerColor = colors.completed, contentColor = colors.onCompleted),
-            ) { Text("✓ Visited") }
-        } else {
-            OutlinedButton(onClick = onToggle, enabled = !busy, border = BorderStroke(1.dp, colors.accent)) {
-                Text("Check in")
-            }
-        }
+        HorizontalDivider(color = colors.line)
     }
 }
 
+private fun BadgeKind.icon(): ImageVector = when (this) {
+    BadgeKind.VISITS -> Icons.Rounded.Restaurant
+    BadgeKind.COUNTRIES -> Icons.Rounded.Flag
+    BadgeKind.COMPLETED -> Icons.Rounded.Verified
+    BadgeKind.CONTINENT -> Icons.Rounded.Map
+    BadgeKind.WORLD -> Icons.Rounded.Public
+    BadgeKind.EVERYTHING -> Icons.Rounded.EmojiEvents
+}
+
 @Composable
-fun BadgeRow(badge: Badge) {
+private fun BadgeKind.color(): Color = with(LocalAppColors.current) {
+    when (this@color) {
+        BadgeKind.VISITS, BadgeKind.COUNTRIES -> available
+        BadgeKind.COMPLETED, BadgeKind.WORLD -> completed
+        BadgeKind.CONTINENT, BadgeKind.EVERYTHING -> discovered
+    }
+}
+
+/** A solid token with a darker lower edge, so it reads as something you collect. */
+@Composable
+fun Medal(kind: BadgeKind, earned: Boolean, size: Dp = 64.dp) {
     val colors = LocalAppColors.current
-    Row(
+    val face = if (earned) kind.color() else colors.line
+    Box(
         Modifier
-            .fillMaxWidth()
-            .padding(vertical = 4.dp)
-            .clip(RoundedCornerShape(12.dp))
-            .background(colors.panelRaised)
-            .padding(12.dp),
-        verticalAlignment = Alignment.CenterVertically,
+            .size(size)
+            .clip(CircleShape)
+            .background(lerp(face, Color.Black, 0.3f))
+            .padding(bottom = size * 0.07f)
+            .clip(CircleShape)
+            .background(face),
+        contentAlignment = Alignment.Center,
     ) {
-        Text(badge.icon, fontSize = 26.sp, modifier = Modifier.alpha(if (badge.earned) 1f else 0.45f))
-        Column(Modifier.padding(start = 12.dp).weight(1f)) {
-            Text(badge.title, fontWeight = FontWeight.Bold, color = colors.text)
-            Text(badge.description, fontSize = 13.sp, color = colors.muted)
-            if (!badge.earned) {
-                Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(top = 6.dp)) {
-                    Bar(fraction(badge.progress, badge.target), Modifier.weight(1f))
-                    Text("  ${badge.progress}/${badge.target}", fontSize = 12.sp, color = colors.muted)
-                }
+        Icon(kind.icon(), contentDescription = null, tint = if (earned) Color.White else colors.muted, modifier = Modifier.size(size * 0.46f))
+    }
+}
+
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+fun BadgeGrid(badges: List<Badge>) {
+    val colors = LocalAppColors.current
+    FlowRow(
+        Modifier.fillMaxWidth().padding(top = 12.dp),
+        maxItemsInEachRow = 3,
+        verticalArrangement = Arrangement.spacedBy(20.dp),
+    ) {
+        for (badge in badges.sortedByDescending { it.earned }) {
+            Column(
+                Modifier.weight(1f).semantics(mergeDescendants = true) {},
+                horizontalAlignment = Alignment.CenterHorizontally,
+            ) {
+                Medal(badge.kind, badge.earned)
+                Text(
+                    badge.title,
+                    style = MaterialTheme.typography.titleSmall,
+                    fontWeight = FontWeight.ExtraBold,
+                    color = colors.text,
+                    textAlign = TextAlign.Center,
+                    modifier = Modifier.padding(top = 8.dp, start = 4.dp, end = 4.dp),
+                )
+                Text(
+                    if (badge.earned) "Earned" else "${badge.progress} / ${badge.target}",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = colors.muted,
+                )
             }
         }
-        if (badge.earned) Text("✓", color = colors.completed, fontWeight = FontWeight.ExtraBold)
+        // Keep the last row's medals the same width as the others.
+        repeat((3 - badges.size % 3) % 3) { Spacer(Modifier.weight(1f)) }
     }
 }
