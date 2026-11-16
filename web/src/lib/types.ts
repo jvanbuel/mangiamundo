@@ -8,9 +8,17 @@ export interface Country {
 	lng: number;
 }
 
+/** A signature dish of a country; logging one at a check-in earns bonus XP. */
+export interface Dish {
+	id: string;
+	country: string;
+	name: string;
+}
+
 export interface Catalog {
 	countries: Country[];
 	continents: { code: string; name: string }[];
+	dishes: Dish[];
 }
 
 export interface CountryProgress {
@@ -28,7 +36,15 @@ export interface GroupProgress {
 	completed: number;
 }
 
-export type BadgeKind = 'visits' | 'countries' | 'completed' | 'continent' | 'world' | 'everything';
+export type BadgeKind =
+	| 'visits'
+	| 'countries'
+	| 'completed'
+	| 'continent'
+	| 'world'
+	| 'everything'
+	| 'dishes'
+	| 'regular';
 
 export interface Badge {
 	id: string;
@@ -47,6 +63,7 @@ export interface Profile {
 	next_level_xp: number;
 	visits: number;
 	countries: number;
+	dishes: number;
 }
 
 export interface EventProgress {
@@ -86,6 +103,8 @@ export interface Discover {
 	badges: Badge[];
 	profile: Profile;
 	events: EventProgress[];
+	/** Ids of every signature dish the user logged. */
+	dishes_tried: string[];
 }
 
 export interface Place {
@@ -98,8 +117,23 @@ export interface Place {
 	cuisine: string | null;
 	countries: string[];
 	distance_m: number;
+	/** First check-in; set means the place counts as visited. */
 	visited_at: number | null;
 	verified: boolean;
+	/** Number of check-ins here. */
+	visits: number;
+	last_visited_at: number | null;
+	last_checkin_id: number | null;
+	last_dish: string | null;
+	/** When checking in again becomes possible, if not right now. */
+	next_check_in_at: number | null;
+}
+
+export interface CheckInResult {
+	place_id: string;
+	checkin_id: number;
+	verified: boolean;
+	profile: Profile;
 }
 
 export interface GeoResult {

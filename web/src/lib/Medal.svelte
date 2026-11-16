@@ -1,10 +1,12 @@
 <script lang="ts">
 	import BadgeCheck from '@lucide/svelte/icons/badge-check';
+	import ChefHat from '@lucide/svelte/icons/chef-hat';
 	import Crown from '@lucide/svelte/icons/crown';
 	import Flag from '@lucide/svelte/icons/flag';
 	import Globe from '@lucide/svelte/icons/globe';
 	import Map from '@lucide/svelte/icons/map';
 	import PartyPopper from '@lucide/svelte/icons/party-popper';
+	import Repeat from '@lucide/svelte/icons/repeat';
 	import Utensils from '@lucide/svelte/icons/utensils';
 	import type { BadgeKind } from './types';
 
@@ -20,6 +22,8 @@
 		continent: Map,
 		world: Globe,
 		everything: Crown,
+		dishes: ChefHat,
+		regular: Repeat,
 		event: PartyPopper
 	};
 	const COLORS: Record<MedalKind, string> = {
@@ -29,6 +33,8 @@
 		continent: 'var(--discovered)',
 		world: 'var(--completed)',
 		everything: 'var(--discovered)',
+		dishes: 'var(--discovered)',
+		regular: 'var(--available)',
 		event: 'var(--event)'
 	};
 	const Icon = $derived(ICONS[kind]);

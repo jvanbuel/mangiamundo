@@ -7,6 +7,7 @@ import {
 	type Catalog,
 	type Country,
 	type Discover,
+	type Dish,
 	type Location,
 	type Place
 } from './types';
@@ -19,6 +20,11 @@ const THEME_KEY = 'mangiamundo.theme';
 export type Theme = 'system' | 'light' | 'dark';
 
 export const RADII = [5, 10, 25];
+
+/** Mirrors the server's rules, for optimistic updates and messages. */
+const CHECKIN_COOLDOWN_SECS = 12 * 3600;
+const XP_PER_VISIT = 10;
+const XP_PER_DISH = 25;
 
 /** What a toast shows on its left: a flag (or other text), a badge medal, or nothing. */
 export type ToastIcon = { text: string } | { badge: BadgeKind | 'event' } | null;
@@ -58,7 +64,11 @@ export const app = $state({
 	/** Web Push reminders: on, off, not possible here, or possible once installed (iPhone). */
 	reminders: 'off' as 'on' | 'off' | 'unsupported' | 'install',
 	remindersBusy: false,
-	toasts: [] as Toast[]
+	toasts: [] as Toast[],
+	/** Which dialog is open. */
+	dialog: null as 'share' | 'backup' | null,
+	/** A recovery code that arrived in a link, waiting for the user to confirm. */
+	pendingRestore: null as string | null
 });
 
 /** The last real GPS position, used to verify check-ins even when browsing another city. */
@@ -68,6 +78,11 @@ let toastId = 0;
 
 export function country(code: string): Country | undefined {
 	return app.catalog?.countries.find((c) => c.code === code);
+}
+
+/** Signature dishes of the given countries, in catalog order. */
+export function dishesOf(codes: string[]): Dish[] {
+	return app.catalog?.dishes.filter((d) => codes.includes(d.country)) ?? [];
 }
 
 export function toast(icon: ToastIcon, title: string, text: string) {
@@ -105,13 +120,21 @@ export async function init() {
 	await followLink();
 }
 
-/** Opens what a link (for example from a reminder) points at: ?country=JP or ?tab=badges. */
+/**
+ * Opens what a link (for example from a reminder) points at: ?country=JP or ?tab=badges.
+ * ?restore=CODE comes from the backup QR code and asks before switching passports.
+ */
 async function followLink() {
 	const params = new URLSearchParams(location.search);
 	if (!params.size) return;
 	if (params.get('tab') === 'badges') app.tab = 'badges';
-	const code = params.get('country')?.toUpperCase();
-	if (code && app.discover?.countries.some((c) => c.code === code)) await select(code);
+	const code = params.get('restore');
+	if (code) {
+		app.pendingRestore = code;
+		app.dialog = 'backup';
+	}
+	const country = params.get('country')?.toUpperCase();
+	if (country && app.discover?.countries.some((c) => c.code === country)) await select(country);
 	history.replaceState(null, '', location.pathname);
 }
 
@@ -256,8 +279,8 @@ export async function select(code: string | null) {
 }
 
 /** Announces everything a check-in unlocked by comparing progress before and after. */
-function celebrate(before: Discover, after: Discover, place: Place) {
-	for (const code of place.countries) {
+function celebrate(before: Discover, after: Discover, place: Place | null) {
+	for (const code of place?.countries ?? []) {
 		const was = before.countries.find((c) => c.code === code);
 		const now = after.countries.find((c) => c.code === code);
 		const info = country(code);
@@ -283,26 +306,92 @@ function celebrate(before: Discover, after: Discover, place: Place) {
 	}
 }
 
-export async function toggleVisit(place: Place) {
-	const before = app.discover;
+/** Rereads progress after a change and announces what it unlocked. */
+async function afterChange(before: Discover, place: Place | null) {
 	const location = app.location;
-	if (!before || !location) return;
-	const visiting = place.visited_at === null;
+	if (!location) return;
+	const after = await api.discover(location.lat, location.lng, app.radiusKm);
+	app.discover = after;
+	celebrate(before, after, place);
+}
+
+/** Checks in at a place: the first visit, or a return once the cooldown has passed. */
+export async function checkIn(place: Place) {
+	const before = app.discover;
+	if (!before) return;
 	try {
-		if (visiting) {
-			const fresh = gpsFix && Date.now() - gpsFix.at < 10 * 60_000 ? gpsFix : null;
-			const result = await api.checkIn(place.id, fresh && { lat: fresh.lat, lng: fresh.lng });
-			place.visited_at = Math.floor(Date.now() / 1000);
-			place.verified = result.verified;
-		} else {
-			await api.undoCheckIn(place.id);
-			place.visited_at = null;
-			place.verified = false;
+		const fresh = gpsFix && Date.now() - gpsFix.at < 10 * 60_000 ? gpsFix : null;
+		const result = await api.checkIn(place.id, fresh && { lat: fresh.lat, lng: fresh.lng });
+		const now = Math.floor(Date.now() / 1000);
+		place.visited_at ??= now;
+		place.last_visited_at = now;
+		place.visits += 1;
+		place.verified ||= result.verified;
+		place.last_checkin_id = result.checkin_id;
+		place.last_dish = null;
+		place.next_check_in_at = now + CHECKIN_COOLDOWN_SECS;
+		if (place.visits > 1) {
+			toast({ text: `${place.visits}×` }, `Back at ${place.name}`, `+${XP_PER_VISIT} XP. What did you have?`);
 		}
-		const after = await api.discover(location.lat, location.lng, app.radiusKm);
-		app.discover = after;
-		if (visiting) celebrate(before, after, place);
+		await afterChange(before, place);
 	} catch (error) {
 		toast(null, 'That did not work', message(error));
+	}
+}
+
+/** Logs the signature dish eaten at the place's latest check-in, or clears it with null. */
+export async function logDish(place: Place, dish: Dish | null) {
+	const before = app.discover;
+	if (!before || place.last_checkin_id === null) return;
+	const previous = place.last_dish;
+	place.last_dish = dish?.id ?? null;
+	try {
+		await api.setDish(place.last_checkin_id, place.last_dish);
+		await afterChange(before, null);
+		if (dish && !before.dishes_tried.includes(dish.id)) {
+			toast({ text: country(dish.country)?.flag ?? '' }, `${dish.name} tasted`, `+${XP_PER_DISH} XP for your dish passport.`);
+		}
+	} catch (error) {
+		place.last_dish = previous;
+		toast(null, 'That did not work', message(error));
+	}
+}
+
+/** Takes back the place's latest check-in. */
+export async function undoCheckIn(place: Place) {
+	const before = app.discover;
+	if (!before || place.last_checkin_id === null) return;
+	try {
+		await api.undoCheckIn(place.last_checkin_id);
+		// The places list knows what the previous check-in was; ask for it again.
+		if (app.selected) {
+			const location = app.location!;
+			const fresh = await api.places(location.lat, location.lng, app.radiusKm, app.selected);
+			const updated = fresh.find((p) => p.id === place.id);
+			if (updated) Object.assign(place, updated);
+		}
+		await afterChange(before, null);
+	} catch (error) {
+		toast(null, 'That did not work', message(error));
+	}
+}
+
+/** Switches this device to the passport behind a recovery code. */
+export async function restorePassport(code: string): Promise<boolean> {
+	try {
+		const merged = await api.restore(code);
+		app.selected = null;
+		app.places = [];
+		await refresh();
+		toast(
+			{ badge: 'visits' },
+			'Passport restored',
+			merged ? `${merged} check-ins from this device came along.` : 'Welcome back.'
+		);
+		return true;
+	} catch (error) {
+		const text = error instanceof api.ApiError && error.status === 404 ? 'That code does not match a passport.' : message(error);
+		toast(null, 'Could not restore', text);
+		return false;
 	}
 }

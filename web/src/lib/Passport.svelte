@@ -1,4 +1,7 @@
 <script lang="ts">
+	import KeyRound from '@lucide/svelte/icons/key-round';
+	import Share2 from '@lucide/svelte/icons/share-2';
+	import { app } from './state.svelte';
 	import type { Discover } from './types';
 
 	let { discover }: { discover: Discover } = $props();
@@ -29,7 +32,14 @@
 	<dl class="totals">
 		<div><dt>Places visited</dt><dd>{discover.places_visited} <span class="muted">of {discover.places}</span></dd></div>
 		<div><dt>Countries completed</dt><dd>{discover.world.completed}</dd></div>
+		<div><dt>Check-ins</dt><dd>{profile.visits}</dd></div>
+		<div><dt>Signature dishes</dt><dd>{profile.dishes}</dd></div>
 	</dl>
+
+	<div class="actions">
+		<button class="share" onclick={() => (app.dialog = 'share')}><Share2 size={16} strokeWidth={2.5} /> Share my map</button>
+		<button onclick={() => (app.dialog = 'backup')}><KeyRound size={16} strokeWidth={2.5} /> Back up</button>
+	</div>
 </section>
 
 <style>
@@ -77,5 +87,31 @@
 
 	dd .muted {
 		font-weight: 500;
+	}
+
+	.actions {
+		display: flex;
+		gap: 8px;
+	}
+
+	.actions button {
+		display: inline-flex;
+		align-items: center;
+		justify-content: center;
+		gap: 6px;
+		padding: 8px 12px 10px;
+		border-radius: 12px;
+		border: 2px solid var(--line);
+		font-size: 14px;
+		font-weight: 800;
+	}
+
+	.actions .share {
+		--face: var(--accent);
+		flex: 1;
+		border: 0;
+		background: var(--face);
+		color: var(--on-accent);
+		box-shadow: inset 0 -3px 0 color-mix(in srgb, var(--face) 70%, #000);
 	}
 </style>

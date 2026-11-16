@@ -1,11 +1,13 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
+	import Backup from '#lib/Backup.svelte';
 	import Badges from '#lib/Badges.svelte';
 	import CountryDetail from '#lib/CountryDetail.svelte';
 	import ComingUp from '#lib/ComingUp.svelte';
 	import CountryList from '#lib/CountryList.svelte';
 	import LocationPicker from '#lib/LocationPicker.svelte';
 	import Passport from '#lib/Passport.svelte';
+	import Share from '#lib/Share.svelte';
 	import Toasts from '#lib/Toasts.svelte';
 	import WorldMap from '#lib/WorldMap.svelte';
 	import MapPin from '@lucide/svelte/icons/map-pin';
@@ -50,6 +52,12 @@
 </script>
 
 <Toasts />
+
+{#if app.dialog === 'share'}
+	<Share onclose={() => (app.dialog = null)} />
+{:else if app.dialog === 'backup'}
+	<Backup onclose={() => (app.dialog = null)} />
+{/if}
 
 <main>
 	<div class="stage">

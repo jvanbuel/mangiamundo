@@ -1,4 +1,4 @@
-import type { Catalog, Celebration, Discover, GeoResult, Place, Profile } from './types';
+import type { Catalog, Celebration, CheckInResult, Discover, GeoResult, Place, Profile } from './types';
 
 const BASE = import.meta.env.VITE_API_BASE ?? '';
 const TOKEN_KEY = 'mangiamundo.token';
@@ -72,15 +72,49 @@ export const discover = (lat: number, lng: number, radiusKm: number) =>
 export const places = (lat: number, lng: number, radiusKm: number, country: string) =>
 	authed<Place[]>('GET', `/api/places?${area(lat, lng, radiusKm)}&country=${country}`);
 
+/** A new check-in; returning to a place counts again once a cooldown has passed. */
 export const checkIn = (placeId: string, here: { lat: number; lng: number } | null) =>
-	authed<{ verified: boolean; profile: Profile }>(
-		'PUT',
-		`/api/visits/${encodeURIComponent(placeId)}`,
-		here ?? {}
-	);
+	authed<CheckInResult>('POST', `/api/visits/${encodeURIComponent(placeId)}`, here ?? {});
 
-export const undoCheckIn = (placeId: string) =>
-	authed<void>('DELETE', `/api/visits/${encodeURIComponent(placeId)}`);
+/** Logs (or with null, clears) the signature dish eaten at a check-in. */
+export const setDish = (checkinId: number, dish: string | null) =>
+	authed<Profile>('PATCH', `/api/checkins/${checkinId}`, { dish });
+
+export const undoCheckIn = (checkinId: number) => authed<void>('DELETE', `/api/checkins/${checkinId}`);
+
+export const recoveryCode = () => authed<{ code: string }>('GET', '/api/session/recovery');
+
+export const rotateRecoveryCode = () => authed<{ code: string }>('POST', '/api/session/recovery');
+
+/**
+ * Moves this device onto the passport behind a recovery code. Whatever this device
+ * had collected is merged in by the server. Returns how many check-ins came along.
+ */
+export async function restore(code: string): Promise<number> {
+	const current = localStorage.getItem(TOKEN_KEY);
+	const result = await raw<{ token: string; merged: number }>('POST', '/api/session/restore', current, { code });
+	localStorage.setItem(TOKEN_KEY, result.token);
+	return result.merged;
+}
+
+/** The share card as a PNG, drawn by the server. */
+export async function shareCard(
+	lat: number,
+	lng: number,
+	radiusKm: number,
+	place: string | null,
+	theme: 'light' | 'dark'
+): Promise<Blob> {
+	const params = new URLSearchParams({ lat: String(lat), lng: String(lng), radius_km: String(radiusKm), theme });
+	if (place) params.set('place', place);
+	const response = await fetch(`${BASE}/api/share/card.png?${params}`, {
+		headers: { authorization: `Bearer ${await token()}` }
+	}).catch(() => {
+		throw new ApiError(0, 'Cannot reach the server.');
+	});
+	if (!response.ok) throw new ApiError(response.status, `Could not draw the card (${response.status})`);
+	return response.blob();
+}
 
 export const geocode = (query: string) =>
 	raw<GeoResult[]>('GET', `/api/geocode?q=${encodeURIComponent(query)}`, null);
