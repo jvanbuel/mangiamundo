@@ -159,7 +159,7 @@
 		border: 1px solid var(--accent);
 		color: var(--accent);
 		font-size: 13px;
-		font-weight: 600;
+		font-weight: 700;
 	}
 
 	.check[aria-pressed='true'] {

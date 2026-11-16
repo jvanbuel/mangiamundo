@@ -7,7 +7,13 @@ import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.staticCompositionLocalOf
+import androidx.compose.material3.Typography
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.font.Font
+import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.font.FontWeight
+import app.mangiamundo.R
 
 /** The palette of web/src/app.css, so every client looks the same. */
 data class AppColors(
@@ -66,6 +72,38 @@ val DarkColors = AppColors(
 
 val LocalAppColors = staticCompositionLocalOf { LightColors }
 
+/** Nunito: a rounded sans, used in heavy weights. Shipped in res/font (SIL Open Font License). */
+val Nunito = FontFamily(
+    Font(R.font.nunito_regular, FontWeight.Normal),
+    Font(R.font.nunito_medium, FontWeight.Medium),
+    Font(R.font.nunito_semibold, FontWeight.SemiBold),
+    Font(R.font.nunito_bold, FontWeight.Bold),
+    Font(R.font.nunito_extrabold, FontWeight.ExtraBold),
+    Font(R.font.nunito_black, FontWeight.Black),
+)
+
+/** The Material type scale in Nunito, one weight step heavier than Material's defaults. */
+private val AppTypography = Typography().run {
+    fun TextStyle.nunito(weight: FontWeight) = copy(fontFamily = Nunito, fontWeight = weight)
+    copy(
+        displayLarge = displayLarge.nunito(FontWeight.ExtraBold),
+        displayMedium = displayMedium.nunito(FontWeight.ExtraBold),
+        displaySmall = displaySmall.nunito(FontWeight.ExtraBold),
+        headlineLarge = headlineLarge.nunito(FontWeight.Black),
+        headlineMedium = headlineMedium.nunito(FontWeight.Black),
+        headlineSmall = headlineSmall.nunito(FontWeight.Black),
+        titleLarge = titleLarge.nunito(FontWeight.Black),
+        titleMedium = titleMedium.nunito(FontWeight.Bold),
+        titleSmall = titleSmall.nunito(FontWeight.Bold),
+        bodyLarge = bodyLarge.nunito(FontWeight.Medium),
+        bodyMedium = bodyMedium.nunito(FontWeight.Medium),
+        bodySmall = bodySmall.nunito(FontWeight.Medium),
+        labelLarge = labelLarge.nunito(FontWeight.ExtraBold),
+        labelMedium = labelMedium.nunito(FontWeight.Bold),
+        labelSmall = labelSmall.nunito(FontWeight.Bold),
+    )
+}
+
 /** Follows the system light/dark setting. */
 @Composable
 fun MangiamundoTheme(content: @Composable () -> Unit) {
@@ -90,6 +128,6 @@ fun MangiamundoTheme(content: @Composable () -> Unit) {
         error = colors.danger,
     )
     CompositionLocalProvider(LocalAppColors provides colors) {
-        MaterialTheme(colorScheme = scheme, content = content)
+        MaterialTheme(colorScheme = scheme, typography = AppTypography, content = content)
     }
 }

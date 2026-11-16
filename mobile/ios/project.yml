@@ -29,6 +29,14 @@ targets:
         UILaunchScreen: {}
         UISupportedInterfaceOrientations:
           - UIInterfaceOrientationPortrait
+        # Nunito, shipped in Mangiamundo/Fonts (SIL Open Font License).
+        UIAppFonts:
+          - Nunito-Regular.ttf
+          - Nunito-Medium.ttf
+          - Nunito-SemiBold.ttf
+          - Nunito-Bold.ttf
+          - Nunito-ExtraBold.ttf
+          - Nunito-Black.ttf
         NSLocationWhenInUseUsageDescription: Mangiamundo uses your location to find restaurants from around the world near you.
         # Where the app finds the backend. The simulator shares the Mac's localhost.
         APIBaseURL: http://localhost:8080

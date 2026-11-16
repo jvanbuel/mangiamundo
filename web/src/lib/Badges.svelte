@@ -78,6 +78,6 @@
 
 	.tick {
 		color: var(--completed);
-		font-weight: 700;
+		font-weight: 800;
 	}
 </style>

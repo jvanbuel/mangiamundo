@@ -60,11 +60,11 @@
 		justify-content: space-between;
 		align-items: baseline;
 		gap: 8px;
-		font-weight: 600;
+		font-weight: 700;
 	}
 
 	.row .muted {
-		font-weight: 400;
+		font-weight: 500;
 	}
 
 	.totals {
@@ -83,12 +83,12 @@
 
 	dd {
 		margin: 2px 0 0;
-		font-weight: 600;
+		font-weight: 700;
 		font-variant-numeric: tabular-nums;
 	}
 
 	dd .muted {
-		font-weight: 400;
+		font-weight: 500;
 	}
 
 	.continents {

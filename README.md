@@ -72,7 +72,8 @@ sends it as `Authorization: Bearer <token>`.
 
 ## Data credits
 
-Country borders: Natural Earth via `world-atlas`. Country metadata:
+Typeface: Nunito by Vernon Adams and contributors, SIL Open Font License
+(`mobile/shared/Nunito-OFL.txt`). Country borders: Natural Earth via `world-atlas`. Country metadata:
 `world-countries`. Restaurant data: © OpenStreetMap contributors (ODbL) when using
 the `osm` provider.
 

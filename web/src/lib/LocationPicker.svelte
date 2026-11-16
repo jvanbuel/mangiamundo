@@ -92,7 +92,7 @@
 		border-radius: 10px;
 		background: var(--accent);
 		color: var(--on-accent);
-		font-weight: 600;
+		font-weight: 700;
 	}
 
 	.gps:disabled {
@@ -172,6 +172,6 @@
 	.radius button.on {
 		background: var(--panel-raised);
 		color: var(--accent);
-		font-weight: 600;
+		font-weight: 700;
 	}
 </style>

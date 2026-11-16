@@ -200,7 +200,7 @@
 	}
 
 	.where .name {
-		font-weight: 600;
+		font-weight: 700;
 		overflow: hidden;
 		text-overflow: ellipsis;
 		white-space: nowrap;
@@ -247,7 +247,7 @@
 		border-radius: 10px;
 		background: var(--accent);
 		color: var(--on-accent);
-		font-weight: 600;
+		font-weight: 700;
 	}
 
 	.tabs {
@@ -261,7 +261,7 @@
 		color: var(--muted);
 		border-bottom: 2px solid transparent;
 		margin-bottom: -1px;
-		font-weight: 600;
+		font-weight: 700;
 	}
 
 	.tabs button[aria-selected='true'] {
@@ -270,7 +270,7 @@
 	}
 
 	.tabs span {
-		font-weight: 400;
+		font-weight: 500;
 		font-size: 12px;
 		color: var(--muted);
 		margin-left: 4px;
@@ -294,11 +294,11 @@
 		background: var(--glass);
 		border: 1px solid var(--line);
 		font-size: 13px;
-		font-weight: 600;
+		font-weight: 700;
 	}
 
 	.theme span {
-		font-weight: 400;
+		font-weight: 500;
 	}
 
 	.toggle {
@@ -313,7 +313,7 @@
 		padding: 6px 16px;
 		border-radius: 999px;
 		font-size: 13px;
-		font-weight: 600;
+		font-weight: 700;
 		color: var(--muted);
 	}
 

@@ -20,6 +20,35 @@ enum Theme {
     static let completed = Color(light: 0x3DA35A, dark: 0x54B96F)
     static let onCompleted = Color(light: 0x0B2A14, dark: 0x06210F)
 
+    /// Nunito, a rounded sans used in heavy weights. Sizes follow the system text
+    /// styles, so text still scales with the user's Dynamic Type setting.
+    enum Weight: String {
+        case regular = "Nunito-Regular"
+        case medium = "Nunito-Medium"
+        case semibold = "Nunito-SemiBold"
+        case bold = "Nunito-Bold"
+        case extraBold = "Nunito-ExtraBold"
+        case black = "Nunito-Black"
+    }
+
+    static func font(_ style: Font.TextStyle, _ weight: Weight = .medium) -> Font {
+        let size: CGFloat
+        switch style {
+        case .largeTitle: size = 34
+        case .title: size = 28
+        case .title2: size = 22
+        case .title3: size = 20
+        case .headline: size = 17
+        case .subheadline: size = 15
+        case .callout: size = 16
+        case .footnote: size = 13
+        case .caption: size = 12
+        case .caption2: size = 11
+        default: size = 17
+        }
+        return .custom(weight.rawValue, size: size, relativeTo: style)
+    }
+
     static func color(for status: Status) -> Color {
         switch status {
         case .available: return available

@@ -42,7 +42,7 @@ struct Legend: View {
             item(Theme.discovered, "Tasted")
             item(Theme.completed, "Completed")
         }
-        .font(.system(size: 11))
+        .font(Theme.font(.caption2, .semibold))
         .foregroundStyle(Theme.muted)
         .padding(.horizontal, 10)
         .padding(.vertical, 6)
@@ -65,7 +65,7 @@ struct ToastStack: View {
         VStack(spacing: 8) {
             ForEach(toasts) { toast in
                 Text(toast.text)
-                    .font(.subheadline.weight(.semibold))
+                    .font(Theme.font(.subheadline, .bold))
                     .padding(.horizontal, 14)
                     .padding(.vertical, 12)
                     .frame(maxWidth: .infinity, alignment: .leading)
@@ -89,18 +89,18 @@ struct Header: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             Text("Mangiamundo")
-                .font(.title2.bold())
+                .font(Theme.font(.title2, .black))
             if let location = model.location {
                 Button(action: onChange) {
                     HStack(spacing: 6) {
                         Image(systemName: location.fromGPS ? "location.fill" : "mappin")
-                            .font(.footnote)
+                            .font(Theme.font(.footnote))
                         Text(location.name ?? "Your location")
-                            .fontWeight(.semibold)
+                            .font(Theme.font(.body, .bold))
                             .lineLimit(1)
                         Text("· \(model.radiusKm) km").foregroundStyle(Theme.muted)
                         Spacer()
-                        Text("Change").font(.footnote).foregroundStyle(Theme.accent)
+                        Text("Change").font(Theme.font(.footnote)).foregroundStyle(Theme.accent)
                     }
                     .padding(.horizontal, 12)
                     .padding(.vertical, 10)
@@ -131,7 +131,7 @@ struct LocationPicker: View {
                 }
             } label: {
                 Label(model.locating ? "Finding you…" : "Use my current location", systemImage: "location.fill")
-                    .fontWeight(.semibold)
+                    .font(Theme.font(.body, .extraBold))
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, 10)
                     .foregroundStyle(Theme.onAccent)
@@ -141,7 +141,7 @@ struct LocationPicker: View {
             .disabled(model.locating)
 
             if let error = model.locateError {
-                Text(error).font(.footnote).foregroundStyle(Theme.danger)
+                Text(error).font(Theme.font(.footnote)).foregroundStyle(Theme.danger)
             }
 
             HStack {
@@ -155,12 +155,12 @@ struct LocationPicker: View {
                     .disabled(searching)
             }
             if let failure {
-                Text(failure).font(.footnote).foregroundStyle(Theme.danger)
+                Text(failure).font(Theme.font(.footnote)).foregroundStyle(Theme.danger)
             }
 
             if let results {
                 if results.isEmpty {
-                    Text("No matches. Try a different spelling.").font(.footnote).foregroundStyle(Theme.muted)
+                    Text("No matches. Try a different spelling.").font(Theme.font(.footnote)).foregroundStyle(Theme.muted)
                 }
                 ForEach(results) { result in
                     Button {
@@ -178,7 +178,7 @@ struct LocationPicker: View {
             }
 
             HStack {
-                Text("Search radius").font(.footnote).foregroundStyle(Theme.muted)
+                Text("Search radius").font(Theme.font(.footnote)).foregroundStyle(Theme.muted)
                 Spacer()
                 Picker("Search radius", selection: Binding(get: { model.radiusKm }, set: { model.setRadius($0) })) {
                     ForEach(AppModel.radii, id: \.self) { Text("\($0) km").tag($0) }
@@ -214,10 +214,10 @@ struct Passport: View {
             VStack(alignment: .leading, spacing: 14) {
                 VStack(spacing: 6) {
                     HStack(alignment: .firstTextBaseline) {
-                        Text("Level \(profile.level)").font(.subheadline.weight(.semibold))
+                        Text("Level \(profile.level)").font(Theme.font(.subheadline, .bold))
                         Spacer()
                         Text("\(profile.xp) / \(profile.nextLevelXp) XP")
-                            .font(.subheadline)
+                            .font(Theme.font(.subheadline))
                             .monospacedDigit()
                             .foregroundStyle(Theme.muted)
                     }
@@ -226,11 +226,11 @@ struct Passport: View {
 
                 VStack(spacing: 6) {
                     HStack(alignment: .firstTextBaseline) {
-                        Text("Countries tasted").font(.subheadline.weight(.semibold))
+                        Text("Countries tasted").font(Theme.font(.subheadline, .bold))
                         Spacer()
-                        (Text("\(discover.world.discovered)").fontWeight(.semibold)
+                        (Text("\(discover.world.discovered)").font(Theme.font(.subheadline, .extraBold))
                             + Text(" of \(discover.world.available)").foregroundColor(Theme.muted))
-                            .font(.subheadline)
+                            .font(Theme.font(.subheadline))
                             .monospacedDigit()
                     }
                     Bar(part: discover.world.discovered, whole: discover.world.available)
@@ -254,7 +254,7 @@ struct Passport: View {
                                 .foregroundStyle(Theme.muted)
                                 .frame(width: 40, alignment: .trailing)
                         }
-                        .font(.subheadline)
+                        .font(Theme.font(.subheadline))
                         .foregroundStyle(empty ? Theme.muted : Theme.text)
                     }
                 }
@@ -264,8 +264,8 @@ struct Passport: View {
 
     private func stat(_ label: String, _ value: String) -> some View {
         VStack(alignment: .leading, spacing: 2) {
-            Text(label).font(.footnote).foregroundStyle(Theme.muted)
-            Text(value).font(.subheadline.weight(.semibold)).monospacedDigit()
+            Text(label).font(Theme.font(.footnote)).foregroundStyle(Theme.muted)
+            Text(value).font(Theme.font(.subheadline, .bold)).monospacedDigit()
         }
         .frame(maxWidth: .infinity, alignment: .leading)
     }
@@ -279,10 +279,10 @@ struct CountryList: View {
         ForEach(discover.continents.filter { $0.available > 0 }) { continent in
             VStack(alignment: .leading, spacing: 0) {
                 HStack {
-                    Text(continent.name).font(.headline)
+                    Text(continent.name).font(Theme.font(.headline, .extraBold))
                     Spacer()
                     Text("\(continent.discovered)/\(continent.available)")
-                        .font(.subheadline)
+                        .font(Theme.font(.subheadline))
                         .monospacedDigit()
                         .foregroundStyle(Theme.muted)
                 }
@@ -299,7 +299,7 @@ struct CountryList: View {
                             Text(info?.name ?? entry.code)
                             Spacer()
                             Text("\(entry.visited)/\(entry.places)")
-                                .font(.footnote)
+                                .font(Theme.font(.footnote))
                                 .monospacedDigit()
                                 .foregroundStyle(Theme.muted)
                             Circle().fill(Theme.color(for: entry.status)).frame(width: 10, height: 10)
@@ -328,15 +328,15 @@ struct CountryDetail: View {
         let info = model.country(progress.code)
         VStack(alignment: .leading, spacing: 10) {
             Button("← All countries") { model.select(nil) }
-                .font(.footnote)
+                .font(Theme.font(.footnote))
                 .foregroundStyle(Theme.muted)
                 .buttonStyle(.plain)
 
             HStack(spacing: 14) {
                 Text(info?.flag ?? "").font(.system(size: 44))
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(info?.name ?? progress.code).font(.title2.bold())
-                    Text(summary).font(.footnote).foregroundStyle(Theme.muted)
+                    Text(info?.name ?? progress.code).font(Theme.font(.title2, .black))
+                    Text(summary).font(Theme.font(.footnote)).foregroundStyle(Theme.muted)
                 }
             }
             Bar(
@@ -370,9 +370,9 @@ struct PlaceRow: View {
     var body: some View {
         HStack(spacing: 12) {
             VStack(alignment: .leading, spacing: 3) {
-                Text(place.name).fontWeight(.semibold)
+                Text(place.name).font(Theme.font(.body, .bold))
                 Text(distance + (place.address.map { " · \($0)" } ?? ""))
-                    .font(.footnote)
+                    .font(Theme.font(.footnote))
                     .foregroundStyle(Theme.muted)
                 HStack(spacing: 14) {
                     Button("Directions") {
@@ -387,7 +387,7 @@ struct PlaceRow: View {
                         Text("✓ verified").foregroundStyle(Theme.completed)
                     }
                 }
-                .font(.footnote)
+                .font(Theme.font(.footnote))
                 .buttonStyle(.plain)
                 .foregroundStyle(Theme.accent)
             }
@@ -396,7 +396,7 @@ struct PlaceRow: View {
                 Task { await model.toggleVisit(place) }
             } label: {
                 Text(place.visited ? "✓ Visited" : "Check in")
-                    .font(.footnote.weight(.semibold))
+                    .font(Theme.font(.footnote, .extraBold))
                     .padding(.horizontal, 12)
                     .padding(.vertical, 8)
                     .foregroundStyle(place.visited ? Theme.onCompleted : Theme.accent)
@@ -428,12 +428,12 @@ struct BadgeRow: View {
                 .opacity(badge.earned ? 1 : 0.45)
                 .grayscale(badge.earned ? 0 : 1)
             VStack(alignment: .leading, spacing: 2) {
-                Text(badge.title).fontWeight(.semibold)
-                Text(badge.description).font(.footnote).foregroundStyle(Theme.muted)
+                Text(badge.title).font(Theme.font(.body, .bold))
+                Text(badge.description).font(Theme.font(.footnote)).foregroundStyle(Theme.muted)
                 if !badge.earned {
                     HStack(spacing: 8) {
                         Bar(part: badge.progress, whole: badge.target)
-                        Text("\(badge.progress)/\(badge.target)").font(.caption).foregroundStyle(Theme.muted)
+                        Text("\(badge.progress)/\(badge.target)").font(Theme.font(.caption)).foregroundStyle(Theme.muted)
                     }
                     .padding(.top, 4)
                 }

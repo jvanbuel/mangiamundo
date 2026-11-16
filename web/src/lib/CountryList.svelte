@@ -47,13 +47,13 @@
 		display: flex;
 		justify-content: space-between;
 		font-size: 15px;
-		font-weight: 700;
+		font-weight: 800;
 		letter-spacing: 0;
 		padding: 0 8px 6px;
 	}
 
 	h3 span {
-		font-weight: 400;
+		font-weight: 500;
 		font-size: 14px;
 		color: var(--muted);
 		font-variant-numeric: tabular-nums;

@@ -12,6 +12,9 @@ Neither app uses a map SDK. The globe (orthographic projection) and the flat map
 there are no API keys or tiles to manage and both platforms look the same as the web
 app. Light and dark mode follow the system setting.
 
+Both apps ship the Nunito typeface (static weights generated from the variable
+font) so they match the web app; on iOS the sizes follow Dynamic Type text styles.
+
 ## Android
 
 Open `android/` in Android Studio, or from the command line:

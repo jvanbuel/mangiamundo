@@ -43,6 +43,7 @@ struct ContentView: View {
         }
         .background(Theme.bg.ignoresSafeArea())
         .foregroundStyle(Theme.text)
+        .font(Theme.font(.body))
         .overlay(alignment: .top) { ToastStack(toasts: model.toasts) }
         .sheet(isPresented: $pickerOpen) {
             ScrollView {
@@ -76,7 +77,7 @@ struct ContentView: View {
             Card {
                 VStack(alignment: .leading, spacing: 10) {
                     Text("Eat your way around the world without leaving town.")
-                        .font(.title3.bold())
+                        .font(Theme.font(.title3, .black))
                     Text("Tell us where you are and we will light up every country whose kitchen you can visit nearby.")
                         .foregroundStyle(Theme.muted)
                     LocationPicker(onDone: {})

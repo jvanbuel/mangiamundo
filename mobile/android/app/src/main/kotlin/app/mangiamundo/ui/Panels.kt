@@ -127,7 +127,7 @@ fun Legend(modifier: Modifier = Modifier) {
 fun Header(location: SavedLocation?, radiusKm: Int, onChange: () -> Unit) {
     val colors = LocalAppColors.current
     Column(Modifier.padding(bottom = 6.dp)) {
-        Text("Mangiamundo", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold, color = colors.text)
+        Text("Mangiamundo", style = MaterialTheme.typography.titleLarge, color = colors.text)
         if (location != null) {
             Row(
                 Modifier
@@ -141,7 +141,7 @@ fun Header(location: SavedLocation?, radiusKm: Int, onChange: () -> Unit) {
             ) {
                 Text(
                     location.name ?: "Your location",
-                    fontWeight = FontWeight.SemiBold,
+                    fontWeight = FontWeight.Bold,
                     color = colors.text,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
@@ -163,7 +163,6 @@ fun Welcome(picker: @Composable () -> Unit) {
             Text(
                 "Eat your way around the world without leaving town.",
                 style = MaterialTheme.typography.titleLarge,
-                fontWeight = FontWeight.Bold,
                 color = colors.text,
             )
             Text(
@@ -273,7 +272,7 @@ private fun StatRow(label: String, value: Int, total: Int? = null) {
         Text(label, style = MaterialTheme.typography.titleSmall, color = colors.text, modifier = Modifier.weight(1f))
         Text(
             buildAnnotatedString {
-                withStyle(SpanStyle(fontWeight = FontWeight.SemiBold, color = colors.text)) { append("$value") }
+                withStyle(SpanStyle(fontWeight = FontWeight.Bold, color = colors.text)) { append("$value") }
                 if (total != null) append(" of $total")
             },
             style = MaterialTheme.typography.bodyMedium,
@@ -340,7 +339,7 @@ fun Passport(discover: Discover) {
 fun ContinentHeader(continent: GroupProgress) {
     val colors = LocalAppColors.current
     Row(Modifier.fillMaxWidth().padding(top = 16.dp, bottom = 4.dp, start = 8.dp, end = 8.dp)) {
-        Text(continent.name, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold, color = colors.text)
+        Text(continent.name, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.ExtraBold, color = colors.text)
         Spacer(Modifier.weight(1f))
         Text("${continent.discovered}/${continent.available}", style = MaterialTheme.typography.bodyMedium, color = colors.muted)
     }
@@ -372,7 +371,7 @@ fun CountryHeader(progress: CountryProgress, info: Country?, onBack: () -> Unit)
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text(info?.flag.orEmpty(), fontSize = 44.sp)
             Column(Modifier.padding(start = 14.dp)) {
-                Text(info?.name ?: progress.code, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold, color = colors.text)
+                Text(info?.name ?: progress.code, style = MaterialTheme.typography.headlineSmall, color = colors.text)
                 Text(
                     if (progress.status == Status.COMPLETED) {
                         "Completed · all ${progress.places} visited"
@@ -414,7 +413,7 @@ fun PlaceRow(place: Place, busy: Boolean, onToggle: () -> Unit) {
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Column(Modifier.weight(1f)) {
-            Text(place.name, fontWeight = FontWeight.SemiBold, color = colors.text)
+            Text(place.name, fontWeight = FontWeight.Bold, color = colors.text)
             Text(
                 distance(place.distanceM) + (place.address?.let { " · $it" } ?: ""),
                 fontSize = 13.sp,
@@ -463,7 +462,7 @@ fun BadgeRow(badge: Badge) {
     ) {
         Text(badge.icon, fontSize = 26.sp, modifier = Modifier.alpha(if (badge.earned) 1f else 0.45f))
         Column(Modifier.padding(start = 12.dp).weight(1f)) {
-            Text(badge.title, fontWeight = FontWeight.SemiBold, color = colors.text)
+            Text(badge.title, fontWeight = FontWeight.Bold, color = colors.text)
             Text(badge.description, fontSize = 13.sp, color = colors.muted)
             if (!badge.earned) {
                 Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(top = 6.dp)) {
@@ -472,6 +471,6 @@ fun BadgeRow(badge: Badge) {
                 }
             }
         }
-        if (badge.earned) Text("✓", color = colors.completed, fontWeight = FontWeight.Bold)
+        if (badge.earned) Text("✓", color = colors.completed, fontWeight = FontWeight.ExtraBold)
     }
 }
