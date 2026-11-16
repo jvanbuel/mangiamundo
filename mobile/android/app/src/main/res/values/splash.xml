@@ -1,0 +1,4 @@
+<resources>
+    <!-- Startup loader background; the splash icon's bites are drawn in this colour. Matches the web app. -->
+    <color name="splash_background">#F2F5F8</color>
+</resources>
