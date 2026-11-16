@@ -1,4 +1,6 @@
-use mangiamundo::{api, config::Config, providers, store, AppState};
+use std::sync::Arc;
+
+use mangiamundo::{api, calendar, config::Config, providers, store, AppState};
 use tower_http::services::{ServeDir, ServeFile};
 
 #[tokio::main]
@@ -12,7 +14,9 @@ async fn main() -> anyhow::Result<()> {
         places,
         geocoder,
         cache_ttl_secs: config.cache_ttl_secs,
+        clock: Arc::new(store::now),
     };
+    calendar::validate().map_err(anyhow::Error::msg)?;
     tracing::info!(provider = state.places.name(), "places provider ready");
 
     let mut app = api::router(state);

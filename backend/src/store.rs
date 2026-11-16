@@ -224,6 +224,30 @@ pub async fn area_places(
         .collect())
 }
 
+/// Different places in `countries` the user checked in at between two instants.
+pub async fn visits_between(
+    db: &SqlitePool,
+    user: &str,
+    countries: &[String],
+    from: i64,
+    until: i64,
+) -> sqlx::Result<u32> {
+    if countries.is_empty() {
+        return Ok(0);
+    }
+    let marks = vec!["?"; countries.len()].join(",");
+    let sql = format!(
+        "SELECT COUNT(DISTINCT v.place_id) FROM visits v
+         JOIN place_countries pc ON pc.place_id = v.place_id
+         WHERE v.user_id = ? AND v.visited_at >= ? AND v.visited_at < ? AND pc.country IN ({marks})"
+    );
+    let mut query = sqlx::query_scalar::<_, i64>(&sql).bind(user).bind(from).bind(until);
+    for country in countries {
+        query = query.bind(country);
+    }
+    Ok(query.fetch_one(db).await? as u32)
+}
+
 pub async fn place_location(db: &SqlitePool, place_id: &str) -> sqlx::Result<Option<(f64, f64)>> {
     let row = sqlx::query("SELECT lat, lng FROM places WHERE id = ?").bind(place_id).fetch_optional(db).await?;
     Ok(row.map(|r| (r.get("lat"), r.get("lng"))))
@@ -231,14 +255,14 @@ pub async fn place_location(db: &SqlitePool, place_id: &str) -> sqlx::Result<Opt
 
 /// Records a visit. A repeated check-in keeps the original date but can upgrade an
 /// unverified visit to a verified one.
-pub async fn add_visit(db: &SqlitePool, user: &str, place_id: &str, verified: bool) -> sqlx::Result<()> {
+pub async fn add_visit(db: &SqlitePool, user: &str, place_id: &str, verified: bool, at: i64) -> sqlx::Result<()> {
     sqlx::query(
         "INSERT INTO visits (user_id, place_id, visited_at, verified) VALUES (?, ?, ?, ?)
          ON CONFLICT(user_id, place_id) DO UPDATE SET verified = MAX(verified, excluded.verified)",
     )
     .bind(user)
     .bind(place_id)
-    .bind(now())
+    .bind(at)
     .bind(verified)
     .execute(db)
     .await?;

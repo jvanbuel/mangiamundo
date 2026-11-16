@@ -12,7 +12,12 @@ use serde_json::json;
 use tower_http::cors::CorsLayer;
 use tower_http::trace::TraceLayer;
 
-use crate::game::{self, Lifetime, Summary};
+use std::collections::HashMap;
+
+use chrono::{Duration, NaiveDate};
+
+use crate::calendar::{self, Celebration};
+use crate::game::{self, Lifetime, PlaceRow, Summary};
 use crate::providers::GeoResult;
 use crate::store::{self, Area, PlaceView};
 use crate::{catalog, geo, AppState};
@@ -27,6 +32,7 @@ pub fn router(state: AppState) -> Router {
         .route("/api/countries", get(countries))
         .route("/api/discover", get(discover))
         .route("/api/places", get(places))
+        .route("/api/celebrations", get(celebrations))
         .route("/api/visits/{place_id}", put(add_visit).delete(remove_visit))
         .route("/api/geocode", get(geocode))
         .route("/api/geocode/reverse", get(reverse_geocode))
@@ -157,14 +163,14 @@ async fn resolve_area(state: &AppState, query: &AreaQuery) -> Result<Area, ApiEr
 
     let cached = store::find_area(&state.db, &key).await?;
     if let Some(area) = &cached {
-        if store::now() - area.fetched_at < state.cache_ttl_secs {
+        if state.now() - area.fetched_at < state.cache_ttl_secs {
             return Ok(area.clone());
         }
     }
 
     match state.places.search(lat, lng, radius_m).await {
         Ok(found) => {
-            let area = Area { key, lat, lng, radius_m, provider: provider.into(), fetched_at: store::now() };
+            let area = Area { key, lat, lng, radius_m, provider: provider.into(), fetched_at: state.now() };
             store::save_area(&state.db, &area, &found).await?;
             tracing::info!(key = area.key, places = found.len(), "area refreshed");
             Ok(area)
@@ -184,6 +190,80 @@ struct Discover {
     area: Area,
     #[serde(flatten)]
     summary: Summary,
+    events: Vec<EventProgress>,
+}
+
+#[derive(Serialize, PartialEq, Debug)]
+#[serde(rename_all = "snake_case")]
+enum EventStatus {
+    Upcoming,
+    Active,
+    Ended,
+}
+
+/// A time-limited challenge and how far the user got.
+#[derive(Serialize)]
+struct EventProgress {
+    #[serde(flatten)]
+    event: calendar::Event,
+    status: EventStatus,
+    progress: u32,
+    earned: bool,
+    /// Places in the area that count towards the event.
+    places_nearby: u32,
+}
+
+/// How many places each country has in an area.
+fn places_per_country(rows: &[PlaceRow]) -> HashMap<&str, u32> {
+    let mut counts = HashMap::new();
+    for row in rows {
+        *counts.entry(row.country.as_str()).or_default() += 1;
+    }
+    counts
+}
+
+/// Unix time at the start of a UTC day.
+fn day_start(day: NaiveDate) -> i64 {
+    day.and_hms_opt(0, 0, 0).map(|t| t.and_utc().timestamp()).unwrap_or(0)
+}
+
+/// Events to show: upcoming within a month, running, or finished and earned.
+async fn event_progress(
+    state: &AppState,
+    user: Option<&str>,
+    rows: &[PlaceRow],
+) -> Result<Vec<EventProgress>, ApiError> {
+    let today = state.today();
+    let counts = places_per_country(rows);
+    let mut out = Vec::new();
+    for event in calendar::relevant_events(today, 30) {
+        let progress = match user {
+            Some(user) => {
+                let until = day_start(event.ends + Duration::days(1));
+                store::visits_between(&state.db, user, &event.countries, day_start(event.starts), until).await?
+            }
+            None => 0,
+        };
+        let earned = progress >= event.target;
+        let status = if today < event.starts {
+            EventStatus::Upcoming
+        } else if today <= event.ends {
+            EventStatus::Active
+        } else {
+            EventStatus::Ended
+        };
+        if status == EventStatus::Ended && !earned {
+            continue;
+        }
+        out.push(EventProgress {
+            places_nearby: event.countries.iter().map(|c| counts.get(c.as_str()).copied().unwrap_or(0)).sum(),
+            event: event.clone(),
+            status,
+            progress: progress.min(event.target),
+            earned,
+        });
+    }
+    Ok(out)
 }
 
 async fn discover(
@@ -197,7 +277,58 @@ async fn discover(
         Some(user) => store::lifetime(&state.db, user).await?,
         None => Lifetime::default(),
     };
-    Ok(Json(Discover { summary: game::summarize(&rows, lifetime), area }))
+    let events = event_progress(&state, user.as_deref(), &rows).await?;
+    Ok(Json(Discover { summary: game::summarize(&rows, lifetime), area, events }))
+}
+
+#[derive(Deserialize)]
+struct CelebrationsQuery {
+    lat: f64,
+    lng: f64,
+    radius_km: Option<f64>,
+    /// How far ahead to look.
+    days: Option<i64>,
+}
+
+#[derive(Serialize)]
+struct NearbyCountry {
+    code: String,
+    places: u32,
+}
+
+#[derive(Serialize)]
+struct CelebrationView {
+    #[serde(flatten)]
+    celebration: Celebration,
+    /// The celebration's countries that have places in the area.
+    nearby: Vec<NearbyCountry>,
+}
+
+/// Celebrations coming up for countries whose food can be found in the area.
+async fn celebrations(
+    State(state): State<AppState>,
+    Query(query): Query<CelebrationsQuery>,
+) -> ApiResult<Vec<CelebrationView>> {
+    let area_query = AreaQuery { lat: query.lat, lng: query.lng, radius_km: query.radius_km };
+    let area = resolve_area(&state, &area_query).await?;
+    let rows = store::area_rows(&state.db, &area.key, None).await?;
+    let counts = places_per_country(&rows);
+    let days = query.days.unwrap_or(60).clamp(0, 366);
+    Ok(Json(nearby_celebrations(state.today(), days, &counts)))
+}
+
+fn nearby_celebrations(today: NaiveDate, days: i64, counts: &HashMap<&str, u32>) -> Vec<CelebrationView> {
+    calendar::upcoming(today, days)
+        .into_iter()
+        .filter_map(|celebration| {
+            let nearby: Vec<NearbyCountry> = celebration
+                .countries
+                .iter()
+                .filter_map(|code| Some(NearbyCountry { code: code.clone(), places: *counts.get(code.as_str())? }))
+                .collect();
+            (!nearby.is_empty()).then_some(CelebrationView { celebration, nearby })
+        })
+        .collect()
 }
 
 #[derive(Deserialize)]
@@ -252,7 +383,7 @@ async fn add_visit(
         (Some(lat), Some(lng)) => geo::distance_m(lat, lng, plat, plng) <= VERIFY_DISTANCE_M,
         _ => false,
     };
-    store::add_visit(&state.db, &user, &place_id, verified).await?;
+    store::add_visit(&state.db, &user, &place_id, verified, state.now()).await?;
     let profile = game::profile(store::lifetime(&state.db, &user).await?);
     Ok(Json(VisitResult { place_id, verified, profile }))
 }
