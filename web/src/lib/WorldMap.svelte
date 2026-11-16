@@ -161,9 +161,23 @@
 			m.touchZoomRotate.disableRotation();
 			m.keyboard.disableRotation();
 
+			// On the globe, MapLibre still reports countries under points in the empty space
+			// around the sphere. Such a point has no location of its own: unprojecting it snaps
+			// to the globe's edge, so projecting back lands elsewhere.
+			const onMap = (point: { x: number; y: number }) => {
+				const back = m.project(m.unproject([point.x, point.y]));
+				return Math.hypot(back.x - point.x, back.y - point.y) < 1;
+			};
+			const clearHover = () => {
+				if (hoveredId) m.setFeatureState({ source: SOURCE, id: hoveredId }, { hover: false });
+				hoveredId = null;
+				hover = null;
+				m.getCanvas().style.cursor = '';
+			};
+
 			m.on('mousemove', 'fill', (e) => {
 				const feature = e.features?.[0] as MapGeoJSONFeature | undefined;
-				if (!feature) return;
+				if (!feature || !onMap(e.point)) return clearHover();
 				const id = String(feature.id);
 				if (id !== hoveredId) {
 					if (hoveredId) m.setFeatureState({ source: SOURCE, id: hoveredId }, { hover: false });
@@ -173,17 +187,12 @@
 				m.getCanvas().style.cursor = 'pointer';
 				hover = { x: e.point.x, y: e.point.y, code: id, name: feature.properties.name };
 			});
-			m.on('mouseleave', 'fill', () => {
-				if (hoveredId) m.setFeatureState({ source: SOURCE, id: hoveredId }, { hover: false });
-				hoveredId = null;
-				hover = null;
-				m.getCanvas().style.cursor = '';
-			});
+			m.on('mouseleave', 'fill', clearHover);
 			// The pointer stops matching what is under it once the map moves.
 			m.on('movestart', () => (hover = null));
 			m.on('click', 'fill', (e) => {
 				const feature = e.features?.[0];
-				if (!feature) return;
+				if (!feature || !onMap(e.point)) return;
 				const code = String(feature.id);
 				onselect(code, feature.properties.name, byCode.has(code));
 			});
