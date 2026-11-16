@@ -1,7 +1,9 @@
 import * as api from './api';
+import * as push from './push';
 import {
 	statusOf,
 	type BadgeKind,
+	type Celebration,
 	type Catalog,
 	type Country,
 	type Discover,
@@ -19,7 +21,7 @@ export type Theme = 'system' | 'light' | 'dark';
 export const RADII = [5, 10, 25];
 
 /** What a toast shows on its left: a flag (or other text), a badge medal, or nothing. */
-export type ToastIcon = { text: string } | { badge: BadgeKind } | null;
+export type ToastIcon = { text: string } | { badge: BadgeKind | 'event' } | null;
 
 export interface Toast {
 	id: number;
@@ -51,6 +53,11 @@ export const app = $state({
 	locateError: null as string | null,
 	projection: 'globe' as 'globe' | 'mercator',
 	theme: 'system' as Theme,
+	tab: 'countries' as 'countries' | 'badges',
+	celebrations: [] as Celebration[],
+	/** Web Push reminders: on, off, not possible here, or possible once installed (iPhone). */
+	reminders: 'off' as 'on' | 'off' | 'unsupported' | 'install',
+	remindersBusy: false,
 	toasts: [] as Toast[]
 });
 
@@ -85,6 +92,7 @@ export async function init() {
 		app.error = message(error);
 		return;
 	}
+	void checkReminders();
 	const stored = load<Location>(LOCATION_KEY);
 	if (stored) {
 		app.location = stored;
@@ -93,6 +101,47 @@ export async function init() {
 		if (stored.source === 'gps') void locate(true);
 	} else {
 		await locate(true);
+	}
+	await followLink();
+}
+
+/** Opens what a link (for example from a reminder) points at: ?country=JP or ?tab=badges. */
+async function followLink() {
+	const params = new URLSearchParams(location.search);
+	if (!params.size) return;
+	if (params.get('tab') === 'badges') app.tab = 'badges';
+	const code = params.get('country')?.toUpperCase();
+	if (code && app.discover?.countries.some((c) => c.code === code)) await select(code);
+	history.replaceState(null, '', location.pathname);
+}
+
+async function checkReminders() {
+	if (push.needsInstallForPush()) app.reminders = 'install';
+	else if (!push.pushSupported()) app.reminders = 'unsupported';
+	else app.reminders = (await push.currentSubscription()) && Notification.permission === 'granted' ? 'on' : 'off';
+}
+
+function pushTarget() {
+	const here = app.location!;
+	return { lat: here.lat, lng: here.lng, radius_km: app.radiusKm };
+}
+
+export async function toggleReminders() {
+	if (!app.location || app.remindersBusy) return;
+	app.remindersBusy = true;
+	try {
+		if (app.reminders === 'on') {
+			await push.disableReminders();
+			app.reminders = 'off';
+		} else {
+			await push.enableReminders(pushTarget());
+			app.reminders = 'on';
+			toast(null, 'Reminders on', 'We will let you know when a country near you has something to celebrate.');
+		}
+	} catch (error) {
+		toast(null, 'Could not change reminders', message(error));
+	} finally {
+		app.remindersBusy = false;
 	}
 }
 
@@ -167,6 +216,13 @@ export async function locate(quiet = false) {
 export async function refresh() {
 	const location = app.location;
 	if (!location) return;
+	if (app.reminders === 'on') void push.updateReminders(pushTarget()).catch(() => undefined);
+	void api
+		.celebrations(location.lat, location.lng, app.radiusKm)
+		.then((list) => {
+			if (app.location === location) app.celebrations = list;
+		})
+		.catch(() => (app.celebrations = []));
 	const id = ++requestId;
 	app.loading = true;
 	app.error = null;
@@ -215,6 +271,11 @@ function celebrate(before: Discover, after: Discover, place: Place) {
 	for (const badge of after.badges) {
 		if (badge.earned && !before.badges.find((b) => b.id === badge.id)?.earned) {
 			toast({ badge: badge.kind }, `Badge: ${badge.title}`, badge.description);
+		}
+	}
+	for (const event of after.events) {
+		if (event.earned && !before.events.find((e) => e.id === event.id)?.earned) {
+			toast({ badge: 'event' }, `Badge: ${event.title}`, 'Earned while it lasted.');
 		}
 	}
 	if (after.profile.level > before.profile.level) {

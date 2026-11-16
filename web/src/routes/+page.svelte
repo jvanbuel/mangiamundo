@@ -2,6 +2,7 @@
 	import { onMount } from 'svelte';
 	import Badges from '#lib/Badges.svelte';
 	import CountryDetail from '#lib/CountryDetail.svelte';
+	import ComingUp from '#lib/ComingUp.svelte';
 	import CountryList from '#lib/CountryList.svelte';
 	import LocationPicker from '#lib/LocationPicker.svelte';
 	import Passport from '#lib/Passport.svelte';
@@ -11,7 +12,6 @@
 	import Navigation from '@lucide/svelte/icons/navigation';
 	import { app, init, refresh, select, setProjection, setTheme, toast, type Theme } from '#lib/state.svelte.ts';
 
-	let tab = $state<'countries' | 'badges'>('countries');
 	let pickerOpen = $state(false);
 
 	const selected = $derived(app.discover?.countries.find((c) => c.code === app.selected) ?? null);
@@ -41,7 +41,7 @@
 
 	function pick(code: string, name: string, available: boolean) {
 		if (available) {
-			tab = 'countries';
+			app.tab = 'countries';
 			select(code);
 		} else {
 			toast(null, `No ${name} food here yet`, `No places from ${name} were found within ${app.radiusKm} km.`);
@@ -87,6 +87,7 @@
 	<aside>
 		<header>
 			<h1><img src="/icon.svg" alt="" width="32" height="32" />Mangiamundo</h1>
+			<p class="tagline">Eat the world, start with your city</p>
 			{#if app.location}
 				<button class="where" aria-expanded={pickerOpen} onclick={() => (pickerOpen = !pickerOpen)}>
 					{#if app.location.source === 'gps'}<Navigation size={15} strokeWidth={2.5} aria-hidden="true" />{:else}<MapPin size={15} strokeWidth={2.5} aria-hidden="true" />{/if}
@@ -103,7 +104,7 @@
 
 		{#if !app.location}
 			<div class="card welcome">
-				<h2>Eat your way around the world without leaving town.</h2>
+				<h2>Which of the world's kitchens are near you?</h2>
 				<p class="muted">
 					Tell us where you are and we will light up every country whose kitchen you can visit nearby.
 				</p>
@@ -127,21 +128,25 @@
 		{:else}
 			<div class="card" class:dim={app.loading}><Passport discover={app.discover} /></div>
 
+			{#if app.celebrations.length && !selected}
+				<div class="card"><ComingUp celebrations={app.celebrations} /></div>
+			{/if}
+
 			{#if selected}
 				<section><CountryDetail progress={selected} onback={() => select(null)} /></section>
 			{:else}
 				<div class="tabs" role="tablist">
-					<button role="tab" aria-selected={tab === 'countries'} onclick={() => (tab = 'countries')}>
+					<button role="tab" aria-selected={app.tab === 'countries'} onclick={() => (app.tab = 'countries')}>
 						Countries <span>{app.discover.world.available}</span>
 					</button>
-					<button role="tab" aria-selected={tab === 'badges'} onclick={() => (tab = 'badges')}>
+					<button role="tab" aria-selected={app.tab === 'badges'} onclick={() => (app.tab = 'badges')}>
 						Badges <span>{earned}/{app.discover.badges.length}</span>
 					</button>
 				</div>
-				{#if tab === 'countries'}
+				{#if app.tab === 'countries'}
 					<CountryList discover={app.discover} onselect={select} />
 				{:else}
-					<Badges badges={app.discover.badges} />
+					<Badges badges={app.discover.badges} events={app.discover.events} />
 				{/if}
 			{/if}
 		{/if}
@@ -182,6 +187,12 @@
 	h1 {
 		display: flex;
 		align-items: center;
+	}
+
+	.tagline {
+		margin: 2px 0 0 42px;
+		color: var(--muted);
+		font-weight: 700;
 	}
 
 	h1 img {

@@ -4,10 +4,14 @@
 	import Flag from '@lucide/svelte/icons/flag';
 	import Globe from '@lucide/svelte/icons/globe';
 	import Map from '@lucide/svelte/icons/map';
+	import PartyPopper from '@lucide/svelte/icons/party-popper';
 	import Utensils from '@lucide/svelte/icons/utensils';
 	import type { BadgeKind } from './types';
 
-	let { kind, earned = true, size = 64 }: { kind: BadgeKind; earned?: boolean; size?: number } = $props();
+	/** Badge kinds, plus `event` for time-limited badges. */
+	type MedalKind = BadgeKind | 'event';
+
+	let { kind, earned = true, size = 64 }: { kind: MedalKind; earned?: boolean; size?: number } = $props();
 
 	const ICONS = {
 		visits: Utensils,
@@ -15,15 +19,17 @@
 		completed: BadgeCheck,
 		continent: Map,
 		world: Globe,
-		everything: Crown
+		everything: Crown,
+		event: PartyPopper
 	};
-	const COLORS: Record<BadgeKind, string> = {
+	const COLORS: Record<MedalKind, string> = {
 		visits: 'var(--available)',
 		countries: 'var(--available)',
 		completed: 'var(--completed)',
 		continent: 'var(--discovered)',
 		world: 'var(--completed)',
-		everything: 'var(--discovered)'
+		everything: 'var(--discovered)',
+		event: 'var(--event)'
 	};
 	const Icon = $derived(ICONS[kind]);
 </script>

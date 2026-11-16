@@ -1,4 +1,4 @@
-import type { Catalog, Discover, GeoResult, Place, Profile } from './types';
+import type { Catalog, Celebration, Discover, GeoResult, Place, Profile } from './types';
 
 const BASE = import.meta.env.VITE_API_BASE ?? '';
 const TOKEN_KEY = 'mangiamundo.token';
@@ -87,3 +87,21 @@ export const geocode = (query: string) =>
 
 export const reverseGeocode = (lat: number, lng: number) =>
 	raw<{ name: string | null }>('GET', `/api/geocode/reverse?lat=${lat}&lng=${lng}`, null);
+
+export const celebrations = (lat: number, lng: number, radiusKm: number, days = 60) =>
+	raw<Celebration[]>('GET', `/api/celebrations?${area(lat, lng, radiusKm)}&days=${days}`, null);
+
+export const pushKey = () => raw<{ public_key: string }>('GET', '/api/push/key', null);
+
+export interface PushTarget {
+	lat: number;
+	lng: number;
+	radius_km: number;
+	timezone: string;
+}
+
+export const savePushSubscription = (subscription: PushSubscriptionJSON, target: PushTarget) =>
+	authed<void>('PUT', '/api/push/subscription', { ...subscription, ...target });
+
+export const deletePushSubscription = (endpoint: string) =>
+	authed<void>('DELETE', '/api/push/subscription', { endpoint });

@@ -18,6 +18,7 @@
 	--discovered: #c98508;
 	--completed: #3da35a;
 	--on-completed: #0b2a14;
+	--event: #c2417a;
 	--glass: rgb(255 255 255 / 0.92);
 	--shadow: rgb(20 38 58 / 0.16);
 	--space: #FAFCFE;
@@ -46,6 +47,7 @@
 		--discovered: #f2b53d;
 		--completed: #54b96f;
 		--on-completed: #06210f;
+		--event: #e46a9f;
 		--glass: rgb(19 37 54 / 0.9);
 		--shadow: rgb(0 0 0 / 0.45);
 		--space: #17324D;
@@ -69,6 +71,7 @@
 	--discovered: #f2b53d;
 	--completed: #54b96f;
 	--on-completed: #06210f;
+	--event: #e46a9f;
 	--glass: rgb(19 37 54 / 0.9);
 	--shadow: rgb(0 0 0 / 0.45);
 	--space: #17324D;

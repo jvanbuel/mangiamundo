@@ -49,6 +49,33 @@ export interface Profile {
 	countries: number;
 }
 
+export interface EventProgress {
+	id: string;
+	title: string;
+	description: string;
+	countries: string[];
+	/** First and last day, inclusive, as YYYY-MM-DD. */
+	starts: string;
+	ends: string;
+	target: number;
+	progress: number;
+	earned: boolean;
+	status: 'upcoming' | 'active' | 'ended';
+	places_nearby: number;
+}
+
+export interface Celebration {
+	id: string;
+	title: string;
+	description: string;
+	countries: string[];
+	starts: string;
+	ends: string;
+	approximate: boolean;
+	/** The celebration's countries that have places in the area. */
+	nearby: { code: string; places: number }[];
+}
+
 export interface Discover {
 	area: { lat: number; lng: number; radius_m: number; provider: string; fetched_at: number };
 	countries: CountryProgress[];
@@ -58,6 +85,7 @@ export interface Discover {
 	places_visited: number;
 	badges: Badge[];
 	profile: Profile;
+	events: EventProgress[];
 }
 
 export interface Place {
