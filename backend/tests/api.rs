@@ -191,6 +191,8 @@ async fn celebrations_only_list_countries_found_nearby() {
             assert!(nearby["places"].as_u64().unwrap() > 0);
         }
         assert!(!celebration["nearby"].as_array().unwrap().is_empty());
+        assert!(celebration["reminder"]["title"].as_str().unwrap().starts_with(celebration["title"].as_str().unwrap()));
+        assert!(celebration["reminder"]["body"].as_str().unwrap().contains("near you"));
         previous = starts;
     }
     // Thanksgiving is listed exactly when there is American food in the area.

@@ -142,6 +142,31 @@ fn places(n: u32) -> String {
     if n == 1 { "1 place".into() } else { format!("{n} places") }
 }
 
+/// The reminder for a celebration, or None when none of its countries has places nearby.
+/// The apps use the same text for the notifications they schedule themselves.
+pub fn celebration_notification(celebration: &calendar::Celebration, counts: &HashMap<String, u32>) -> Option<Notification> {
+    let nearby: Vec<&str> = celebration
+        .countries
+        .iter()
+        .map(String::as_str)
+        .filter(|c| counts.get(*c).copied().unwrap_or(0) > 0)
+        .collect();
+    let first = *nearby.first()?;
+    let total: u32 = nearby.iter().map(|c| counts[*c]).sum();
+    let when = if celebration.ends > celebration.starts { "starts today" } else { "is today" };
+    Some(Notification {
+        title: format!("{} {when}", celebration.title),
+        body: format!(
+            "{} Celebrate at one of {} serving {} food near you.",
+            celebration.description,
+            places(total),
+            cuisine_names(&nearby)
+        ),
+        url: format!("/?country={first}"),
+        tag: format!("celebration-{}", celebration.id),
+    })
+}
+
 /// The reminders due for one subscriber on `day`, keyed for de-duplication.
 async fn due(
     state: &AppState,
@@ -151,31 +176,9 @@ async fn due(
 ) -> anyhow::Result<Vec<(String, Notification)>> {
     let mut out = Vec::new();
     for celebration in calendar::starting_on(day) {
-        let nearby: Vec<&str> = celebration
-            .countries
-            .iter()
-            .map(String::as_str)
-            .filter(|c| counts.get(*c).copied().unwrap_or(0) > 0)
-            .collect();
-        if nearby.is_empty() {
-            continue;
+        if let Some(notification) = celebration_notification(&celebration, counts) {
+            out.push((format!("celebration:{}:{day}", celebration.id), notification));
         }
-        let total: u32 = nearby.iter().map(|c| counts[*c]).sum();
-        let when = if celebration.ends > celebration.starts { "starts today" } else { "is today" };
-        out.push((
-            format!("celebration:{}:{day}", celebration.id),
-            Notification {
-                title: format!("{} {when}", celebration.title),
-                body: format!(
-                    "{} Celebrate at one of {} serving {} food near you.",
-                    celebration.description,
-                    places(total),
-                    cuisine_names(&nearby)
-                ),
-                url: format!("/?country={}", nearby[0]),
-                tag: format!("celebration-{}", celebration.id),
-            },
-        ));
     }
 
     for event in calendar::events() {

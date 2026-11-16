@@ -304,6 +304,8 @@ struct CelebrationView {
     celebration: Celebration,
     /// The celebration's countries that have places in the area.
     nearby: Vec<NearbyCountry>,
+    /// Notification text for the first day, for apps that schedule reminders themselves.
+    reminder: crate::push::Notification,
 }
 
 /// Celebrations coming up for countries whose food can be found in the area.
@@ -328,7 +330,9 @@ fn nearby_celebrations(today: NaiveDate, days: i64, counts: &HashMap<&str, u32>)
                 .iter()
                 .filter_map(|code| Some(NearbyCountry { code: code.clone(), places: *counts.get(code.as_str())? }))
                 .collect();
-            (!nearby.is_empty()).then_some(CelebrationView { celebration, nearby })
+            let owned: HashMap<String, u32> = nearby.iter().map(|n| (n.code.clone(), n.places)).collect();
+            let reminder = crate::push::celebration_notification(&celebration, &owned)?;
+            Some(CelebrationView { celebration, nearby, reminder })
         })
         .collect()
 }
