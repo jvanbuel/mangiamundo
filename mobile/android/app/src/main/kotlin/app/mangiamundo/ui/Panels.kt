@@ -1,7 +1,7 @@
 package app.mangiamundo.ui
 
 import android.content.Intent
-import android.net.Uri
+import androidx.core.net.toUri
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
@@ -23,7 +24,6 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.FilterChip
-import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
@@ -81,13 +81,10 @@ private fun Card(modifier: Modifier = Modifier, content: @Composable () -> Unit)
 
 @Composable
 private fun Bar(fraction: Float, modifier: Modifier = Modifier, color: Color = LocalAppColors.current.accent) {
-    LinearProgressIndicator(
-        progress = { fraction.coerceIn(0f, 1f) },
-        modifier = modifier.height(6.dp).clip(RoundedCornerShape(3.dp)),
-        color = color,
-        trackColor = LocalAppColors.current.line,
-        drawStopIndicator = {},
-    )
+    val shape = RoundedCornerShape(50)
+    Box(modifier.height(6.dp).clip(shape).background(LocalAppColors.current.line)) {
+        Box(Modifier.fillMaxHeight().fillMaxWidth(fraction.coerceIn(0f, 1f)).clip(shape).background(color))
+    }
 }
 
 private fun fraction(part: Int, whole: Int) = if (whole == 0) 0f else part.toFloat() / whole
@@ -407,7 +404,7 @@ private fun distance(meters: Int) = if (meters < 1000) "${meters / 10 * 10} m" e
 fun PlaceRow(place: Place, busy: Boolean, onToggle: () -> Unit) {
     val colors = LocalAppColors.current
     val context = LocalContext.current
-    val open = { url: String -> context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url))) }
+    val open = { url: String -> context.startActivity(Intent(Intent.ACTION_VIEW, url.toUri())) }
     Row(
         Modifier
             .fillMaxWidth()

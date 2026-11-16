@@ -1,0 +1,126 @@
+package app.mangiamundo.ui
+
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.padding
+import androidx.compose.runtime.Composable
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.unit.dp
+import app.cash.paparazzi.DeviceConfig
+import app.cash.paparazzi.Paparazzi
+import app.mangiamundo.SavedLocation
+import app.mangiamundo.core.Badge
+import app.mangiamundo.core.Camera
+import app.mangiamundo.core.Country
+import app.mangiamundo.core.CountryProgress
+import app.mangiamundo.core.Discover
+import app.mangiamundo.core.GroupProgress
+import app.mangiamundo.core.Place
+import app.mangiamundo.core.Profile
+import app.mangiamundo.core.ProjectionKind
+import app.mangiamundo.core.World
+import com.android.resources.NightMode
+import org.junit.Rule
+import org.junit.Test
+import java.io.File
+
+/** Renders the main screens with sample data, in light and dark mode. */
+class ScreensTest {
+    @get:Rule
+    val paparazzi = Paparazzi(deviceConfig = DeviceConfig.PIXEL_6, maxPercentDifference = 0.1)
+
+    private val world = World.parse(File("../../shared/world.json").readText())
+    private val leuven = SavedLocation(50.8798, 4.7005, "Leuven", fromGps = true)
+
+    private val countries = listOf(
+        Country("IT", "Italy", "EU", "🇮🇹"), Country("FR", "France", "EU", "🇫🇷"),
+        Country("GR", "Greece", "EU", "🇬🇷"), Country("ET", "Ethiopia", "AF", "🇪🇹"),
+        Country("MA", "Morocco", "AF", "🇲🇦"), Country("JP", "Japan", "AS", "🇯🇵"),
+        Country("TH", "Thailand", "AS", "🇹🇭"), Country("MX", "Mexico", "NA", "🇲🇽"),
+        Country("PE", "Peru", "SA", "🇵🇪"), Country("CN", "China", "AS", "🇨🇳"),
+    )
+    private val progress = listOf(
+        CountryProgress("IT", "EU", 6, 6), CountryProgress("FR", "EU", 4, 1),
+        CountryProgress("GR", "EU", 3, 0), CountryProgress("ET", "AF", 2, 1),
+        CountryProgress("MA", "AF", 2, 0), CountryProgress("JP", "AS", 5, 2),
+        CountryProgress("TH", "AS", 3, 0), CountryProgress("CN", "AS", 7, 0),
+        CountryProgress("MX", "NA", 2, 0), CountryProgress("PE", "SA", 1, 0),
+    )
+    private val discover = Discover(
+        countries = progress,
+        continents = listOf(
+            GroupProgress("AF", "Africa", 2, 1, 0), GroupProgress("AS", "Asia", 3, 1, 0),
+            GroupProgress("EU", "Europe", 3, 2, 1), GroupProgress("NA", "North America", 1, 0, 0),
+            GroupProgress("OC", "Oceania", 0, 0, 0), GroupProgress("SA", "South America", 1, 0, 0),
+        ),
+        world = GroupProgress("WORLD", "World", 10, 4, 1),
+        places = 35, placesVisited = 10,
+        badges = listOf(
+            Badge("first-bite", "🍴", "First bite", "Check in at your first place.", 1, 1, true),
+            Badge("flags-5", "🧭", "Curious palate", "Taste 5 different countries.", 4, 5, false),
+        ),
+        profile = Profile(xp = 300, level = 2, levelXp = 100, nextLevelXp = 400, visits = 10, countries = 4),
+    )
+
+    @Composable
+    private fun Home(kind: ProjectionKind, camera: Camera) {
+        val colors = LocalAppColors.current
+        Column(Modifier.fillMaxSize().background(colors.panel)) {
+            Box(Modifier.fillMaxWidth().weight(0.42f).background(colors.bg)) {
+                WorldMap(
+                    world = world,
+                    statuses = progress.associate { it.code to it.status },
+                    selected = "IT",
+                    here = leuven.lng to leuven.lat,
+                    kind = kind,
+                    camera = camera,
+                    onCamera = {},
+                    onTap = {},
+                    modifier = Modifier.fillMaxSize(),
+                )
+                Legend(Modifier.align(Alignment.BottomStart).padding(8.dp))
+            }
+            Column(Modifier.weight(0.58f).padding(16.dp)) {
+                Header(leuven, 10) {}
+                Passport(discover)
+                ContinentHeader(discover.continents[2])
+                for (code in listOf("FR", "GR", "IT")) {
+                    CountryRow(progress.first { it.code == code }, countries.first { it.code == code }) {}
+                }
+            }
+        }
+    }
+
+    private fun snapshot(dark: Boolean, content: @Composable () -> Unit) {
+        paparazzi.unsafeUpdateConfig(
+            DeviceConfig.PIXEL_6.copy(nightMode = if (dark) NightMode.NIGHT else NightMode.NOTNIGHT),
+        )
+        paparazzi.snapshot { MangiamundoTheme { content() } }
+    }
+
+    @Test
+    fun globeLight() = snapshot(dark = false) { Home(ProjectionKind.GLOBE, Camera(15.0, 35.0, 1.0)) }
+
+    @Test
+    fun globeDark() = snapshot(dark = true) { Home(ProjectionKind.GLOBE, Camera(15.0, 35.0, 1.0)) }
+
+    @Test
+    fun flatDark() = snapshot(dark = true) { Home(ProjectionKind.FLAT, Camera(10.0, 25.0, 1.0)) }
+
+    @Test
+    fun countryDetailLight() = snapshot(dark = false) {
+        val colors = LocalAppColors.current
+        Column(Modifier.fillMaxSize().background(colors.panel).padding(16.dp)) {
+            CountryHeader(progress.first { it.code == "JP" }, countries.first { it.code == "JP" }) {}
+            PlaceRow(Place("a", "Sushi Kaito", 50.88, 4.70, "Naamsestraat 12, Leuven", "https://example.org", listOf("JP"), 420, 1, true), busy = false) {}
+            PlaceRow(Place("b", "Ramen Bar Ichi", 50.87, 4.71, "Bondgenotenlaan 40", null, listOf("JP"), 1250, 1, false), busy = false) {}
+            PlaceRow(Place("c", "Izakaya Kumo", 50.86, 4.69, null, null, listOf("JP"), 3400), busy = false) {}
+            BadgeRow(discover.badges[0])
+            BadgeRow(discover.badges[1])
+        }
+    }
+}

@@ -20,7 +20,12 @@ Open `android/` in Android Studio, or from the command line:
 cd android
 ./gradlew :core:test            # map maths + API models; needs no Android SDK
 ./gradlew :app:assembleDebug    # needs the Android SDK (ANDROID_HOME or local.properties)
+./gradlew :app:verifyPaparazziDebug   # screenshot tests, rendered on the JVM without a device
+./gradlew :app:recordPaparazziDebug   # re-record them after an intended UI change
 ```
+
+Reference screenshots of the main screens, in light and dark mode, are in
+`android/app/src/test/snapshots/images/`.
 
 The app reads the backend address from `mangiamundo.apiBase` in `gradle.properties`.
 The default `http://10.0.2.2:8080` reaches a backend running on your machine from the

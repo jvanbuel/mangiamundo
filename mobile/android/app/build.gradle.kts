@@ -2,6 +2,8 @@ plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
     id("org.jetbrains.kotlin.plugin.compose")
+    // Screenshot tests that render the Compose UI on the JVM, without a device.
+    id("app.cash.paparazzi")
 }
 
 android {
@@ -52,4 +54,5 @@ dependencies {
     implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.9.1")
     implementation("androidx.core:core-ktx:1.16.0")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.10.2")
+    testImplementation("junit:junit:4.13.2")
 }
