@@ -515,23 +515,6 @@ struct Passport: View {
                     stat("Places visited", "\(discover.placesVisited) of \(discover.places)")
                     stat("Countries completed", "\(discover.world.completed)")
                 }
-                Divider().overlay(Theme.line)
-
-                VStack(spacing: 8) {
-                    ForEach(discover.continents) { continent in
-                        let empty = continent.available == 0
-                        HStack(spacing: 10) {
-                            Text(continent.name).frame(width: 112, alignment: .leading)
-                            Bar(part: continent.discovered, whole: continent.available)
-                            Text(empty ? "–" : "\(continent.discovered)/\(continent.available)")
-                                .monospacedDigit()
-                                .foregroundStyle(Theme.muted)
-                                .frame(width: 40, alignment: .trailing)
-                        }
-                        .font(Theme.font(.subheadline))
-                        .foregroundStyle(empty ? Theme.muted : Theme.text)
-                    }
-                }
             }
         }
     }

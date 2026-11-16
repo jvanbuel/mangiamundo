@@ -30,18 +30,6 @@
 		<div><dt>Places visited</dt><dd>{discover.places_visited} <span class="muted">of {discover.places}</span></dd></div>
 		<div><dt>Countries completed</dt><dd>{discover.world.completed}</dd></div>
 	</dl>
-
-	<ul class="continents" aria-label="Countries tasted per continent">
-		{#each discover.continents as continent (continent.code)}
-			<li class:empty={continent.available === 0}>
-				<span>{continent.name}</span>
-				<div class="bar"><span style:width="{pct(continent.discovered, continent.available)}%"></span></div>
-				<span class="count">
-					{#if continent.available === 0}–{:else}{continent.discovered}/{continent.available}{/if}
-				</span>
-			</li>
-		{/each}
-	</ul>
 </section>
 
 <style>
@@ -72,8 +60,8 @@
 		grid-template-columns: 1fr 1fr;
 		gap: 8px;
 		margin: 0;
-		padding: 12px 0;
-		border-block: 1px solid var(--line);
+		padding-top: 12px;
+		border-top: 1px solid var(--line);
 	}
 
 	dt {
@@ -89,31 +77,5 @@
 
 	dd .muted {
 		font-weight: 500;
-	}
-
-	.continents {
-		list-style: none;
-		margin: 0;
-		padding: 0;
-		display: grid;
-		gap: 7px;
-		font-size: 14px;
-	}
-
-	.continents li {
-		display: grid;
-		grid-template-columns: 112px 1fr 36px;
-		align-items: center;
-		gap: 10px;
-	}
-
-	.continents li.empty {
-		color: var(--muted);
-	}
-
-	.count {
-		text-align: right;
-		font-variant-numeric: tabular-nums;
-		color: var(--muted);
 	}
 </style>

@@ -377,28 +377,6 @@ fun Passport(discover: Discover) {
                     Text("${discover.world.completed}", style = MaterialTheme.typography.titleSmall, color = colors.text)
                 }
             }
-            HorizontalDivider(color = colors.line)
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                for (continent in discover.continents) {
-                    val empty = continent.available == 0
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text(
-                            continent.name,
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = if (empty) colors.muted else colors.text,
-                            modifier = Modifier.width(112.dp),
-                        )
-                        Bar(fraction(continent.discovered, continent.available), Modifier.weight(1f))
-                        Text(
-                            if (empty) "–" else "${continent.discovered}/${continent.available}",
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = colors.muted,
-                            modifier = Modifier.width(44.dp),
-                            textAlign = TextAlign.End,
-                        )
-                    }
-                }
-            }
         }
     }
 }
