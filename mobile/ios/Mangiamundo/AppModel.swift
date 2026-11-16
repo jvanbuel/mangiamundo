@@ -20,6 +20,9 @@ final class AppModel {
     private(set) var loading = false
     private(set) var error: String?
 
+    /// The first data is in (or failed): the startup loader can go.
+    var ready: Bool { error != nil || (catalog != nil && (location == nil || discover != nil)) }
+
     /// Code of the country whose places are shown.
     private(set) var selected: String?
     private(set) var places: [Place] = []

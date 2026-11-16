@@ -26,7 +26,10 @@ targets:
       path: Mangiamundo/Info.plist
       properties:
         CFBundleDisplayName: Mangiamundo
-        UILaunchScreen: {}
+        # The startup loader's first frame; Loader.swift then takes the bites.
+        UILaunchScreen:
+          UIColorName: LaunchBackground
+          UIImageName: LaunchGlobe
         UISupportedInterfaceOrientations:
           - UIInterfaceOrientationPortrait
         # Nunito, shipped in Mangiamundo/Fonts (SIL Open Font License).

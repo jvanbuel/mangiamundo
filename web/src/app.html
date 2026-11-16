@@ -11,9 +11,58 @@
 				if (theme === 'light' || theme === 'dark') document.documentElement.dataset.theme = theme;
 			} catch {}
 		</script>
+		<style>
+			/* Startup loader: the globe gets the three bites of the icon (tools/build-logo.mjs BITES),
+			   150 ms each, 120 ms apart, after a 200 ms pause. +page.svelte fades it out once the first data is in. */
+			#loader {
+				position: fixed;
+				inset: 0;
+				z-index: 1000;
+				display: grid;
+				place-items: center;
+				background: #17324d;
+				transition: opacity 0.25s;
+			}
+			#loader.done {
+				opacity: 0;
+				pointer-events: none;
+			}
+			#loader svg {
+				width: min(50vw, 200px);
+				animation:
+					chomp 890ms linear,
+					pulse 0.8s ease-in-out 1s infinite alternate;
+			}
+			#loader circle {
+				transform-box: fill-box;
+				transform-origin: center;
+				transform: scale(0);
+				animation: bite 150ms ease-out forwards;
+			}
+			#loader circle:nth-child(1) { animation-delay: 200ms; }
+			#loader circle:nth-child(2) { animation-delay: 470ms; }
+			#loader circle:nth-child(3) { animation-delay: 740ms; }
+			@keyframes bite { to { transform: scale(1); } }
+			/* The globe squashes a little on each bite. */
+			@keyframes chomp {
+				0%, 22%, 39%, 53%, 70%, 83%, 100% { transform: none; }
+				30%, 61%, 92% { transform: scale(1.03, 0.97); }
+			}
+			@keyframes pulse { to { transform: scale(1.04); } }
+			@media (prefers-reduced-motion: reduce) {
+				#loader svg, #loader circle { animation: none; }
+				#loader circle { transform: none; }
+			}
+		</style>
 		%sveltekit.head%
 	</head>
 	<body data-sveltekit-preload-data="hover">
+		<div id="loader" aria-hidden="true">
+			<svg viewBox="0 0 512 512">
+				<image href="/globe.svg" width="512" height="512" />
+				<g fill="#17324D"><circle cx="398" cy="118" r="62" /><circle cx="318" cy="92" r="46" /><circle cx="436" cy="196" r="44" /></g>
+			</svg>
+		</div>
 		<div style="display: contents">%sveltekit.body%</div>
 	</body>
 </html>

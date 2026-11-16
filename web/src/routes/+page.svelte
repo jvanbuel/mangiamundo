@@ -26,6 +26,21 @@
 	const theme = $derived(THEMES.find((t) => t.id === app.theme) ?? THEMES[0]);
 	let systemDark = $state(false);
 
+	// Fade out the startup loader (app.html) once the first data is in, after the bite in progress.
+	$effect(() => {
+		if (!(app.error || (app.catalog && (!app.location || app.discover)))) return;
+		const loader = document.getElementById('loader');
+		if (!loader) return;
+		const biting = [...loader.querySelectorAll('circle')].flatMap((c) => c.getAnimations()).filter((a) => {
+			const progress = a.effect?.getComputedTiming().progress;
+			return progress != null && progress > 0 && progress < 1;
+		});
+		Promise.all(biting.map((a) => a.finished)).then(() => {
+			loader.addEventListener('transitionend', () => loader.remove());
+			loader.classList.add('done');
+		});
+	});
+
 	onMount(() => {
 		init();
 		const media = matchMedia('(prefers-color-scheme: dark)');

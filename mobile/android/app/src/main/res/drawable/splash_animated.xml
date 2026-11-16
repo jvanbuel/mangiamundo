@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Startup loader on Android 12+: the globe (splash_globe, from tools/build-logo.mjs) gets
+     its three bites, 150 ms each, 120 ms apart, after a 200 ms pause. MainActivity's
+     BITES keeps the same times. -->
+<animated-vector xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:aapt="http://schemas.android.com/aapt"
+    android:drawable="@drawable/splash_globe">
+    <target android:name="bite0">
+        <aapt:attr name="android:animation">
+            <set>
+                <objectAnimator android:propertyName="scaleX" android:startOffset="200" android:duration="150" android:valueFrom="0" android:valueTo="1" android:interpolator="@android:interpolator/decelerate_quad" />
+                <objectAnimator android:propertyName="scaleY" android:startOffset="200" android:duration="150" android:valueFrom="0" android:valueTo="1" android:interpolator="@android:interpolator/decelerate_quad" />
+            </set>
+        </aapt:attr>
+    </target>
+    <target android:name="bite1">
+        <aapt:attr name="android:animation">
+            <set>
+                <objectAnimator android:propertyName="scaleX" android:startOffset="470" android:duration="150" android:valueFrom="0" android:valueTo="1" android:interpolator="@android:interpolator/decelerate_quad" />
+                <objectAnimator android:propertyName="scaleY" android:startOffset="470" android:duration="150" android:valueFrom="0" android:valueTo="1" android:interpolator="@android:interpolator/decelerate_quad" />
+            </set>
+        </aapt:attr>
+    </target>
+    <target android:name="bite2">
+        <aapt:attr name="android:animation">
+            <set>
+                <objectAnimator android:propertyName="scaleX" android:startOffset="740" android:duration="150" android:valueFrom="0" android:valueTo="1" android:interpolator="@android:interpolator/decelerate_quad" />
+                <objectAnimator android:propertyName="scaleY" android:startOffset="740" android:duration="150" android:valueFrom="0" android:valueTo="1" android:interpolator="@android:interpolator/decelerate_quad" />
+            </set>
+        </aapt:attr>
+    </target>
+</animated-vector>

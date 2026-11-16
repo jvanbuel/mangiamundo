@@ -1,0 +1,9 @@
+<resources>
+    <!-- Android 12+ animates the splash icon: the globe gets its bites. -->
+    <style name="Theme.Mangiamundo.Starting" parent="Theme.SplashScreen">
+        <item name="windowSplashScreenBackground">@color/ic_launcher_background</item>
+        <item name="windowSplashScreenAnimatedIcon">@drawable/splash_animated</item>
+        <item name="windowSplashScreenAnimationDuration">890</item>
+        <item name="postSplashScreenTheme">@style/Theme.Mangiamundo</item>
+    </style>
+</resources>

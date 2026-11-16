@@ -38,6 +38,9 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     var loading by mutableStateOf(false); private set
     var error by mutableStateOf<String?>(null); private set
 
+    /** The first data is in (or failed): the startup loader can go. */
+    val ready get() = error != null || (catalog != null && (location == null || discover != null))
+
     /** Code of the country whose places are shown. */
     var selected by mutableStateOf<String?>(null); private set
     var places by mutableStateOf<List<Place>>(emptyList()); private set
