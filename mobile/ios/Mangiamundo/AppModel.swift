@@ -29,6 +29,11 @@ final class AppModel {
     private(set) var locating = false
     private(set) var locateError: String?
 
+    private(set) var celebrations: [Celebration] = []
+    private(set) var remindersOn = false
+    /// 0 = countries, 1 = badges.
+    var tab = 0
+
     private(set) var projection = ProjectionKind.globe
     var camera = Camera()
     /// Short announcements (badges, discoveries, errors), newest last.
@@ -42,6 +47,9 @@ final class AppModel {
     @ObservationIgnored private var refreshTask: Task<Void, Never>?
     @ObservationIgnored private var placesTask: Task<Void, Never>?
     @ObservationIgnored private var started = false
+    @ObservationIgnored private let reminders = ReminderCenter()
+    /// A country to open once progress has loaded, from a notification tap.
+    @ObservationIgnored private var pendingCountry: String?
 
     init() {
         let base = Bundle.main.object(forInfoDictionaryKey: "APIBaseURL") as? String
@@ -63,6 +71,8 @@ final class AppModel {
     func start() async {
         guard !started else { return }
         started = true
+        reminders.onOpen = { [weak self] country, badges in self?.openFromNotification(country: country, badges: badges) }
+        remindersOn = defaults.bool(forKey: "mangiamundo.reminders") ? await reminders.isAllowed() : false
         world = World.bundled()
         do {
             catalog = try await api.catalog()
@@ -146,6 +156,12 @@ final class AppModel {
                 let result = try await api.discover(lat: here.lat, lng: here.lng, radiusKm: radiusKm)
                 guard !Task.isCancelled else { return }
                 discover = result
+                if let code = pendingCountry {
+                    pendingCountry = nil
+                    if result.countries.contains(where: { $0.code == code }) { select(code) }
+                }
+                celebrations = (try? await api.celebrations(lat: here.lat, lng: here.lng, radiusKm: radiusKm)) ?? []
+                await rescheduleReminders()
             } catch {
                 guard !Task.isCancelled else { return }
                 self.error = error.localizedDescription
@@ -153,6 +169,39 @@ final class AppModel {
             }
             loading = false
         }
+    }
+
+    /// Opens what a notification points at.
+    func openFromNotification(country: String?, badges: Bool) {
+        if badges {
+            select(nil)
+            tab = 1
+        }
+        guard let country else { return }
+        if discover?.countries.contains(where: { $0.code == country }) == true {
+            select(country)
+        } else {
+            pendingCountry = country
+        }
+    }
+
+    func toggleReminders() async {
+        if remindersOn {
+            remindersOn = false
+            await reminders.cancelAll()
+        } else if await reminders.requestPermission() {
+            remindersOn = true
+            await rescheduleReminders()
+            toast("Reminders on. We will let you know when a country near you has something to celebrate.")
+        } else {
+            toast("Notifications are turned off for Mangiamundo in Settings.")
+        }
+        defaults.set(remindersOn, forKey: "mangiamundo.reminders")
+    }
+
+    private func rescheduleReminders() async {
+        guard remindersOn else { return }
+        await reminders.schedule(ReminderPlan.plan(celebrations: celebrations, events: discover?.events ?? [], now: Date()))
     }
 
     func select(_ code: String?) {
@@ -232,6 +281,11 @@ final class AppModel {
         for badge in after.badges where badge.earned {
             if !before.badges.contains(where: { $0.id == badge.id && $0.earned }) {
                 toast("Badge earned: \(badge.title)")
+            }
+        }
+        for event in after.events where event.earned {
+            if !before.events.contains(where: { $0.id == event.id && $0.earned }) {
+                toast("Badge earned: \(event.title)")
             }
         }
         if after.profile.level > before.profile.level {

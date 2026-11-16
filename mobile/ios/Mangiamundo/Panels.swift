@@ -62,16 +62,33 @@ extension BadgeKind {
 
 /// A solid token with a darker lower edge, so it reads as something you collect.
 struct Medal: View {
-    let kind: BadgeKind
+    let symbol: String
+    let color: Color
     var earned = true
     var size: CGFloat = 64
 
+    init(kind: BadgeKind, earned: Bool = true, size: CGFloat = 64) {
+        self.init(symbol: kind.symbol, color: kind.color, earned: earned, size: size)
+    }
+
+    init(symbol: String, color: Color, earned: Bool = true, size: CGFloat = 64) {
+        self.symbol = symbol
+        self.color = color
+        self.earned = earned
+        self.size = size
+    }
+
+    /// The medal of a limited-time event.
+    static func event(earned: Bool = true, size: CGFloat = 64) -> Medal {
+        Medal(symbol: "party.popper.fill", color: Theme.event, earned: earned, size: size)
+    }
+
     var body: some View {
-        let face = earned ? kind.color : Theme.line
+        let face = earned ? color : Theme.line
         ZStack {
             Circle().fill(face).brightness(-0.18)
             Circle().fill(face).padding(.bottom, size * 0.07)
-            Image(systemName: kind.symbol)
+            Image(systemName: symbol)
                 .font(.system(size: size * 0.4, weight: .bold))
                 .foregroundStyle(earned ? Color.white : Theme.muted)
                 .offset(y: -size * 0.035)
@@ -81,28 +98,194 @@ struct Medal: View {
     }
 }
 
+private func parseDay(_ day: String) -> Date? {
+    let parts = day.split(separator: "-").compactMap { Int($0) }
+    guard parts.count == 3 else { return nil }
+    return Calendar.current.date(from: DateComponents(year: parts[0], month: parts[1], day: parts[2]))
+}
+
+private func shortDate(_ day: String) -> String {
+    parseDay(day)?.formatted(.dateTime.day().month(.abbreviated)) ?? day
+}
+
+private func daysFromToday(_ day: String) -> Int {
+    guard let date = parseDay(day) else { return 0 }
+    return Calendar.current.dateComponents([.day], from: Calendar.current.startOfDay(for: Date()), to: date).day ?? 0
+}
+
 struct BadgeGrid: View {
     let badges: [Badge]
+    var events: [EventProgress] = []
 
     var body: some View {
+        let running = events.filter { $0.status != .ended && !$0.earned }
+        if !running.isEmpty {
+            LimitedTime(events: running)
+        }
         LazyVGrid(columns: Array(repeating: GridItem(.flexible(), alignment: .top), count: 3), spacing: 20) {
+            ForEach(events.filter(\.earned)) { event in
+                tile(Medal.event(), event.title, "\(shortDate(event.starts)) – \(shortDate(event.ends))", hint: event.description)
+            }
             ForEach(badges.sorted { $0.earned && !$1.earned }) { badge in
-                VStack(spacing: 4) {
-                    Medal(kind: badge.kind, earned: badge.earned)
-                    Text(badge.title)
-                        .font(Theme.font(.subheadline, .extraBold))
-                        .multilineTextAlignment(.center)
-                        .padding(.top, 4)
-                    Text(badge.earned ? "Earned" : "\(badge.progress) / \(badge.target)")
-                        .font(Theme.font(.footnote))
-                        .monospacedDigit()
-                        .foregroundStyle(Theme.muted)
-                }
-                .accessibilityElement(children: .combine)
-                .accessibilityHint(badge.description)
+                tile(
+                    Medal(kind: badge.kind, earned: badge.earned),
+                    badge.title,
+                    badge.earned ? "Earned" : "\(badge.progress) / \(badge.target)",
+                    hint: badge.description
+                )
             }
         }
         .padding(.top, 8)
+    }
+
+    private func tile(_ medal: Medal, _ title: String, _ detail: String, hint: String) -> some View {
+        VStack(spacing: 4) {
+            medal
+            Text(title)
+                .font(Theme.font(.subheadline, .extraBold))
+                .multilineTextAlignment(.center)
+                .padding(.top, 4)
+            Text(detail)
+                .font(Theme.font(.footnote))
+                .monospacedDigit()
+                .foregroundStyle(Theme.muted)
+        }
+        .accessibilityElement(children: .combine)
+        .accessibilityHint(hint)
+    }
+}
+
+struct LimitedTime: View {
+    let events: [EventProgress]
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("Limited time").font(Theme.font(.headline, .black))
+            ForEach(events) { event in
+                HStack(alignment: .top, spacing: 12) {
+                    Medal.event(earned: event.status == .active, size: 52)
+                    VStack(alignment: .leading, spacing: 4) {
+                        HStack {
+                            Text(event.title).font(Theme.font(.subheadline, .extraBold))
+                            Spacer()
+                            Text(timing(event))
+                                .font(Theme.font(.caption, .extraBold))
+                                .foregroundStyle(Theme.event)
+                                .padding(.horizontal, 8)
+                                .padding(.vertical, 2)
+                                .background(Theme.event.opacity(0.16), in: Capsule())
+                        }
+                        Text(event.description).font(Theme.font(.footnote)).foregroundStyle(Theme.muted)
+                        HStack(spacing: 8) {
+                            Bar(part: event.progress, whole: event.target, color: Theme.event)
+                            Text("\(event.progress) / \(event.target)")
+                                .font(Theme.font(.footnote))
+                                .monospacedDigit()
+                                .foregroundStyle(Theme.muted)
+                        }
+                        if event.placesNearby == 0 {
+                            Text("No places nearby for this one yet.").font(Theme.font(.footnote)).foregroundStyle(Theme.muted)
+                        }
+                    }
+                }
+            }
+        }
+        .padding(.vertical, 8)
+    }
+
+    private func timing(_ event: EventProgress) -> String {
+        if event.status == .upcoming { return "Starts \(shortDate(event.starts))" }
+        let left = daysFromToday(event.ends)
+        return left <= 0 ? "Last day" : "\(left + 1) days left"
+    }
+}
+
+struct ComingUp: View {
+    @Environment(AppModel.self) private var model
+    let celebrations: [Celebration]
+
+    var body: some View {
+        Card {
+            VStack(alignment: .leading, spacing: 0) {
+                HStack {
+                    Text("Coming up").font(Theme.font(.title3, .black))
+                    Spacer()
+                    Button {
+                        Task { await model.toggleReminders() }
+                    } label: {
+                        Label(
+                            model.remindersOn ? "Reminders on" : "Remind me",
+                            systemImage: model.remindersOn ? "bell.badge.fill" : "bell"
+                        )
+                        .font(Theme.font(.subheadline, .extraBold))
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 6)
+                        .overlay(Capsule().stroke(model.remindersOn ? .clear : Theme.line, lineWidth: 2))
+                        .background(model.remindersOn ? Theme.accent.opacity(0.14) : .clear, in: Capsule())
+                    }
+                    .buttonStyle(.plain)
+                    .foregroundStyle(Theme.accent)
+                }
+                .padding(.bottom, 6)
+
+                ForEach(Array(celebrations.prefix(4).enumerated()), id: \.element.id) { index, c in
+                    if index > 0 { Divider().overlay(Theme.line) }
+                    Button {
+                        if let code = c.nearby.first?.code { model.select(code) }
+                    } label: {
+                        HStack(spacing: 12) {
+                            CalendarPage(day: c.starts)
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(c.title).font(Theme.font(.headline, .extraBold))
+                                Text(detail(c)).font(Theme.font(.footnote)).foregroundStyle(Theme.muted)
+                            }
+                            Spacer(minLength: 0)
+                        }
+                        .padding(.vertical, 10)
+                        .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+        }
+    }
+
+    private func detail(_ c: Celebration) -> String {
+        let days = daysFromToday(c.starts)
+        let when: String
+        switch days {
+        case ..<1: when = daysFromToday(c.ends) > 0 ? "On now" : "Today"
+        case 1: when = "Tomorrow"
+        default: when = "In \(days) days"
+        }
+        let total = c.nearby.reduce(0) { $0 + $1.places }
+        let flags = c.nearby.compactMap { model.country($0.code)?.flag }.joined(separator: " ")
+        return "\(when)\(c.approximate ? " (date may shift)" : "") · \(flags) \(total) \(total == 1 ? "place" : "places") nearby"
+    }
+}
+
+/// A little tear-off calendar page.
+struct CalendarPage: View {
+    let day: String
+
+    var body: some View {
+        let date = parseDay(day) ?? Date()
+        VStack(spacing: 0) {
+            Text(date.formatted(.dateTime.month(.abbreviated)).uppercased())
+                .font(Theme.font(.caption2, .extraBold))
+                .foregroundStyle(.white)
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 2)
+                .background(Theme.event)
+            Text(date.formatted(.dateTime.day()))
+                .font(Theme.font(.title3, .black))
+                .padding(.vertical, 2)
+        }
+        .frame(width: 46)
+        .background(Theme.panel)
+        .clipShape(RoundedRectangle(cornerRadius: 8))
+        .padding(EdgeInsets(top: 2, leading: 2, bottom: 3, trailing: 2))
+        .background(Theme.line, in: RoundedRectangle(cornerRadius: 10))
     }
 }
 
@@ -178,8 +361,13 @@ struct Header: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
-            Text("Mangiamundo")
-                .font(Theme.font(.title2, .black))
+            VStack(alignment: .leading, spacing: 2) {
+                Text("Mangiamundo")
+                    .font(Theme.font(.title2, .black))
+                Text("Eat the world, start with your city")
+                    .font(Theme.font(.subheadline, .bold))
+                    .foregroundStyle(Theme.muted)
+            }
             if let location = model.location {
                 Button(action: onChange) {
                     HStack(spacing: 6) {

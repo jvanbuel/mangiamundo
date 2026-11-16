@@ -63,6 +63,50 @@ struct Profile: Decodable {
     let countries: Int
 }
 
+enum EventStatus: String, Decodable {
+    case upcoming, active, ended
+}
+
+/// A time-limited challenge, like "Japan month", and how far the user got.
+struct EventProgress: Decodable, Identifiable {
+    let id: String
+    let title: String
+    let description: String
+    let countries: [String]
+    /// First and last day, inclusive, as YYYY-MM-DD.
+    let starts: String
+    let ends: String
+    let target: Int
+    let progress: Int
+    let earned: Bool
+    let status: EventStatus
+    let placesNearby: Int
+}
+
+struct NearbyCountry: Decodable {
+    let code: String
+    let places: Int
+}
+
+/// Notification text, written by the server so every app says the same thing.
+struct Reminder: Decodable {
+    let title: String
+    let body: String
+}
+
+struct Celebration: Decodable, Identifiable {
+    let id: String
+    let title: String
+    let description: String
+    let countries: [String]
+    let starts: String
+    let ends: String
+    let approximate: Bool
+    /// The celebration's countries that have places in the area.
+    let nearby: [NearbyCountry]
+    let reminder: Reminder
+}
+
 struct Discover: Decodable {
     let countries: [CountryProgress]
     let continents: [GroupProgress]
@@ -71,6 +115,7 @@ struct Discover: Decodable {
     let placesVisited: Int
     let badges: [Badge]
     let profile: Profile
+    let events: [EventProgress]
 }
 
 struct Place: Decodable, Identifiable {

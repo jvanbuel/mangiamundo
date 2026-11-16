@@ -38,6 +38,10 @@ actor APIClient {
         try decode(await authed("GET", "/api/places?\(area(lat, lng, radiusKm))&country=\(country)"))
     }
 
+    func celebrations(lat: Double, lng: Double, radiusKm: Int, days: Int = 60) async throws -> [Celebration] {
+        try decode(await request("GET", "/api/celebrations?\(area(lat, lng, radiusKm))&days=\(days)"))
+    }
+
     /// `here` is the device position, sent so the server can mark the visit as verified.
     func checkIn(placeID: String, here: (lat: Double, lng: Double)?) async throws -> VisitResult {
         var body: [String: Double] = [:]

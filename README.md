@@ -46,6 +46,25 @@ Results are cached per area: coordinates snap to a ~2 km grid, and an area is
 refreshed after `CACHE_TTL_DAYS`. If you go to production with Google data, check
 the Maps Platform terms on how long place details may be stored.
 
+## Celebrations and limited-time badges
+
+- `backend/data/celebrations.json`: national days and food festivals per country.
+  Fixed dates use `"date": "MM-DD"`; moving ones list `"dates"` per year (filled in
+  for 2026–2028, so extend it before 2029). Moon-sighting dates are marked
+  `approximate`.
+- `backend/data/events.json`: time-limited challenges ("Japan month"): countries, a
+  date range and how many different places to visit. Only check-ins made during the
+  event count; earned event badges stay.
+- `GET /api/celebrations` lists what is coming up for countries that have places in
+  the area, including the reminder text.
+
+Reminders: the native apps schedule local notifications themselves. The web app uses
+Web Push: the server generates a VAPID key on first start (or reads
+`VAPID_PRIVATE_KEY`), and every `PUSH_INTERVAL_SECS` (default 600, 0 turns it off)
+sends due reminders from 10:00 in each subscriber's time zone. Set `VAPID_SUBJECT`
+to a `mailto:` or `https:` contact for push services. Browsers only allow push on
+HTTPS (or localhost), and iPhones only for apps added to the home screen.
+
 ## How the game works
 
 - **Tasted**: you checked in at one or more places of a country.
@@ -67,6 +86,10 @@ sends it as `Authorization: Bearer <token>`.
 | `GET` | `/api/places?lat&lng&radius_km&country` | Places, nearest first |
 | `PUT` | `/api/visits/{place_id}` | Check in; optional body `{ lat, lng }` to verify |
 | `DELETE` | `/api/visits/{place_id}` | Undo a check-in |
+| `GET` | `/api/celebrations?lat&lng&radius_km&days` | Upcoming celebrations with food nearby |
+| `GET` | `/api/push/key` | VAPID public key for Web Push |
+| `PUT` | `/api/push/subscription` | Subscribe a browser: PushSubscription JSON plus `lat`, `lng`, `radius_km`, `timezone` |
+| `DELETE` | `/api/push/subscription` | Unsubscribe; body `{ endpoint }` |
 | `GET` | `/api/geocode?q` | Search for a location |
 | `GET` | `/api/geocode/reverse?lat&lng` | Name of the place at a position |
 

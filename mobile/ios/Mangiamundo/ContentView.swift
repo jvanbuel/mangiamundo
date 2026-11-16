@@ -3,7 +3,6 @@ import SwiftUI
 struct ContentView: View {
     @Environment(AppModel.self) private var model
     @State private var pickerOpen = false
-    @State private var tab = 0
 
     private var selected: CountryProgress? {
         model.discover?.countries.first { $0.code == model.selected }
@@ -76,7 +75,7 @@ struct ContentView: View {
         if model.location == nil {
             Card {
                 VStack(alignment: .leading, spacing: 10) {
-                    Text("Eat your way around the world without leaving town.")
+                    Text("Which of the world's kitchens are near you?")
                         .font(Theme.font(.title3, .black))
                     Text("Tell us where you are and we will light up every country whose kitchen you can visit nearby.")
                         .foregroundStyle(Theme.muted)
@@ -97,18 +96,21 @@ struct ContentView: View {
                     .foregroundStyle(Theme.muted)
             } else {
                 Passport(discover: discover)
+                if selected == nil && !model.celebrations.isEmpty {
+                    ComingUp(celebrations: model.celebrations)
+                }
                 if let selected {
                     CountryDetail(progress: selected)
                 } else {
-                    Picker("Section", selection: $tab) {
+                    Picker("Section", selection: Binding(get: { model.tab }, set: { model.tab = $0 })) {
                         Text("Countries \(discover.world.available)").tag(0)
                         Text("Badges \(discover.badges.filter(\.earned).count)/\(discover.badges.count)").tag(1)
                     }
                     .pickerStyle(.segmented)
-                    if tab == 0 {
+                    if model.tab == 0 {
                         CountryList(discover: discover)
                     } else {
-                        BadgeGrid(badges: discover.badges)
+                        BadgeGrid(badges: discover.badges, events: discover.events)
                     }
                 }
             }

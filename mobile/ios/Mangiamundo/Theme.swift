@@ -19,6 +19,8 @@ enum Theme {
     static let discovered = Color(light: 0xC98508, dark: 0xF2B53D)
     static let completed = Color(light: 0x3DA35A, dark: 0x54B96F)
     static let onCompleted = Color(light: 0x0B2A14, dark: 0x06210F)
+    /// Limited-time events and celebrations.
+    static let event = Color(light: 0xC2417A, dark: 0xE46A9F)
 
     /// Nunito, a rounded sans used in heavy weights. Sizes follow the system text
     /// styles, so text still scales with the user's Dynamic Type setting.
