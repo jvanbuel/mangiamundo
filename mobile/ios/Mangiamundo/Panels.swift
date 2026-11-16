@@ -47,15 +47,17 @@ extension BadgeKind {
         case .completed: return "checkmark.seal.fill"
         case .continent: return "map.fill"
         case .world: return "globe.europe.africa.fill"
-        case .everything: return "crown.fill"
+        case .everything, .other: return "crown.fill"
+        case .dishes: return "frying.pan.fill"
+        case .regular: return "arrow.triangle.2.circlepath"
         }
     }
 
     var color: Color {
         switch self {
-        case .visits, .countries: return Theme.available
+        case .visits, .countries, .regular: return Theme.available
         case .completed, .world: return Theme.completed
-        case .continent, .everything: return Theme.discovered
+        case .continent, .everything, .dishes, .other: return Theme.discovered
         }
     }
 }
@@ -479,8 +481,11 @@ struct LocationPicker: View {
     }
 }
 
+/// Progress at a glance. The share and back-up buttons show when their actions are given.
 struct Passport: View {
     let discover: Discover
+    var onShare: (() -> Void)?
+    var onBackup: (() -> Void)?
 
     var body: some View {
         let profile = discover.profile
@@ -514,6 +519,31 @@ struct Passport: View {
                 HStack(alignment: .top) {
                     stat("Places visited", "\(discover.placesVisited) of \(discover.places)")
                     stat("Countries completed", "\(discover.world.completed)")
+                }
+                HStack(alignment: .top) {
+                    stat("Check-ins", "\(profile.visits)")
+                    stat("Signature dishes", "\(profile.dishes)")
+                }
+                if onShare != nil || onBackup != nil {
+                    HStack(spacing: 8) {
+                        if let onShare {
+                            Button(action: onShare) {
+                                Label("Share my map", systemImage: "square.and.arrow.up")
+                                    .frame(maxWidth: .infinity)
+                            }
+                            .buttonStyle(ChunkyButtonStyle())
+                        }
+                        if let onBackup {
+                            Button(action: onBackup) {
+                                Label("Back up", systemImage: "key.fill")
+                                    .font(Theme.font(.subheadline, .extraBold))
+                                    .padding(.horizontal, 12)
+                                    .padding(.vertical, 8)
+                                    .overlay(RoundedRectangle(cornerRadius: 12).stroke(Theme.line, lineWidth: 2))
+                            }
+                            .buttonStyle(.plain)
+                        }
+                    }
                 }
             }
         }
@@ -604,6 +634,24 @@ struct CountryDetail: View {
                 color: progress.status == .available ? Theme.accent : Theme.color(for: progress.status)
             )
 
+            let signature = model.dishes(of: [progress.code])
+            if !signature.isEmpty {
+                let tried = Set(model.discover?.dishesTried ?? [])
+                VStack(alignment: .leading, spacing: 6) {
+                    Label("Signature dishes", systemImage: "frying.pan")
+                        .font(Theme.font(.subheadline, .extraBold))
+                    FlowLayout(spacing: 6) {
+                        ForEach(signature) { dish in
+                            DishChip(name: dish.name, selected: tried.contains(dish.id))
+                        }
+                    }
+                    Text("Log one when you check in: +25 XP for each new dish.")
+                        .font(Theme.font(.footnote))
+                        .foregroundStyle(Theme.muted)
+                }
+                .padding(.top, 6)
+            }
+
             if model.placesLoading {
                 Text("Loading places…").foregroundStyle(Theme.muted)
             }
@@ -621,53 +669,200 @@ struct CountryDetail: View {
     }
 }
 
+/// A rounded label for a dish; filled green when tasted or chosen.
+struct DishChip: View {
+    let name: String
+    let selected: Bool
+    var extra: String?
+
+    var body: some View {
+        HStack(spacing: 4) {
+            if selected {
+                Image(systemName: "checkmark").font(.system(size: 11, weight: .heavy))
+            }
+            Text(name).font(Theme.font(.footnote, .bold))
+            if let extra {
+                Text(extra).font(Theme.font(.caption, .black)).foregroundStyle(Theme.discovered)
+            }
+        }
+        .padding(.horizontal, 11)
+        .padding(.vertical, 5)
+        .background(selected ? Theme.completed.opacity(0.16) : Color.clear, in: Capsule())
+        .overlay(Capsule().stroke(selected ? Theme.completed : Theme.line, lineWidth: 2))
+    }
+}
+
+/// Lays its children out in rows, wrapping to a new row when one is full.
+struct FlowLayout: Layout {
+    var spacing: CGFloat = 6
+
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+        let rows = arrange(width: proposal.width ?? .infinity, subviews: subviews)
+        let height = rows.map(\.height).reduce(0, +) + spacing * CGFloat(max(rows.count - 1, 0))
+        let width = rows.map(\.width).max() ?? 0
+        return CGSize(width: proposal.width ?? width, height: height)
+    }
+
+    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
+        var y = bounds.minY
+        for row in arrange(width: bounds.width, subviews: subviews) {
+            var x = bounds.minX
+            for index in row.indices {
+                let size = subviews[index].sizeThatFits(.unspecified)
+                subviews[index].place(at: CGPoint(x: x, y: y), proposal: ProposedViewSize(size))
+                x += size.width + spacing
+            }
+            y += row.height + spacing
+        }
+    }
+
+    private struct Row {
+        var indices: [Int] = []
+        var width: CGFloat = 0
+        var height: CGFloat = 0
+    }
+
+    private func arrange(width: CGFloat, subviews: Subviews) -> [Row] {
+        var rows = [Row()]
+        for index in subviews.indices {
+            let size = subviews[index].sizeThatFits(.unspecified)
+            let needed = rows[rows.count - 1].indices.isEmpty ? size.width : rows[rows.count - 1].width + spacing + size.width
+            if needed > width && !rows[rows.count - 1].indices.isEmpty {
+                rows.append(Row())
+            }
+            var row = rows[rows.count - 1]
+            row.width = row.indices.isEmpty ? size.width : row.width + spacing + size.width
+            row.height = max(row.height, size.height)
+            row.indices.append(index)
+            rows[rows.count - 1] = row
+        }
+        return rows
+    }
+}
+
+/// One place. Before a first visit it offers "Check in"; afterwards "Again" once the
+/// cooldown has passed. Right after a check-in it asks which signature dish was eaten.
 struct PlaceRow: View {
     @Environment(AppModel.self) private var model
     @Environment(\.openURL) private var openURL
     let place: Place
 
     var body: some View {
-        VStack(spacing: 0) {
-            HStack(spacing: 12) {
-                VStack(alignment: .leading, spacing: 3) {
-                    Text(place.name).font(Theme.font(.headline, .extraBold))
-                    Text(details)
-                        .font(Theme.font(.subheadline))
-                        .foregroundStyle(Theme.muted)
-                    HStack(spacing: 16) {
-                        Button("Directions") {
-                            if let url = URL(string: "https://maps.apple.com/?daddr=\(place.lat),\(place.lng)") {
-                                openURL(url)
+        // Re-evaluated every minute so the cooldown runs out without a reload.
+        TimelineView(.periodic(from: .now, by: 60)) { context in
+            let waiting = place.isRecent(at: context.date)
+            VStack(alignment: .leading, spacing: 0) {
+                HStack(spacing: 12) {
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text(place.name).font(Theme.font(.headline, .extraBold))
+                        Text(details)
+                            .font(Theme.font(.subheadline))
+                            .foregroundStyle(Theme.muted)
+                        if place.visited {
+                            (Text(visitsText)
+                                + Text(place.verified ? " · on the spot" : "").foregroundColor(Theme.completed))
+                                .font(Theme.font(.subheadline, .bold))
+                        }
+                        HStack(spacing: 16) {
+                            Button("Directions") {
+                                if let url = URL(string: "https://maps.apple.com/?daddr=\(place.lat),\(place.lng)") {
+                                    openURL(url)
+                                }
+                            }
+                            if let link = place.url, let url = URL(string: link) {
+                                Button("Website") { openURL(url) }
                             }
                         }
-                        if let link = place.url, let url = URL(string: link) {
-                            Button("Website") { openURL(url) }
-                        }
+                        .font(Theme.font(.subheadline, .extraBold))
+                        .buttonStyle(.plain)
+                        .foregroundStyle(Theme.accent)
+                        .padding(.top, 2)
                     }
-                    .font(Theme.font(.subheadline, .extraBold))
-                    .buttonStyle(.plain)
-                    .foregroundStyle(Theme.accent)
-                    .padding(.top, 2)
+                    Spacer(minLength: 0)
+                    checkInButton(waiting: waiting)
                 }
-                Spacer(minLength: 0)
-                Button {
-                    Task { await model.toggleVisit(place) }
-                } label: {
-                    if place.visited {
-                        Label("Visited", systemImage: "checkmark")
-                    } else {
-                        Text("Check in")
-                    }
+                .padding(.top, 14)
+                .padding(.bottom, waiting ? 8 : 14)
+
+                if waiting {
+                    dishPicker.padding(.bottom, 14)
                 }
-                .buttonStyle(place.visited
-                    ? ChunkyButtonStyle(face: Theme.completed, content: Theme.onCompleted)
-                    : ChunkyButtonStyle())
-                .disabled(model.busyPlace != nil)
-                .opacity(model.busyPlace == place.id ? 0.6 : 1)
+                Divider().overlay(Theme.line)
             }
-            .padding(.vertical, 14)
-            Divider().overlay(Theme.line)
         }
+    }
+
+    @ViewBuilder
+    private func checkInButton(waiting: Bool) -> some View {
+        if waiting {
+            Label("Today", systemImage: "checkmark")
+                .font(Theme.font(.subheadline, .extraBold))
+                .foregroundStyle(Theme.onCompleted)
+                .padding(.horizontal, 14)
+                .padding(.vertical, 9)
+                .background(Theme.completed, in: RoundedRectangle(cornerRadius: 12))
+                .accessibilityLabel("Checked in today")
+        } else {
+            Button {
+                Task { await model.checkIn(place) }
+            } label: {
+                if place.visited {
+                    Label("Again", systemImage: "arrow.triangle.2.circlepath")
+                } else {
+                    Text("Check in")
+                }
+            }
+            .buttonStyle(place.visited
+                ? ChunkyButtonStyle(face: Theme.discovered, content: Theme.onCompleted)
+                : ChunkyButtonStyle())
+            .disabled(model.busyPlace != nil)
+            .opacity(model.busyPlace == place.id ? 0.6 : 1)
+        }
+    }
+
+    private var dishPicker: some View {
+        let options = model.dishes(of: place.countries)
+        let tried = Set(model.discover?.dishesTried ?? [])
+        return VStack(alignment: .leading, spacing: 6) {
+            if !options.isEmpty {
+                Text("What did you have?").font(Theme.font(.footnote)).foregroundStyle(Theme.muted)
+                FlowLayout(spacing: 6) {
+                    ForEach(options) { dish in
+                        Button {
+                            Task { await model.logDish(place, dish) }
+                        } label: {
+                            DishChip(
+                                name: dish.name,
+                                selected: place.lastDish == dish.id,
+                                extra: tried.contains(dish.id) ? nil : "+25"
+                            )
+                        }
+                        .buttonStyle(.plain)
+                        .disabled(model.busyPlace != nil)
+                    }
+                }
+            }
+            Button("Undo check-in") {
+                Task { await model.undoCheckIn(place) }
+            }
+            .font(Theme.font(.footnote, .bold))
+            .foregroundStyle(Theme.muted)
+            .buttonStyle(.plain)
+            .disabled(model.busyPlace != nil)
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 10)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Theme.panelRaised, in: RoundedRectangle(cornerRadius: 12))
+    }
+
+    private var visitsText: String {
+        var text = place.visits <= 1 ? "Visited" : "Visited \(place.visits)×"
+        if let last = place.lastVisitedAt {
+            let date = Date(timeIntervalSince1970: TimeInterval(last))
+            text += ", last on \(date.formatted(.dateTime.day().month(.abbreviated)))"
+        }
+        return text
     }
 
     private var details: String {
@@ -676,8 +871,6 @@ struct PlaceRow: View {
             : String(format: "%.1f km", Double(place.distanceM) / 1000)
         var parts = [distance]
         if let address = place.address { parts.append(address) }
-        if place.verified { parts.append("checked in on the spot") }
         return parts.joined(separator: " · ")
     }
 }
-

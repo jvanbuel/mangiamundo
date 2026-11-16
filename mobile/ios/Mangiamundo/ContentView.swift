@@ -3,6 +3,8 @@ import SwiftUI
 struct ContentView: View {
     @Environment(AppModel.self) private var model
     @State private var pickerOpen = false
+    @State private var shareOpen = false
+    @State private var backupOpen = false
 
     private var selected: CountryProgress? {
         model.discover?.countries.first { $0.code == model.selected }
@@ -51,6 +53,16 @@ struct ContentView: View {
             .presentationDetents([.medium, .large])
             .presentationBackground(Theme.panel)
         }
+        .sheet(isPresented: $shareOpen) {
+            ScrollView { ShareSheet().padding(20) }
+                .presentationDetents([.large])
+                .presentationBackground(Theme.panel)
+        }
+        .sheet(isPresented: $backupOpen) {
+            ScrollView { BackupSheet(onDone: { backupOpen = false }).padding(20) }
+                .presentationDetents([.medium, .large])
+                .presentationBackground(Theme.panel)
+        }
     }
 
     private var statuses: [String: Status] {
@@ -95,7 +107,7 @@ struct ContentView: View {
                 Text("No restaurants with a national cuisine turned up within \(model.radiusKm) km. Try a larger radius or another location.")
                     .foregroundStyle(Theme.muted)
             } else {
-                Passport(discover: discover)
+                Passport(discover: discover, onShare: { shareOpen = true }, onBackup: { backupOpen = true })
                 if selected == nil && !model.celebrations.isEmpty {
                     ComingUp(celebrations: model.celebrations)
                 }

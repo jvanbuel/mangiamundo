@@ -49,4 +49,24 @@ final class CoreTests: XCTestCase {
         XCTAssertEqual(camera.lat, Camera.maxLat)
         XCTAssertEqual(camera.zoom, Camera.maxZoom)
     }
+
+    func testDecodesRepeatVisitsAndToleratesNewBadgeKinds() throws {
+        let decoder = JSONDecoder()
+        decoder.keyDecodingStrategy = .convertFromSnakeCase
+        let place = try decoder.decode(Place.self, from: Data("""
+            {"id":"p","name":"Kaito","lat":50.8,"lng":4.7,"address":null,"url":null,"countries":["JP"],
+             "distance_m":420,"visited_at":100,"verified":true,"visits":3,"last_visited_at":5000,
+             "last_checkin_id":42,"last_dish":"jp-ramen","next_check_in_at":48200}
+            """.utf8))
+        XCTAssertEqual(place.visits, 3)
+        XCTAssertEqual(place.lastCheckinId, 42)
+        XCTAssertTrue(place.isRecent(at: Date(timeIntervalSince1970: 6000)))
+        XCTAssertFalse(place.isRecent(at: Date(timeIntervalSince1970: 48200)))
+
+        let badges = try decoder.decode([Badge].self, from: Data("""
+            [{"id":"dish-1","kind":"dishes","title":"","description":"","progress":0,"target":1,"earned":false},
+             {"id":"x","kind":"something-new","title":"","description":"","progress":0,"target":1,"earned":false}]
+            """.utf8))
+        XCTAssertEqual(badges.map(\.kind), [.dishes, .other])
+    }
 }

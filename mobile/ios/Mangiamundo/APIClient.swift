@@ -42,6 +42,7 @@ actor APIClient {
         try decode(await request("GET", "/api/celebrations?\(area(lat, lng, radiusKm))&days=\(days)"))
     }
 
+    /// A new check-in; returning to a place counts again once the cooldown has passed.
     /// `here` is the device position, sent so the server can mark the visit as verified.
     func checkIn(placeID: String, here: (lat: Double, lng: Double)?) async throws -> VisitResult {
         var body: [String: Double] = [:]
@@ -49,11 +50,54 @@ actor APIClient {
             body = ["lat": here.lat, "lng": here.lng]
         }
         let data = try JSONSerialization.data(withJSONObject: body)
-        return try decode(await authed("PUT", "/api/visits/\(encode(placeID))", body: data))
+        return try decode(await authed("POST", "/api/visits/\(encode(placeID))", body: data))
     }
 
-    func undoCheckIn(placeID: String) async throws {
-        _ = try await authed("DELETE", "/api/visits/\(encode(placeID))")
+    /// Logs (or with nil, clears) the signature dish eaten at a check-in.
+    func setDish(checkinID: Int, dish: String?) async throws -> Profile {
+        let body: [String: Any] = ["dish": dish ?? NSNull()]
+        let data = try JSONSerialization.data(withJSONObject: body)
+        return try decode(await authed("PATCH", "/api/checkins/\(checkinID)", body: data))
+    }
+
+    func undoCheckIn(checkinID: Int) async throws {
+        _ = try await authed("DELETE", "/api/checkins/\(checkinID)")
+    }
+
+    private struct RecoveryCode: Decodable { let code: String }
+
+    func recoveryCode() async throws -> String {
+        let result: RecoveryCode = try decode(await authed("GET", "/api/session/recovery"))
+        return result.code
+    }
+
+    /// Replaces the recovery code; the old one stops working.
+    func rotateRecoveryCode() async throws -> String {
+        let result: RecoveryCode = try decode(await authed("POST", "/api/session/recovery"))
+        return result.code
+    }
+
+    /// Moves this device onto the passport behind a recovery code. What this device had
+    /// collected is merged in by the server. Returns how many check-ins came along.
+    func restore(code: String) async throws -> Int {
+        struct Restored: Decodable {
+            let token: String
+            let merged: Int
+        }
+        let body = try JSONSerialization.data(withJSONObject: ["code": code])
+        let current = defaults.string(forKey: Self.tokenKey)
+        let restored: Restored = try decode(await request("POST", "/api/session/restore", body: body, token: current))
+        defaults.set(restored.token, forKey: Self.tokenKey)
+        return restored.merged
+    }
+
+    /// The share card as PNG data, drawn by the server.
+    func shareCard(lat: Double, lng: Double, radiusKm: Int, place: String?, dark: Bool) async throws -> Data {
+        var path = "/api/share/card.png?\(area(lat, lng, radiusKm))&theme=\(dark ? "dark" : "light")"
+        if let place {
+            path += "&place=\(encode(place))"
+        }
+        return try await authed("GET", path)
     }
 
     func geocode(_ query: String) async throws -> [GeoResult] {

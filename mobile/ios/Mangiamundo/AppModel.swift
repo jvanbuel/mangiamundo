@@ -34,6 +34,9 @@ final class AppModel {
     /// 0 = countries, 1 = badges.
     var tab = 0
 
+    /// The recovery code once loaded for the backup sheet.
+    private(set) var recoveryCode: String?
+
     private(set) var projection = ProjectionKind.globe
     var camera = Camera()
     /// Short announcements (badges, discoveries, errors), newest last.
@@ -91,6 +94,10 @@ final class AppModel {
 
     func country(_ code: String) -> Country? {
         catalog?.countries.first { $0.code == code }
+    }
+
+    func dishes(of codes: [String]) -> [Dish] {
+        catalog?.dishes(of: codes) ?? []
     }
 
     func setProjection(_ kind: ProjectionKind) {
@@ -236,39 +243,129 @@ final class AppModel {
         }
     }
 
-    func toggleVisit(_ place: Place) async {
+    private func replace(_ place: Place) {
+        if let index = places.firstIndex(where: { $0.id == place.id }) {
+            places[index] = place
+        }
+    }
+
+    /// Runs a change to one place, then rereads progress and announces what it unlocked.
+    private func change(_ place: Place, _ action: () async throws -> Place?) async {
         guard let before = discover, let here = location, busyPlace == nil else { return }
         busyPlace = place.id
         defer { busyPlace = nil }
         do {
-            var updated = place
-            if !place.visited {
-                var position: (lat: Double, lng: Double)?
-                if let fix = gpsFix, Date().timeIntervalSince(fix.at) < 600 {
-                    position = (fix.lat, fix.lng)
-                }
-                let result = try await api.checkIn(placeID: place.id, here: position)
-                updated.visitedAt = Int(Date().timeIntervalSince1970)
-                updated.verified = result.verified
-            } else {
-                try await api.undoCheckIn(placeID: place.id)
-                updated.visitedAt = nil
-                updated.verified = false
-            }
-            if let index = places.firstIndex(where: { $0.id == place.id }) {
-                places[index] = updated
-            }
+            let updated = try await action()
+            if let updated { replace(updated) }
             let after = try await api.discover(lat: here.lat, lng: here.lng, radiusKm: radiusKm)
             discover = after
-            if updated.visited { celebrate(before: before, after: after, place: updated) }
+            celebrate(before: before, after: after, place: updated)
         } catch {
             toast("That did not work: \(error.localizedDescription)")
         }
     }
 
+    /// Checks in at a place: the first visit, or a return once the cooldown has passed.
+    func checkIn(_ place: Place) async {
+        await change(place) {
+            var position: (lat: Double, lng: Double)?
+            if let fix = gpsFix, Date().timeIntervalSince(fix.at) < 600 {
+                position = (fix.lat, fix.lng)
+            }
+            let result = try await api.checkIn(placeID: place.id, here: position)
+            let now = Int(Date().timeIntervalSince1970)
+            var updated = place
+            updated.visitedAt = place.visitedAt ?? now
+            updated.lastVisitedAt = now
+            updated.visits = place.visits + 1
+            updated.verified = place.verified || result.verified
+            updated.lastCheckinId = result.checkinId
+            updated.lastDish = nil
+            updated.nextCheckInAt = now + Rules.checkInCooldown
+            if updated.visits > 1 {
+                toast("Back at \(place.name): +\(Rules.xpPerVisit) XP. What did you have?")
+            }
+            return updated
+        }
+    }
+
+    /// Logs the dish eaten at the place's latest check-in; picking it again clears it.
+    func logDish(_ place: Place, _ dish: Dish) async {
+        guard let checkin = place.lastCheckinId else { return }
+        let chosen = place.lastDish == dish.id ? nil : dish.id
+        let isNew = chosen != nil && discover?.dishesTried.contains(dish.id) == false
+        await change(place) {
+            _ = try await api.setDish(checkinID: checkin, dish: chosen)
+            if isNew {
+                toast("\(country(dish.country)?.flag ?? "") \(dish.name) tasted: +\(Rules.xpPerDish) XP")
+            }
+            var updated = place
+            updated.lastDish = chosen
+            return updated
+        }
+    }
+
+    /// Takes back the place's latest check-in.
+    func undoCheckIn(_ place: Place) async {
+        guard let checkin = place.lastCheckinId, let here = location else { return }
+        let code = selected
+        await change(place) {
+            try await api.undoCheckIn(checkinID: checkin)
+            // The server knows what the previous check-in was; ask for the place again.
+            guard let code else { return nil }
+            let fresh = try await api.places(lat: here.lat, lng: here.lng, radiusKm: radiusKm, country: code)
+            return fresh.first { $0.id == place.id }
+        }
+    }
+
+    func loadRecoveryCode() async {
+        guard recoveryCode == nil else { return }
+        do {
+            recoveryCode = try await api.recoveryCode()
+        } catch {
+            toast("Could not load your code: \(error.localizedDescription)")
+        }
+    }
+
+    func rotateRecoveryCode() async {
+        do {
+            recoveryCode = try await api.rotateRecoveryCode()
+        } catch {
+            toast("Could not make a new code: \(error.localizedDescription)")
+        }
+    }
+
+    /// Switches this device to the passport behind a recovery code.
+    func restore(code: String) async -> Bool {
+        do {
+            let merged = try await api.restore(code: code)
+            recoveryCode = nil
+            select(nil)
+            refresh()
+            toast(merged > 0 ? "Passport restored. \(merged) check-ins from this phone came along." : "Passport restored. Welcome back.")
+            return true
+        } catch let error as APIError where error.status == 404 {
+            toast("That code does not match a passport.")
+        } catch {
+            toast("Could not restore: \(error.localizedDescription)")
+        }
+        return false
+    }
+
+    /// The share card for the current place, as PNG data.
+    func shareCard(dark: Bool) async -> Data? {
+        guard let here = location else { return nil }
+        do {
+            return try await api.shareCard(lat: here.lat, lng: here.lng, radiusKm: radiusKm, place: here.name, dark: dark)
+        } catch {
+            toast("Could not draw the card: \(error.localizedDescription)")
+            return nil
+        }
+    }
+
     /// Announces everything a check-in unlocked by comparing progress before and after.
-    private func celebrate(before: Discover, after: Discover, place: Place) {
-        for code in place.countries {
+    private func celebrate(before: Discover, after: Discover, place: Place?) {
+        for code in place?.countries ?? [] {
             guard let was = before.countries.first(where: { $0.code == code }),
                   let now = after.countries.first(where: { $0.code == code }),
                   let info = country(code) else { continue }
