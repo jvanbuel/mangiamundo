@@ -6,7 +6,7 @@ primary_region = "ams"
 
 # SQLite lives here, including the generated VAPID key, so it must survive deploys.
 [mounts]
-  source = "mangiamundo_data"
+  source = "data"
   destination = "/data"
 
 [http_service]
