@@ -1,4 +1,9 @@
-# Mangiamundo
+<h1>
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/logo-dark.svg">
+    <img src="docs/logo.svg" alt="Mangiamundo: eat the world, start with your city" width="440">
+  </picture>
+</h1>
 
 Eat your way around the world without leaving your city. Mangiamundo shows a world
 map (flat or as a 3D globe) where every country whose cuisine you can eat nearby
