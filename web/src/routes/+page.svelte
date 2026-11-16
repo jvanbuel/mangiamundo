@@ -84,7 +84,7 @@
 
 	<aside>
 		<header>
-			<h1><img src="/icon.svg" alt="" width="34" height="34" />Mangia<span>mundo</span></h1>
+			<h1><img src="/icon.svg" alt="" width="32" height="32" />Mangiamundo</h1>
 			{#if app.location}
 				<button class="where" aria-expanded={pickerOpen} onclick={() => (pickerOpen = !pickerOpen)}>
 					<span aria-hidden="true">{app.location.source === 'gps' ? '◎' : '⌖'}</span>
@@ -174,8 +174,7 @@
 	}
 
 	h1 {
-		font-size: 28px;
-		letter-spacing: -0.01em;
+		font-size: 22px;
 	}
 
 	h1 {
@@ -186,11 +185,6 @@
 	h1 img {
 		margin-right: 10px;
 		border-radius: 9px;
-	}
-
-	h1 span {
-		color: var(--accent);
-		font-style: italic;
 	}
 
 	.where {
@@ -231,7 +225,7 @@
 	}
 
 	.card h2 {
-		font-size: 21px;
+		font-size: 18px;
 		margin-bottom: 6px;
 	}
 
@@ -240,8 +234,8 @@
 	}
 
 	.welcome h2 {
-		font-size: 24px;
-		line-height: 1.2;
+		font-size: 21px;
+		line-height: 1.25;
 	}
 
 	.pad {

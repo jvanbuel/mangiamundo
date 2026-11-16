@@ -27,10 +27,6 @@ enum Theme {
         case .completed: return completed
         }
     }
-
-    static func display(_ size: CGFloat, weight: Font.Weight = .semibold) -> Font {
-        .system(size: size, weight: weight, design: .serif)
-    }
 }
 
 extension Color {

@@ -1,4 +1,4 @@
-@import '@fontsource-variable/fraunces/index.css';
+@import '@fontsource-variable/schibsted-grotesk/index.css';
 @import 'maplibre-gl/dist/maplibre-gl.css';
 
 :root {
@@ -24,8 +24,7 @@
 	color-scheme: light;
 
 	--radius: 14px;
-	--display: 'Fraunces Variable', 'Iowan Old Style', Georgia, serif;
-	font-family: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+	font-family: 'Schibsted Grotesk Variable', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
 }
 
 /* Dark theme: by system preference unless light was chosen, or when chosen explicitly. */
@@ -92,8 +91,8 @@ body {
 h1,
 h2,
 h3 {
-	font-family: var(--display);
-	font-weight: 600;
+	font-weight: 700;
+	letter-spacing: -0.01em;
 	margin: 0;
 	text-wrap: balance;
 }

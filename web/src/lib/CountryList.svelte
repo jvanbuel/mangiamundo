@@ -46,12 +46,17 @@
 	h3 {
 		display: flex;
 		justify-content: space-between;
-		font-family: inherit;
-		font-size: 12px;
-		text-transform: uppercase;
-		letter-spacing: 0.08em;
-		color: var(--muted);
+		font-size: 15px;
+		font-weight: 700;
+		letter-spacing: 0;
 		padding: 0 8px 6px;
+	}
+
+	h3 span {
+		font-weight: 400;
+		font-size: 14px;
+		color: var(--muted);
+		font-variant-numeric: tabular-nums;
 	}
 
 	ul {

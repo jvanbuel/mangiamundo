@@ -76,7 +76,7 @@ struct ContentView: View {
             Card {
                 VStack(alignment: .leading, spacing: 10) {
                     Text("Eat your way around the world without leaving town.")
-                        .font(Theme.display(22))
+                        .font(.title3.bold())
                     Text("Tell us where you are and we will light up every country whose kitchen you can visit nearby.")
                         .foregroundStyle(Theme.muted)
                     LocationPicker(onDone: {})

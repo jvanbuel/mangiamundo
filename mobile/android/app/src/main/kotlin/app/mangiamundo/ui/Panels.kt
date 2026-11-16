@@ -22,6 +22,8 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.Button
+import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.OutlinedButton
@@ -43,10 +45,9 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.buildAnnotatedString
-import androidx.compose.ui.text.font.FontFamily
-import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
@@ -126,16 +127,7 @@ fun Legend(modifier: Modifier = Modifier) {
 fun Header(location: SavedLocation?, radiusKm: Int, onChange: () -> Unit) {
     val colors = LocalAppColors.current
     Column(Modifier.padding(bottom = 6.dp)) {
-        Text(
-            buildAnnotatedString {
-                append("Mangia")
-                withStyle(SpanStyle(color = colors.accent, fontStyle = FontStyle.Italic)) { append("mundo") }
-            },
-            fontFamily = FontFamily.Serif,
-            fontWeight = FontWeight.SemiBold,
-            fontSize = 28.sp,
-            color = colors.text,
-        )
+        Text("Mangiamundo", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold, color = colors.text)
         if (location != null) {
             Row(
                 Modifier
@@ -170,9 +162,8 @@ fun Welcome(picker: @Composable () -> Unit) {
         Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
             Text(
                 "Eat your way around the world without leaving town.",
-                fontFamily = FontFamily.Serif,
-                fontWeight = FontWeight.SemiBold,
-                fontSize = 22.sp,
+                style = MaterialTheme.typography.titleLarge,
+                fontWeight = FontWeight.Bold,
                 color = colors.text,
             )
             Text(
@@ -276,64 +267,67 @@ fun LocationPicker(vm: AppViewModel, onUseGps: () -> Unit, onDone: () -> Unit) {
 }
 
 @Composable
+private fun StatRow(label: String, value: Int, total: Int? = null) {
+    val colors = LocalAppColors.current
+    Row(verticalAlignment = Alignment.Bottom) {
+        Text(label, style = MaterialTheme.typography.titleSmall, color = colors.text, modifier = Modifier.weight(1f))
+        Text(
+            buildAnnotatedString {
+                withStyle(SpanStyle(fontWeight = FontWeight.SemiBold, color = colors.text)) { append("$value") }
+                if (total != null) append(" of $total")
+            },
+            style = MaterialTheme.typography.bodyMedium,
+            color = colors.muted,
+        )
+    }
+}
+
+@Composable
 fun Passport(discover: Discover) {
     val colors = LocalAppColors.current
     val profile = discover.profile
     Card {
-        Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Box(
-                    Modifier.size(40.dp).border(2.dp, colors.accent, CircleShape),
-                    contentAlignment = Alignment.Center,
-                ) {
-                    Text("${profile.level}", color = colors.accent, fontFamily = FontFamily.Serif, fontWeight = FontWeight.Bold, fontSize = 18.sp)
+        Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
+            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                Row(verticalAlignment = Alignment.Bottom) {
+                    Text("Level ${profile.level}", style = MaterialTheme.typography.titleSmall, color = colors.text, modifier = Modifier.weight(1f))
+                    Text("${profile.xp} / ${profile.nextLevelXp} XP", style = MaterialTheme.typography.bodyMedium, color = colors.muted)
                 }
-                Column(Modifier.padding(start = 12.dp).weight(1f), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                    Row {
-                        Text("Level ${profile.level}", fontWeight = FontWeight.SemiBold, fontSize = 13.sp, color = colors.text)
-                        Spacer(Modifier.weight(1f))
-                        Text("${profile.xp} / ${profile.nextLevelXp} XP", fontSize = 13.sp, color = colors.muted)
-                    }
-                    Bar(fraction(profile.xp - profile.levelXp, profile.nextLevelXp - profile.levelXp), Modifier.fillMaxWidth())
+                Bar(fraction(profile.xp - profile.levelXp, profile.nextLevelXp - profile.levelXp), Modifier.fillMaxWidth())
+            }
+            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                StatRow("Countries tasted", discover.world.discovered, discover.world.available)
+                Bar(fraction(discover.world.discovered, discover.world.available), Modifier.fillMaxWidth())
+            }
+            HorizontalDivider(color = colors.line)
+            Row {
+                Column(Modifier.weight(1f)) {
+                    Text("Places visited", style = MaterialTheme.typography.bodySmall, color = colors.muted)
+                    Text("${discover.placesVisited} of ${discover.places}", style = MaterialTheme.typography.titleSmall, color = colors.text)
+                }
+                Column(Modifier.weight(1f)) {
+                    Text("Countries completed", style = MaterialTheme.typography.bodySmall, color = colors.muted)
+                    Text("${discover.world.completed}", style = MaterialTheme.typography.titleSmall, color = colors.text)
                 }
             }
-
-            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                Text("THE WORLD IN YOUR CITY", fontSize = 12.sp, letterSpacing = 1.sp, color = colors.muted)
-                Text(
-                    buildAnnotatedString {
-                        withStyle(SpanStyle(color = colors.accent, fontWeight = FontWeight.Bold, fontSize = 30.sp)) {
-                            append("${discover.world.discovered}")
-                        }
-                        append(" of ${discover.world.available} countries tasted")
-                    },
-                    fontFamily = FontFamily.Serif,
-                    fontSize = 19.sp,
-                    color = colors.text,
-                )
-                Bar(fraction(discover.world.discovered, discover.world.available), Modifier.fillMaxWidth().height(8.dp))
-                val completed = discover.world.completed
-                Text(
-                    "${discover.placesVisited} of ${discover.places} places visited · $completed " +
-                        (if (completed == 1) "country" else "countries") + " completed",
-                    fontSize = 13.sp,
-                    color = colors.muted,
-                )
-            }
-
-            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            HorizontalDivider(color = colors.line)
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 for (continent in discover.continents) {
-                    Row(
-                        Modifier.alpha(if (continent.available == 0) 0.5f else 1f),
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        Text(continent.name, fontSize = 13.sp, color = colors.text, modifier = Modifier.width(112.dp))
+                    val empty = continent.available == 0
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(
+                            continent.name,
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = if (empty) colors.muted else colors.text,
+                            modifier = Modifier.width(112.dp),
+                        )
                         Bar(fraction(continent.discovered, continent.available), Modifier.weight(1f))
                         Text(
-                            if (continent.available == 0) "—" else "${continent.discovered}/${continent.available}",
-                            fontSize = 13.sp,
+                            if (empty) "–" else "${continent.discovered}/${continent.available}",
+                            style = MaterialTheme.typography.bodyMedium,
                             color = colors.muted,
-                            modifier = Modifier.padding(start = 10.dp),
+                            modifier = Modifier.width(44.dp),
+                            textAlign = TextAlign.End,
                         )
                     }
                 }
@@ -346,9 +340,9 @@ fun Passport(discover: Discover) {
 fun ContinentHeader(continent: GroupProgress) {
     val colors = LocalAppColors.current
     Row(Modifier.fillMaxWidth().padding(top = 16.dp, bottom = 4.dp, start = 8.dp, end = 8.dp)) {
-        Text(continent.name.uppercase(), fontSize = 12.sp, letterSpacing = 1.sp, color = colors.muted)
+        Text(continent.name, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold, color = colors.text)
         Spacer(Modifier.weight(1f))
-        Text("${continent.discovered}/${continent.available}", fontSize = 12.sp, color = colors.muted)
+        Text("${continent.discovered}/${continent.available}", style = MaterialTheme.typography.bodyMedium, color = colors.muted)
     }
 }
 
@@ -378,7 +372,7 @@ fun CountryHeader(progress: CountryProgress, info: Country?, onBack: () -> Unit)
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text(info?.flag.orEmpty(), fontSize = 44.sp)
             Column(Modifier.padding(start = 14.dp)) {
-                Text(info?.name ?: progress.code, fontFamily = FontFamily.Serif, fontWeight = FontWeight.SemiBold, fontSize = 26.sp, color = colors.text)
+                Text(info?.name ?: progress.code, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold, color = colors.text)
                 Text(
                     if (progress.status == Status.COMPLETED) {
                         "Completed · all ${progress.places} visited"

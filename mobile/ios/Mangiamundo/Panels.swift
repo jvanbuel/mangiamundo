@@ -88,8 +88,8 @@ struct Header: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
-            (Text("Mangia") + Text("mundo").italic().foregroundColor(Theme.accent))
-                .font(Theme.display(28))
+            Text("Mangiamundo")
+                .font(.title2.bold())
             if let location = model.location {
                 Button(action: onChange) {
                     HStack(spacing: 6) {
@@ -212,54 +212,62 @@ struct Passport: View {
         let profile = discover.profile
         Card {
             VStack(alignment: .leading, spacing: 14) {
-                HStack(spacing: 12) {
-                    Text("\(profile.level)")
-                        .font(Theme.display(18, weight: .bold))
-                        .foregroundStyle(Theme.accent)
-                        .frame(width: 40, height: 40)
-                        .overlay(Circle().stroke(Theme.accent, lineWidth: 2))
-                    VStack(spacing: 6) {
-                        HStack {
-                            Text("Level \(profile.level)").fontWeight(.semibold)
-                            Spacer()
-                            Text("\(profile.xp) / \(profile.nextLevelXp) XP").foregroundStyle(Theme.muted)
-                        }
-                        .font(.footnote)
-                        Bar(part: profile.xp - profile.levelXp, whole: profile.nextLevelXp - profile.levelXp)
+                VStack(spacing: 6) {
+                    HStack(alignment: .firstTextBaseline) {
+                        Text("Level \(profile.level)").font(.subheadline.weight(.semibold))
+                        Spacer()
+                        Text("\(profile.xp) / \(profile.nextLevelXp) XP")
+                            .font(.subheadline)
+                            .monospacedDigit()
+                            .foregroundStyle(Theme.muted)
                     }
+                    Bar(part: profile.xp - profile.levelXp, whole: profile.nextLevelXp - profile.levelXp)
                 }
 
-                VStack(alignment: .leading, spacing: 6) {
-                    Text("THE WORLD IN YOUR CITY")
-                        .font(.caption)
-                        .kerning(1)
-                        .foregroundStyle(Theme.muted)
-                    (Text("\(discover.world.discovered)")
-                        .font(Theme.display(30, weight: .bold))
-                        .foregroundColor(Theme.accent)
-                        + Text(" of \(discover.world.available) countries tasted").font(Theme.display(19, weight: .regular)))
-                    Bar(part: discover.world.discovered, whole: discover.world.available, height: 8)
-                    Text("\(discover.placesVisited) of \(discover.places) places visited · \(discover.world.completed) \(discover.world.completed == 1 ? "country" : "countries") completed")
-                        .font(.footnote)
-                        .foregroundStyle(Theme.muted)
+                VStack(spacing: 6) {
+                    HStack(alignment: .firstTextBaseline) {
+                        Text("Countries tasted").font(.subheadline.weight(.semibold))
+                        Spacer()
+                        (Text("\(discover.world.discovered)").fontWeight(.semibold)
+                            + Text(" of \(discover.world.available)").foregroundColor(Theme.muted))
+                            .font(.subheadline)
+                            .monospacedDigit()
+                    }
+                    Bar(part: discover.world.discovered, whole: discover.world.available)
                 }
 
-                VStack(spacing: 7) {
+                Divider().overlay(Theme.line)
+                HStack(alignment: .top) {
+                    stat("Places visited", "\(discover.placesVisited) of \(discover.places)")
+                    stat("Countries completed", "\(discover.world.completed)")
+                }
+                Divider().overlay(Theme.line)
+
+                VStack(spacing: 8) {
                     ForEach(discover.continents) { continent in
+                        let empty = continent.available == 0
                         HStack(spacing: 10) {
                             Text(continent.name).frame(width: 112, alignment: .leading)
                             Bar(part: continent.discovered, whole: continent.available)
-                            Text(continent.available == 0 ? "—" : "\(continent.discovered)/\(continent.available)")
+                            Text(empty ? "–" : "\(continent.discovered)/\(continent.available)")
                                 .monospacedDigit()
                                 .foregroundStyle(Theme.muted)
                                 .frame(width: 40, alignment: .trailing)
                         }
-                        .font(.footnote)
-                        .opacity(continent.available == 0 ? 0.5 : 1)
+                        .font(.subheadline)
+                        .foregroundStyle(empty ? Theme.muted : Theme.text)
                     }
                 }
             }
         }
+    }
+
+    private func stat(_ label: String, _ value: String) -> some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text(label).font(.footnote).foregroundStyle(Theme.muted)
+            Text(value).font(.subheadline.weight(.semibold)).monospacedDigit()
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 }
 
@@ -271,12 +279,13 @@ struct CountryList: View {
         ForEach(discover.continents.filter { $0.available > 0 }) { continent in
             VStack(alignment: .leading, spacing: 0) {
                 HStack {
-                    Text(continent.name.uppercased()).kerning(1)
+                    Text(continent.name).font(.headline)
                     Spacer()
                     Text("\(continent.discovered)/\(continent.available)")
+                        .font(.subheadline)
+                        .monospacedDigit()
+                        .foregroundStyle(Theme.muted)
                 }
-                .font(.caption)
-                .foregroundStyle(Theme.muted)
                 .padding(.horizontal, 8)
                 .padding(.bottom, 4)
 
@@ -326,7 +335,7 @@ struct CountryDetail: View {
             HStack(spacing: 14) {
                 Text(info?.flag ?? "").font(.system(size: 44))
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(info?.name ?? progress.code).font(Theme.display(26))
+                    Text(info?.name ?? progress.code).font(.title2.bold())
                     Text(summary).font(.footnote).foregroundStyle(Theme.muted)
                 }
             }
