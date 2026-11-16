@@ -30,7 +30,6 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -42,6 +41,9 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import app.mangiamundo.AppViewModel
 import app.mangiamundo.DeviceLocation
+import app.mangiamundo.Notifications
+import android.Manifest
+import android.os.Build
 import app.mangiamundo.core.ProjectionKind
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -51,7 +53,6 @@ fun AppScreen(vm: AppViewModel = viewModel()) {
     val context = LocalContext.current
     val snackbar = remember { SnackbarHostState() }
     var pickerOpen by rememberSaveable { mutableStateOf(false) }
-    var tab by rememberSaveable { mutableIntStateOf(0) }
 
     LaunchedEffect(Unit) {
         vm.messages.collect { snackbar.showSnackbar(it) }
@@ -61,6 +62,17 @@ fun AppScreen(vm: AppViewModel = viewModel()) {
         ActivityResultContracts.RequestMultiplePermissions(),
     ) { granted ->
         if (granted.values.any { it }) vm.locate() else vm.locationDenied()
+    }
+    val notifications = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+        vm.setReminders(granted)
+    }
+    val toggleReminders = {
+        when {
+            vm.remindersOn -> vm.setReminders(false)
+            Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU && !Notifications.allowed(context) ->
+                notifications.launch(Manifest.permission.POST_NOTIFICATIONS)
+            else -> vm.setReminders(true)
+        }
     }
     val useGps = {
         if (DeviceLocation.hasPermission(context)) vm.locate() else permission.launch(DeviceLocation.PERMISSIONS)
@@ -137,6 +149,9 @@ fun AppScreen(vm: AppViewModel = viewModel()) {
                     }
                     else -> {
                         item { Passport(discover) }
+                        if (selected == null && vm.celebrations.isNotEmpty()) {
+                            item { ComingUp(vm.celebrations, vm.remindersOn, toggleReminders, vm::country, onOpen = vm::select) }
+                        }
                         if (selected != null) {
                             item { CountryHeader(selected, vm.country(selected.code), onBack = { vm.select(null) }) }
                             if (vm.placesLoading) item { Note("Loading places…") }
@@ -145,13 +160,13 @@ fun AppScreen(vm: AppViewModel = viewModel()) {
                             }
                         } else {
                             item {
-                                TabRow(selectedTabIndex = tab, containerColor = colors.panel) {
-                                    Tab(tab == 0, { tab = 0 }, text = { Text("Countries ${discover.world.available}") })
+                                TabRow(selectedTabIndex = vm.tab, containerColor = colors.panel) {
+                                    Tab(vm.tab == 0, { vm.tab = 0 }, text = { Text("Countries ${discover.world.available}") })
                                     val earned = discover.badges.count { it.earned }
-                                    Tab(tab == 1, { tab = 1 }, text = { Text("Badges $earned/${discover.badges.size}") })
+                                    Tab(vm.tab == 1, { vm.tab = 1 }, text = { Text("Badges $earned/${discover.badges.size}") })
                                 }
                             }
-                            if (tab == 0) {
+                            if (vm.tab == 0) {
                                 for (continent in discover.continents.filter { it.available > 0 }) {
                                     item(key = "c-${continent.code}") { ContinentHeader(continent) }
                                     val rows = discover.countries
@@ -162,7 +177,7 @@ fun AppScreen(vm: AppViewModel = viewModel()) {
                                     }
                                 }
                             } else {
-                                item(key = "badges") { BadgeGrid(discover.badges) }
+                                item(key = "badges") { BadgeGrid(discover.badges, discover.events) }
                             }
                         }
                     }

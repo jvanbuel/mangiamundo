@@ -25,7 +25,10 @@ import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
+import androidx.compose.material.icons.rounded.Celebration
 import androidx.compose.material.icons.rounded.Check
+import androidx.compose.material.icons.rounded.Notifications
+import androidx.compose.material.icons.rounded.NotificationsActive
 import androidx.compose.material.icons.rounded.EmojiEvents
 import androidx.compose.material.icons.rounded.Flag
 import androidx.compose.material.icons.rounded.Map
@@ -74,6 +77,9 @@ import app.mangiamundo.AppViewModel
 import app.mangiamundo.SavedLocation
 import app.mangiamundo.core.Badge
 import app.mangiamundo.core.BadgeKind
+import app.mangiamundo.core.Celebration
+import app.mangiamundo.core.EventProgress
+import app.mangiamundo.core.EventStatus
 import app.mangiamundo.core.Country
 import app.mangiamundo.core.CountryProgress
 import app.mangiamundo.core.Discover
@@ -181,6 +187,7 @@ fun Header(location: SavedLocation?, radiusKm: Int, onChange: () -> Unit) {
     val colors = LocalAppColors.current
     Column(Modifier.padding(bottom = 6.dp)) {
         Text("Mangiamundo", style = MaterialTheme.typography.titleLarge, color = colors.text)
+        Text("Eat the world, start with your city", style = MaterialTheme.typography.titleSmall, color = colors.muted)
         if (location != null) {
             Row(
                 Modifier
@@ -220,7 +227,7 @@ fun Welcome(picker: @Composable () -> Unit) {
     Card {
         Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
             Text(
-                "Eat your way around the world without leaving town.",
+                "Which of the world's kitchens are near you?",
                 style = MaterialTheme.typography.titleLarge,
                 color = colors.text,
             )
@@ -516,9 +523,9 @@ private fun BadgeKind.color(): Color = with(LocalAppColors.current) {
 
 /** A solid token with a darker lower edge, so it reads as something you collect. */
 @Composable
-fun Medal(kind: BadgeKind, earned: Boolean, size: Dp = 64.dp) {
+private fun MedalFace(icon: ImageVector, color: Color, earned: Boolean, size: Dp) {
     val colors = LocalAppColors.current
-    val face = if (earned) kind.color() else colors.line
+    val face = if (earned) color else colors.line
     Box(
         Modifier
             .size(size)
@@ -529,27 +536,168 @@ fun Medal(kind: BadgeKind, earned: Boolean, size: Dp = 64.dp) {
             .background(face),
         contentAlignment = Alignment.Center,
     ) {
-        Icon(kind.icon(), contentDescription = null, tint = if (earned) Color.White else colors.muted, modifier = Modifier.size(size * 0.46f))
+        Icon(icon, contentDescription = null, tint = if (earned) Color.White else colors.muted, modifier = Modifier.size(size * 0.46f))
     }
 }
 
+@Composable
+fun Medal(kind: BadgeKind, earned: Boolean, size: Dp = 64.dp) = MedalFace(kind.icon(), kind.color(), earned, size)
+
+/** The medal of a limited-time event. */
+@Composable
+fun EventMedal(earned: Boolean, size: Dp = 64.dp) = MedalFace(Icons.Rounded.Celebration, LocalAppColors.current.event, earned, size)
+
+private fun parseDay(day: String) = java.time.LocalDate.parse(day)
+private val shortDate = java.time.format.DateTimeFormatter.ofPattern("d MMM")
+
+@Composable
+fun ComingUp(
+    celebrations: List<Celebration>,
+    remindersOn: Boolean,
+    onToggleReminders: () -> Unit,
+    country: (String) -> Country?,
+    onOpen: (String) -> Unit,
+    today: java.time.LocalDate = java.time.LocalDate.now(),
+) {
+    val colors = LocalAppColors.current
+    Card {
+        Column {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text("Coming up", style = MaterialTheme.typography.titleLarge, color = colors.text, modifier = Modifier.weight(1f))
+                FilterChip(
+                    selected = remindersOn,
+                    onClick = onToggleReminders,
+                    label = { Text(if (remindersOn) "Reminders on" else "Remind me") },
+                    leadingIcon = {
+                        Icon(
+                            if (remindersOn) Icons.Rounded.NotificationsActive else Icons.Rounded.Notifications,
+                            contentDescription = null,
+                            modifier = Modifier.size(18.dp),
+                        )
+                    },
+                )
+            }
+            for ((index, c) in celebrations.take(4).withIndex()) {
+                if (index > 0) HorizontalDivider(color = colors.line)
+                val starts = parseDay(c.starts)
+                val days = java.time.temporal.ChronoUnit.DAYS.between(today, starts)
+                val whenText = when {
+                    days <= 0 -> if (parseDay(c.ends).isAfter(today)) "On now" else "Today"
+                    days == 1L -> "Tomorrow"
+                    else -> "In $days days"
+                }
+                val total = c.nearby.sumOf { it.places }
+                val flags = c.nearby.joinToString(" ") { country(it.code)?.flag.orEmpty() }
+                Row(
+                    Modifier
+                        .fillMaxWidth()
+                        .clickable { c.nearby.firstOrNull()?.let { onOpen(it.code) } }
+                        .padding(vertical = 10.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    CalendarPage(starts)
+                    Column(Modifier.padding(start = 12.dp)) {
+                        Text(c.title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.ExtraBold, color = colors.text)
+                        Text(
+                            "$whenText${if (c.approximate) " (date may shift)" else ""} · $flags $total ${if (total == 1) "place" else "places"} nearby",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = colors.muted,
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+/** A little tear-off calendar page. */
+@Composable
+private fun CalendarPage(day: java.time.LocalDate) {
+    val colors = LocalAppColors.current
+    val shape = RoundedCornerShape(10.dp)
+    Column(
+        Modifier
+            .width(48.dp)
+            .clip(shape)
+            .background(colors.line)
+            .padding(start = 2.dp, top = 2.dp, end = 2.dp, bottom = 3.dp)
+            .clip(RoundedCornerShape(8.dp))
+            .background(colors.panel),
+        horizontalAlignment = Alignment.CenterHorizontally,
+    ) {
+        Text(
+            day.format(java.time.format.DateTimeFormatter.ofPattern("MMM")).uppercase(),
+            style = MaterialTheme.typography.labelSmall,
+            color = Color.White,
+            textAlign = TextAlign.Center,
+            modifier = Modifier.fillMaxWidth().background(colors.event).padding(vertical = 1.dp),
+        )
+        Text("${day.dayOfMonth}", style = MaterialTheme.typography.titleLarge, color = colors.text)
+    }
+}
+
+@Composable
+private fun LimitedTime(events: List<EventProgress>, today: java.time.LocalDate) {
+    val colors = LocalAppColors.current
+    Column(Modifier.padding(top = 12.dp, bottom = 8.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        Text("Limited time", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Black, color = colors.text)
+        for (e in events) {
+            val timing = if (e.status == EventStatus.UPCOMING) {
+                "Starts ${parseDay(e.starts).format(shortDate)}"
+            } else {
+                val left = java.time.temporal.ChronoUnit.DAYS.between(today, parseDay(e.ends))
+                if (left <= 0) "Last day" else "${left + 1} days left"
+            }
+            Row(verticalAlignment = Alignment.Top) {
+                EventMedal(earned = e.status == EventStatus.ACTIVE, size = 52.dp)
+                Column(Modifier.padding(start = 12.dp).weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(e.title, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.ExtraBold, color = colors.text, modifier = Modifier.weight(1f))
+                        Text(
+                            timing,
+                            style = MaterialTheme.typography.labelMedium,
+                            color = colors.event,
+                            modifier = Modifier.clip(RoundedCornerShape(50)).background(colors.event.copy(alpha = 0.16f)).padding(horizontal = 8.dp, vertical = 2.dp),
+                        )
+                    }
+                    Text(e.description, style = MaterialTheme.typography.bodySmall, color = colors.muted)
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Bar(fraction(e.progress, e.target), Modifier.weight(1f), color = colors.event)
+                        Text("  ${e.progress} / ${e.target}", style = MaterialTheme.typography.bodySmall, color = colors.muted)
+                    }
+                    if (e.placesNearby == 0) Text("No places nearby for this one yet.", style = MaterialTheme.typography.bodySmall, color = colors.muted)
+                }
+            }
+        }
+    }
+}
+
+private class Tile(val key: String, val title: String, val detail: String, val medal: @Composable () -> Unit)
+
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-fun BadgeGrid(badges: List<Badge>) {
+fun BadgeGrid(badges: List<Badge>, events: List<EventProgress> = emptyList(), today: java.time.LocalDate = java.time.LocalDate.now()) {
     val colors = LocalAppColors.current
+    val running = events.filter { it.status != EventStatus.ENDED && !it.earned }
+    if (running.isNotEmpty()) LimitedTime(running, today)
+    val tiles = events.filter { it.earned }.map { e ->
+        Tile(e.id, e.title, "${parseDay(e.starts).format(shortDate)} – ${parseDay(e.ends).format(shortDate)}") { EventMedal(earned = true) }
+    } + badges.sortedByDescending { it.earned }.map { b ->
+        Tile(b.id, b.title, if (b.earned) "Earned" else "${b.progress} / ${b.target}") { Medal(b.kind, b.earned) }
+    }
     FlowRow(
         Modifier.fillMaxWidth().padding(top = 12.dp),
         maxItemsInEachRow = 3,
         verticalArrangement = Arrangement.spacedBy(20.dp),
     ) {
-        for (badge in badges.sortedByDescending { it.earned }) {
+        for (tile in tiles) {
             Column(
                 Modifier.weight(1f).semantics(mergeDescendants = true) {},
                 horizontalAlignment = Alignment.CenterHorizontally,
             ) {
-                Medal(badge.kind, badge.earned)
+                tile.medal()
                 Text(
-                    badge.title,
+                    tile.title,
                     style = MaterialTheme.typography.titleSmall,
                     fontWeight = FontWeight.ExtraBold,
                     color = colors.text,
@@ -557,13 +705,13 @@ fun BadgeGrid(badges: List<Badge>) {
                     modifier = Modifier.padding(top = 8.dp, start = 4.dp, end = 4.dp),
                 )
                 Text(
-                    if (badge.earned) "Earned" else "${badge.progress} / ${badge.target}",
+                    tile.detail,
                     style = MaterialTheme.typography.bodySmall,
                     color = colors.muted,
                 )
             }
         }
         // Keep the last row's medals the same width as the others.
-        repeat((3 - badges.size % 3) % 3) { Spacer(Modifier.weight(1f)) }
+        repeat((3 - tiles.size % 3) % 3) { Spacer(Modifier.weight(1f)) }
     }
 }

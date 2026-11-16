@@ -32,6 +32,8 @@ data class AppColors(
     val discovered: Color,
     val completed: Color,
     val onCompleted: Color,
+    /** Limited-time events and celebrations. */
+    val event: Color,
 )
 
 val LightColors = AppColors(
@@ -50,6 +52,7 @@ val LightColors = AppColors(
     discovered = Color(0xFFC98508),
     completed = Color(0xFF3DA35A),
     onCompleted = Color(0xFF0B2A14),
+    event = Color(0xFFC2417A),
 )
 
 val DarkColors = AppColors(
@@ -68,6 +71,7 @@ val DarkColors = AppColors(
     discovered = Color(0xFFF2B53D),
     completed = Color(0xFF54B96F),
     onCompleted = Color(0xFF06210F),
+    event = Color(0xFFE46A9F),
 )
 
 val LocalAppColors = staticCompositionLocalOf { LightColors }

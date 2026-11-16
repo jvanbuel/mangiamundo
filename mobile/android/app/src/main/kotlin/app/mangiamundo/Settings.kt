@@ -16,6 +16,11 @@ class Settings(context: Context) : TokenStore {
         get() = prefs.getString("token", null)
         set(value) = prefs.edit { putString("token", value) }
 
+    /** The user asked for celebration reminders. */
+    var remindersOn: Boolean
+        get() = prefs.getBoolean("reminders", false)
+        set(value) = prefs.edit { putBoolean("reminders", value) }
+
     var radiusKm: Int
         get() = prefs.getInt("radius", 10)
         set(value) = prefs.edit { putInt("radius", value) }

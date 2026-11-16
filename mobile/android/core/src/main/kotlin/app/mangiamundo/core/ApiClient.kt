@@ -30,6 +30,9 @@ class ApiClient(private val baseUrl: String, private val tokens: TokenStore) {
     suspend fun places(lat: Double, lng: Double, radiusKm: Int, country: String): List<Place> =
         json.decodeFromString(authed("GET", "/api/places?${area(lat, lng, radiusKm)}&country=$country"))
 
+    suspend fun celebrations(lat: Double, lng: Double, radiusKm: Int, days: Int = 60): List<Celebration> =
+        json.decodeFromString(request("GET", "/api/celebrations?${area(lat, lng, radiusKm)}&days=$days"))
+
     /** `here` is the device position, sent so the server can mark the visit as verified. */
     suspend fun checkIn(placeId: String, here: Pair<Double, Double>?): VisitResult {
         val body = json.encodeToString(CheckInBody.serializer(), CheckInBody(here?.first, here?.second))

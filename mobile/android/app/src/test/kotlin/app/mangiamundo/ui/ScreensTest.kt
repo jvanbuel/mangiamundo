@@ -16,7 +16,13 @@ import app.mangiamundo.SavedLocation
 import app.mangiamundo.core.Badge
 import app.mangiamundo.core.BadgeKind
 import app.mangiamundo.core.Camera
+import app.mangiamundo.core.Celebration
 import app.mangiamundo.core.Country
+import app.mangiamundo.core.EventProgress
+import app.mangiamundo.core.EventStatus
+import app.mangiamundo.core.NearbyCountry
+import app.mangiamundo.core.Reminder
+import java.time.LocalDate
 import app.mangiamundo.core.CountryProgress
 import app.mangiamundo.core.Discover
 import app.mangiamundo.core.GroupProgress
@@ -124,6 +130,29 @@ class ScreensTest {
             PlaceRow(Place("b", "Ramen Bar Ichi", 50.87, 4.71, "Bondgenotenlaan 40", null, listOf("JP"), 1250, 1, false), busy = false) {}
             PlaceRow(Place("c", "Izakaya Kumo", 50.86, 4.69, null, null, listOf("JP"), 3400), busy = false) {}
             BadgeGrid(discover.badges)
+        }
+    }
+
+    private val today = LocalDate.of(2026, 11, 16)
+    private fun day(offset: Long) = today.plusDays(offset).toString()
+
+    private val celebrations = listOf(
+        Celebration("thanksgiving", "Thanksgiving", "", listOf("US"), day(10), day(10), false, listOf(NearbyCountry("MX", 3)), Reminder("", "")),
+        Celebration("lny", "Lunar New Year", "", listOf("CN", "JP"), day(40), day(42), false, listOf(NearbyCountry("CN", 7), NearbyCountry("JP", 5)), Reminder("", "")),
+        Celebration("eid", "Eid al-Fitr", "", listOf("MA"), day(70), day(72), true, listOf(NearbyCountry("MA", 2)), Reminder("", "")),
+    )
+    private val events = listOf(
+        EventProgress("levant", "Levant month", "Eat at 2 Lebanese, Syrian or Jordanian places in November.", listOf("LB"), day(-15), day(14), 2, 1, false, EventStatus.ACTIVE, 3),
+        EventProgress("japan", "Japan month", "Eat at 3 Japanese places in December.", listOf("JP"), day(15), day(45), 3, 0, false, EventStatus.UPCOMING, 5),
+        EventProgress("italy", "Italy week", "", listOf("IT"), day(-60), day(-53), 2, 2, true, EventStatus.ENDED, 6),
+    )
+
+    @Test
+    fun comingUpAndLimitedTimeDark() = snapshot(dark = true) {
+        val colors = LocalAppColors.current
+        Column(Modifier.fillMaxSize().background(colors.panel).padding(16.dp)) {
+            ComingUp(celebrations, remindersOn = false, onToggleReminders = {}, country = { code -> countries.firstOrNull { it.code == code } }, onOpen = {}, today = today)
+            BadgeGrid(discover.badges.take(2), events, today)
         }
     }
 }

@@ -76,6 +76,51 @@ data class Profile(
 )
 
 @Serializable
+enum class EventStatus {
+    @SerialName("upcoming") UPCOMING,
+    @SerialName("active") ACTIVE,
+    @SerialName("ended") ENDED,
+}
+
+/** A time-limited challenge, like "Japan month", and how far the user got. */
+@Serializable
+data class EventProgress(
+    val id: String,
+    val title: String,
+    val description: String,
+    val countries: List<String>,
+    /** First and last day, inclusive, as YYYY-MM-DD. */
+    val starts: String,
+    val ends: String,
+    val target: Int,
+    val progress: Int,
+    val earned: Boolean,
+    val status: EventStatus,
+    @SerialName("places_nearby") val placesNearby: Int,
+)
+
+@Serializable
+data class NearbyCountry(val code: String, val places: Int)
+
+/** Notification text, written by the server so every app says the same thing. */
+@Serializable
+data class Reminder(val title: String, val body: String)
+
+@Serializable
+data class Celebration(
+    val id: String,
+    val title: String,
+    val description: String,
+    val countries: List<String>,
+    val starts: String,
+    val ends: String,
+    val approximate: Boolean = false,
+    /** The celebration's countries that have places in the area. */
+    val nearby: List<NearbyCountry>,
+    val reminder: Reminder,
+)
+
+@Serializable
 data class Discover(
     val countries: List<CountryProgress>,
     val continents: List<GroupProgress>,
@@ -84,6 +129,7 @@ data class Discover(
     @SerialName("places_visited") val placesVisited: Int,
     val badges: List<Badge>,
     val profile: Profile,
+    val events: List<EventProgress> = emptyList(),
 )
 
 @Serializable
