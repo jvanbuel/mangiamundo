@@ -34,8 +34,12 @@ import androidx.compose.material.icons.rounded.Flag
 import androidx.compose.material.icons.rounded.Map
 import androidx.compose.material.icons.rounded.NearMe
 import androidx.compose.material.icons.rounded.Place
+import androidx.compose.material.icons.rounded.Key
 import androidx.compose.material.icons.rounded.Public
+import androidx.compose.material.icons.rounded.RamenDining
+import androidx.compose.material.icons.rounded.Repeat
 import androidx.compose.material.icons.rounded.Restaurant
+import androidx.compose.material.icons.rounded.Share
 import androidx.compose.material.icons.rounded.Verified
 import androidx.compose.material3.Button
 import androidx.compose.material3.Icon
@@ -83,6 +87,7 @@ import app.mangiamundo.core.EventStatus
 import app.mangiamundo.core.Country
 import app.mangiamundo.core.CountryProgress
 import app.mangiamundo.core.Discover
+import app.mangiamundo.core.Dish
 import app.mangiamundo.core.GeoResult
 import app.mangiamundo.core.GroupProgress
 import app.mangiamundo.core.Place
@@ -350,7 +355,17 @@ private fun StatRow(label: String, value: Int, total: Int? = null) {
 }
 
 @Composable
-fun Passport(discover: Discover) {
+private fun Stat(label: String, value: String, modifier: Modifier) {
+    val colors = LocalAppColors.current
+    Column(modifier) {
+        Text(label, style = MaterialTheme.typography.bodySmall, color = colors.muted)
+        Text(value, style = MaterialTheme.typography.titleSmall, color = colors.text)
+    }
+}
+
+/** Progress at a glance. The share and back-up buttons show when their actions are given. */
+@Composable
+fun Passport(discover: Discover, onShare: (() -> Unit)? = null, onBackup: (() -> Unit)? = null) {
     val colors = LocalAppColors.current
     val profile = discover.profile
     Card {
@@ -368,13 +383,22 @@ fun Passport(discover: Discover) {
             }
             HorizontalDivider(color = colors.line)
             Row {
-                Column(Modifier.weight(1f)) {
-                    Text("Places visited", style = MaterialTheme.typography.bodySmall, color = colors.muted)
-                    Text("${discover.placesVisited} of ${discover.places}", style = MaterialTheme.typography.titleSmall, color = colors.text)
-                }
-                Column(Modifier.weight(1f)) {
-                    Text("Countries completed", style = MaterialTheme.typography.bodySmall, color = colors.muted)
-                    Text("${discover.world.completed}", style = MaterialTheme.typography.titleSmall, color = colors.text)
+                Stat("Places visited", "${discover.placesVisited} of ${discover.places}", Modifier.weight(1f))
+                Stat("Countries completed", "${discover.world.completed}", Modifier.weight(1f))
+            }
+            Row {
+                Stat("Check-ins", "${profile.visits}", Modifier.weight(1f))
+                Stat("Signature dishes", "${profile.dishes}", Modifier.weight(1f))
+            }
+            if (onShare != null || onBackup != null) {
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                    onShare?.let { ChunkyButton("Share my map", it, Modifier.weight(1f), icon = Icons.Rounded.Share) }
+                    onBackup?.let {
+                        OutlinedButton(onClick = it, border = BorderStroke(2.dp, colors.line)) {
+                            Icon(Icons.Rounded.Key, contentDescription = null, tint = colors.text, modifier = Modifier.size(18.dp))
+                            Text(" Back up", color = colors.text, style = MaterialTheme.typography.labelLarge)
+                        }
+                    }
                 }
             }
         }
@@ -409,8 +433,15 @@ fun CountryRow(progress: CountryProgress, info: Country?, onClick: () -> Unit) {
     }
 }
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
-fun CountryHeader(progress: CountryProgress, info: Country?, onBack: () -> Unit) {
+fun CountryHeader(
+    progress: CountryProgress,
+    info: Country?,
+    dishes: List<Dish> = emptyList(),
+    tried: Set<String> = emptySet(),
+    onBack: () -> Unit,
+) {
     val colors = LocalAppColors.current
     Column(Modifier.padding(top = 4.dp, bottom = 8.dp)) {
         TextButton(onClick = onBack) {
@@ -437,26 +468,95 @@ fun CountryHeader(progress: CountryProgress, info: Country?, onBack: () -> Unit)
             Modifier.fillMaxWidth().padding(top = 10.dp),
             color = if (progress.status == Status.AVAILABLE) colors.accent else statusColor(progress.status),
         )
+        if (dishes.isNotEmpty()) {
+            Row(Modifier.padding(top = 14.dp), verticalAlignment = Alignment.CenterVertically) {
+                Icon(Icons.Rounded.RamenDining, contentDescription = null, tint = colors.text, modifier = Modifier.size(18.dp))
+                Text(" Signature dishes", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.ExtraBold, color = colors.text)
+            }
+            FlowRow(
+                Modifier.padding(top = 6.dp),
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                verticalArrangement = Arrangement.spacedBy(6.dp),
+            ) {
+                for (dish in dishes) DishChip(dish.name, selected = dish.id in tried)
+            }
+            Text(
+                "Log one when you check in: +25 XP for each new dish.",
+                fontSize = 13.sp,
+                color = colors.muted,
+                modifier = Modifier.padding(top = 6.dp),
+            )
+        }
+    }
+}
+
+/** A rounded label for a dish; filled green when tasted or chosen. */
+@Composable
+private fun DishChip(name: String, selected: Boolean, extra: String? = null, onClick: (() -> Unit)? = null) {
+    val colors = LocalAppColors.current
+    val shape = RoundedCornerShape(50)
+    Row(
+        Modifier
+            .clip(shape)
+            .background(if (selected) colors.completed.copy(alpha = 0.16f) else Color.Transparent)
+            .border(2.dp, if (selected) colors.completed else colors.line, shape)
+            .then(if (onClick != null) Modifier.clickable(onClick = onClick) else Modifier)
+            .padding(horizontal = 11.dp, vertical = 5.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        if (selected) Icon(Icons.Rounded.Check, contentDescription = "Tasted", tint = colors.text, modifier = Modifier.size(14.dp))
+        Text(" $name", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = colors.text)
+        extra?.let { Text(" $it", fontSize = 12.sp, fontWeight = FontWeight.Black, color = colors.discovered) }
     }
 }
 
 private fun distance(meters: Int) = if (meters < 1000) "${meters / 10 * 10} m" else "%.1f km".format(meters / 1000.0)
 
+private val dayFormat = java.time.format.DateTimeFormatter.ofPattern("d MMM")
+
+private fun day(unix: Long) = java.time.Instant.ofEpochSecond(unix).atZone(java.time.ZoneId.systemDefault()).format(dayFormat)
+
+/**
+ * One place. Before a first visit it offers "Check in"; afterwards "Again" once the
+ * cooldown has passed. Right after a check-in it asks which signature dish was eaten.
+ */
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
-fun PlaceRow(place: Place, busy: Boolean, onToggle: () -> Unit) {
+fun PlaceRow(
+    place: Place,
+    busy: Boolean,
+    dishes: List<Dish> = emptyList(),
+    tried: Set<String> = emptySet(),
+    nowSeconds: Long = System.currentTimeMillis() / 1000,
+    onDish: (Dish) -> Unit = {},
+    onUndo: () -> Unit = {},
+    onCheckIn: () -> Unit,
+) {
     val colors = LocalAppColors.current
     val context = LocalContext.current
     val open = { url: String -> context.startActivity(Intent(Intent.ACTION_VIEW, url.toUri())) }
+    val waiting = place.recent(nowSeconds)
     Column {
-        Row(Modifier.fillMaxWidth().padding(vertical = 14.dp), verticalAlignment = Alignment.CenterVertically) {
+        Row(Modifier.fillMaxWidth().padding(top = 14.dp, bottom = if (waiting) 8.dp else 14.dp), verticalAlignment = Alignment.CenterVertically) {
             Column(Modifier.weight(1f).padding(end = 12.dp)) {
                 Text(place.name, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.ExtraBold, color = colors.text)
                 Text(
-                    distance(place.distanceM) + (place.address?.let { " · $it" } ?: "") +
-                        if (place.verified) " · checked in on the spot" else "",
+                    distance(place.distanceM) + (place.address?.let { " · $it" } ?: ""),
                     style = MaterialTheme.typography.bodyMedium,
                     color = colors.muted,
                 )
+                if (place.visited) {
+                    Text(
+                        buildAnnotatedString {
+                            append(if (place.visits <= 1) "Visited" else "Visited ${place.visits}×")
+                            place.lastVisitedAt?.let { append(", last on ${day(it)}") }
+                            if (place.verified) withStyle(SpanStyle(color = colors.completed)) { append(" · on the spot") }
+                        },
+                        style = MaterialTheme.typography.bodyMedium,
+                        fontWeight = FontWeight.Bold,
+                        color = colors.text,
+                    )
+                }
                 Row(horizontalArrangement = Arrangement.spacedBy(16.dp), modifier = Modifier.padding(top = 4.dp)) {
                     Text(
                         "Directions",
@@ -471,10 +571,45 @@ fun PlaceRow(place: Place, busy: Boolean, onToggle: () -> Unit) {
                     }
                 }
             }
-            if (place.visited) {
-                ChunkyButton("Visited", onToggle, face = colors.completed, content = colors.onCompleted, enabled = !busy, icon = Icons.Rounded.Check)
-            } else {
-                ChunkyButton("Check in", onToggle, enabled = !busy)
+            when {
+                waiting -> ChunkyButton("Today", {}, face = colors.completed, content = colors.onCompleted, enabled = true, icon = Icons.Rounded.Check)
+                place.visited -> ChunkyButton("Again", onCheckIn, face = colors.discovered, content = colors.onCompleted, enabled = !busy, icon = Icons.Rounded.Repeat)
+                else -> ChunkyButton("Check in", onCheckIn, enabled = !busy)
+            }
+        }
+        if (waiting) {
+            Column(
+                Modifier
+                    .fillMaxWidth()
+                    .padding(bottom = 14.dp)
+                    .clip(RoundedCornerShape(12.dp))
+                    .background(colors.panelRaised)
+                    .padding(horizontal = 12.dp, vertical = 10.dp),
+            ) {
+                if (dishes.isNotEmpty()) {
+                    Text("What did you have?", fontSize = 13.sp, color = colors.muted)
+                    FlowRow(
+                        Modifier.padding(vertical = 6.dp),
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                        verticalArrangement = Arrangement.spacedBy(6.dp),
+                    ) {
+                        for (dish in dishes) {
+                            DishChip(
+                                dish.name,
+                                selected = place.lastDish == dish.id,
+                                extra = if (dish.id in tried) null else "+25",
+                                onClick = { if (!busy) onDish(dish) },
+                            )
+                        }
+                    }
+                }
+                Text(
+                    "Undo check-in",
+                    fontSize = 13.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = colors.muted,
+                    modifier = Modifier.clickable(enabled = !busy, onClick = onUndo).padding(vertical = 2.dp),
+                )
             }
         }
         HorizontalDivider(color = colors.line)
@@ -487,15 +622,17 @@ private fun BadgeKind.icon(): ImageVector = when (this) {
     BadgeKind.COMPLETED -> Icons.Rounded.Verified
     BadgeKind.CONTINENT -> Icons.Rounded.Map
     BadgeKind.WORLD -> Icons.Rounded.Public
-    BadgeKind.EVERYTHING -> Icons.Rounded.EmojiEvents
+    BadgeKind.EVERYTHING, BadgeKind.OTHER -> Icons.Rounded.EmojiEvents
+    BadgeKind.DISHES -> Icons.Rounded.RamenDining
+    BadgeKind.REGULAR -> Icons.Rounded.Repeat
 }
 
 @Composable
 private fun BadgeKind.color(): Color = with(LocalAppColors.current) {
     when (this@color) {
-        BadgeKind.VISITS, BadgeKind.COUNTRIES -> available
+        BadgeKind.VISITS, BadgeKind.COUNTRIES, BadgeKind.REGULAR -> available
         BadgeKind.COMPLETED, BadgeKind.WORLD -> completed
-        BadgeKind.CONTINENT, BadgeKind.EVERYTHING -> discovered
+        BadgeKind.CONTINENT, BadgeKind.EVERYTHING, BadgeKind.DISHES, BadgeKind.OTHER -> discovered
     }
 }
 

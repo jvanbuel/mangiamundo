@@ -12,10 +12,12 @@ import app.mangiamundo.core.Catalog
 import app.mangiamundo.core.Celebration
 import app.mangiamundo.core.Country
 import app.mangiamundo.core.Discover
+import app.mangiamundo.core.Dish
 import app.mangiamundo.core.GeoResult
 import app.mangiamundo.core.Place
 import app.mangiamundo.core.ProjectionKind
 import app.mangiamundo.core.ReminderPlan
+import app.mangiamundo.core.Rules
 import app.mangiamundo.core.Status
 import app.mangiamundo.core.World
 import kotlinx.coroutines.Dispatchers
@@ -52,6 +54,9 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     /** 0 = countries, 1 = badges. */
     var tab by mutableStateOf(0)
 
+    /** The recovery code once loaded for the backup sheet. */
+    var recoveryCode by mutableStateOf<String?>(null); private set
+
     var projection by mutableStateOf(settings.projection); private set
     var camera by mutableStateOf(Camera())
 
@@ -87,6 +92,8 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun country(code: String): Country? = catalog?.countries?.firstOrNull { it.code == code }
+
+    fun dishesOf(codes: Collection<String>): List<Dish> = catalog?.dishesOf(codes).orEmpty()
 
     fun changeProjection(kind: ProjectionKind) {
         projection = kind
@@ -227,25 +234,25 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    fun toggleVisit(place: Place) {
+    private fun replace(place: Place) {
+        places = places.map { if (it.id == place.id) place else it }
+    }
+
+    /** Runs a change to one place, then rereads progress and announces what it unlocked. */
+    private fun change(place: Place, action: suspend () -> Place?) {
         val before = discover ?: return
         val here = location ?: return
         if (busyPlace != null) return
         busyPlace = place.id
         viewModelScope.launch {
             try {
-                val updated = if (!place.visited) {
-                    val fix = gpsFix?.takeIf { System.currentTimeMillis() - it.third < 10 * 60_000 }
-                    val result = api.checkIn(place.id, fix?.let { it.first to it.second })
-                    place.copy(visitedAt = System.currentTimeMillis() / 1000, verified = result.verified)
-                } else {
-                    api.undoCheckIn(place.id)
-                    place.copy(visitedAt = null, verified = false)
-                }
-                places = places.map { if (it.id == place.id) updated else it }
+                val updated = action()
+                updated?.let(::replace)
                 val after = api.discover(here.lat, here.lng, radiusKm)
                 discover = after
-                if (updated.visited) celebrate(before, after, updated)
+                celebrate(before, after, updated)
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
             } catch (e: Exception) {
                 messageChannel.trySend("That did not work: ${e.message}")
             }
@@ -253,9 +260,92 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    /** Checks in at a place: the first visit, or a return once the cooldown has passed. */
+    fun checkIn(place: Place) = change(place) {
+        val fix = gpsFix?.takeIf { System.currentTimeMillis() - it.third < 10 * 60_000 }
+        val result = api.checkIn(place.id, fix?.let { it.first to it.second })
+        val now = System.currentTimeMillis() / 1000
+        val visits = place.visits + 1
+        if (visits > 1) messageChannel.trySend("Back at ${place.name}: +${Rules.XP_PER_VISIT} XP. What did you have?")
+        place.copy(
+            visitedAt = place.visitedAt ?: now,
+            lastVisitedAt = now,
+            visits = visits,
+            verified = place.verified || result.verified,
+            lastCheckinId = result.checkinId,
+            lastDish = null,
+            nextCheckInAt = now + Rules.CHECKIN_COOLDOWN_SECS,
+        )
+    }
+
+    /** Logs the dish eaten at the place's latest check-in; picking it again clears it. */
+    fun logDish(place: Place, dish: Dish) {
+        val id = place.lastCheckinId ?: return
+        val chosen = if (place.lastDish == dish.id) null else dish.id
+        val isNew = chosen != null && discover?.dishesTried?.contains(chosen) == false
+        change(place) {
+            api.setDish(id, chosen)
+            if (isNew) messageChannel.trySend("${country(dish.country)?.flag.orEmpty()} ${dish.name} tasted: +${Rules.XP_PER_DISH} XP")
+            place.copy(lastDish = chosen)
+        }
+    }
+
+    /** Takes back the place's latest check-in. */
+    fun undoCheckIn(place: Place) {
+        val id = place.lastCheckinId ?: return
+        val here = location ?: return
+        val code = selected
+        change(place) {
+            api.undoCheckIn(id)
+            // The server knows what the previous check-in was; ask for the place again.
+            code?.let { api.places(here.lat, here.lng, radiusKm, it).firstOrNull { p -> p.id == place.id } }
+        }
+    }
+
+    fun loadRecoveryCode() {
+        if (recoveryCode != null) return
+        viewModelScope.launch {
+            recoveryCode = runCatching { api.recoveryCode() }
+                .onFailure { messageChannel.trySend("Could not load your code: ${it.message}") }
+                .getOrNull()
+        }
+    }
+
+    fun rotateRecoveryCode() {
+        viewModelScope.launch {
+            runCatching { api.rotateRecoveryCode() }
+                .onSuccess { recoveryCode = it }
+                .onFailure { messageChannel.trySend("Could not make a new code: ${it.message}") }
+        }
+    }
+
+    /** Switches this device to the passport behind a recovery code. */
+    suspend fun restore(code: String): Boolean = try {
+        val merged = api.restore(code)
+        recoveryCode = null
+        select(null)
+        refresh()
+        messageChannel.trySend(if (merged > 0) "Passport restored. $merged check-ins from this phone came along." else "Passport restored. Welcome back.")
+        true
+    } catch (e: app.mangiamundo.core.ApiException) {
+        messageChannel.trySend(if (e.status == 404) "That code does not match a passport." else "Could not restore: ${e.message}")
+        false
+    }
+
+    /** The share card for the current place, as PNG bytes. */
+    suspend fun shareCard(dark: Boolean): ByteArray? {
+        val here = location ?: return null
+        return try {
+            api.shareCard(here.lat, here.lng, radiusKm, here.name, dark)
+        } catch (e: app.mangiamundo.core.ApiException) {
+            messageChannel.trySend("Could not draw the card: ${e.message}")
+            null
+        }
+    }
+
     /** Announces everything a check-in unlocked by comparing progress before and after. */
-    private fun celebrate(before: Discover, after: Discover, place: Place) {
-        for (code in place.countries) {
+    private fun celebrate(before: Discover, after: Discover, place: Place?) {
+        for (code in place?.countries.orEmpty()) {
             val was = before.countries.firstOrNull { it.code == code } ?: continue
             val now = after.countries.firstOrNull { it.code == code } ?: continue
             val info = country(code) ?: continue

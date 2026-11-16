@@ -73,4 +73,30 @@ class CoreTest {
         assertEquals(Status.COMPLETED, CountryProgress("ET", "AF", 2, 2).status)
         assertEquals(Status.DISCOVERED, CountryProgress("ET", "AF", 2, 1).status)
     }
+
+    @Test
+    fun decodesRepeatVisitsAndToleratesNewBadgeKinds() {
+        val json = kotlinx.serialization.json.Json { ignoreUnknownKeys = true }
+        val place = json.decodeFromString<Place>(
+            """{"id":"p","name":"Kaito","lat":50.8,"lng":4.7,"countries":["JP"],"distance_m":420,
+               "visited_at":100,"verified":true,"visits":3,"last_visited_at":5000,"last_checkin_id":42,
+               "last_dish":"jp-ramen","next_check_in_at":48200}""",
+        )
+        assertEquals(3, place.visits)
+        assertEquals(42L, place.lastCheckinId)
+        assertTrue(place.recent(nowSeconds = 6000))
+        assertFalse(place.recent(nowSeconds = 48200))
+        // A place from an older server still counts its single visit.
+        val old = json.decodeFromString<Place>("""{"id":"p","name":"K","lat":0,"lng":0,"distance_m":1,"visited_at":1}""")
+        assertEquals(1, old.visits)
+
+        val badges = json.decodeFromString<List<Badge>>(
+            """[{"id":"dish-1","kind":"dishes","title":"","description":"","progress":0,"target":1,"earned":false},
+                {"id":"x","kind":"something-new","title":"","description":"","progress":0,"target":1,"earned":false}]""",
+        )
+        assertEquals(listOf(BadgeKind.DISHES, BadgeKind.OTHER), badges.map { it.kind })
+
+        val catalog = Catalog(emptyList(), emptyList(), listOf(Dish("jp-ramen", "JP", "Ramen"), Dish("it-risotto", "IT", "Risotto")))
+        assertEquals(listOf("Ramen"), catalog.dishesOf(listOf("JP", "KR")).map { it.name })
+    }
 }

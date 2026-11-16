@@ -33,14 +33,49 @@ class ApiClient(private val baseUrl: String, private val tokens: TokenStore) {
     suspend fun celebrations(lat: Double, lng: Double, radiusKm: Int, days: Int = 60): List<Celebration> =
         json.decodeFromString(request("GET", "/api/celebrations?${area(lat, lng, radiusKm)}&days=$days"))
 
-    /** `here` is the device position, sent so the server can mark the visit as verified. */
+    /**
+     * A new check-in; returning to a place counts again once the cooldown has passed.
+     * `here` is the device position, sent so the server can mark the visit as verified.
+     */
     suspend fun checkIn(placeId: String, here: Pair<Double, Double>?): VisitResult {
         val body = json.encodeToString(CheckInBody.serializer(), CheckInBody(here?.first, here?.second))
-        return json.decodeFromString(authed("PUT", "/api/visits/${encode(placeId)}", body))
+        return json.decodeFromString(authed("POST", "/api/visits/${encode(placeId)}", body))
     }
 
-    suspend fun undoCheckIn(placeId: String) {
-        authed("DELETE", "/api/visits/${encode(placeId)}")
+    /** Logs (or with null, clears) the signature dish eaten at a check-in. */
+    suspend fun setDish(checkinId: Long, dish: String?): Profile {
+        val body = json.encodeToString(DishBody.serializer(), DishBody(dish))
+        // HttpURLConnection cannot send PATCH; the server takes PUT for the same update.
+        return json.decodeFromString(authed("PUT", "/api/checkins/$checkinId", body))
+    }
+
+    suspend fun undoCheckIn(checkinId: Long) {
+        authed("DELETE", "/api/checkins/$checkinId")
+    }
+
+    suspend fun recoveryCode(): String = json.decodeFromString<RecoveryCode>(authed("GET", "/api/session/recovery")).code
+
+    /** Replaces the recovery code; the old one stops working. */
+    suspend fun rotateRecoveryCode(): String =
+        json.decodeFromString<RecoveryCode>(authed("POST", "/api/session/recovery")).code
+
+    /**
+     * Moves this device onto the passport behind a recovery code. What this device had
+     * collected is merged in by the server. Returns how many check-ins came along.
+     */
+    suspend fun restore(code: String): Int = tokenLock.withLock {
+        val body = json.encodeToString(RestoreBody.serializer(), RestoreBody(code))
+        val restored = json.decodeFromString<Restored>(request("POST", "/api/session/restore", body, tokens.token))
+        tokens.token = restored.token
+        restored.merged
+    }
+
+    /** The share card as PNG bytes, drawn by the server. */
+    suspend fun shareCard(lat: Double, lng: Double, radiusKm: Int, place: String?, dark: Boolean): ByteArray {
+        val name = place?.let { "&place=${encode(it)}" }.orEmpty()
+        val theme = if (dark) "dark" else "light"
+        val path = "/api/share/card.png?${area(lat, lng, radiusKm)}$name&theme=$theme"
+        return send("GET", path, null, token())
     }
 
     suspend fun geocode(query: String): List<GeoResult> =
@@ -73,7 +108,14 @@ class ApiClient(private val baseUrl: String, private val tokens: TokenStore) {
         path: String,
         body: String? = null,
         token: String? = null,
-    ): String = withContext(Dispatchers.IO) {
+    ): String = send(method, path, body, token).decodeToString()
+
+    private suspend fun send(
+        method: String,
+        path: String,
+        body: String?,
+        token: String?,
+    ): ByteArray = withContext(Dispatchers.IO) {
         val connection = try {
             (URL(baseUrl.trimEnd('/') + path).openConnection() as HttpURLConnection).apply {
                 requestMethod = method
@@ -92,7 +134,7 @@ class ApiClient(private val baseUrl: String, private val tokens: TokenStore) {
         try {
             val status = connection.responseCode
             if (status in 200..299) {
-                if (status == 204) "" else connection.inputStream.bufferedReader().use { it.readText() }
+                if (status == 204) ByteArray(0) else connection.inputStream.use { it.readBytes() }
             } else {
                 val text = connection.errorStream?.bufferedReader()?.use { it.readText() }.orEmpty()
                 val detail = runCatching { json.decodeFromString<ErrorBody>(text).error }.getOrNull()

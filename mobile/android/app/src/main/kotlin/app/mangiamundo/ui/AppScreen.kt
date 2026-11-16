@@ -4,6 +4,7 @@ import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -53,6 +54,17 @@ fun AppScreen(vm: AppViewModel = viewModel()) {
     val context = LocalContext.current
     val snackbar = remember { SnackbarHostState() }
     var pickerOpen by rememberSaveable { mutableStateOf(false) }
+    var shareOpen by rememberSaveable { mutableStateOf(false) }
+    var backupOpen by rememberSaveable { mutableStateOf(false) }
+    val dark = isSystemInDarkTheme()
+    // Ticks every minute so check-in cooldowns run out while the list is open.
+    var now by remember { mutableStateOf(System.currentTimeMillis() / 1000) }
+    LaunchedEffect(Unit) {
+        while (true) {
+            kotlinx.coroutines.delay(60_000)
+            now = System.currentTimeMillis() / 1000
+        }
+    }
 
     LaunchedEffect(Unit) {
         vm.messages.collect { snackbar.showSnackbar(it) }
@@ -148,15 +160,32 @@ fun AppScreen(vm: AppViewModel = viewModel()) {
                         )
                     }
                     else -> {
-                        item { Passport(discover) }
+                        item { Passport(discover, onShare = { shareOpen = true }, onBackup = { backupOpen = true }) }
                         if (selected == null && vm.celebrations.isNotEmpty()) {
                             item { ComingUp(vm.celebrations, vm.remindersOn, toggleReminders, vm::country, onOpen = vm::select) }
                         }
                         if (selected != null) {
-                            item { CountryHeader(selected, vm.country(selected.code), onBack = { vm.select(null) }) }
+                            val tried = discover.dishesTried.toSet()
+                            item {
+                                CountryHeader(
+                                    selected,
+                                    vm.country(selected.code),
+                                    dishes = vm.dishesOf(listOf(selected.code)),
+                                    tried = tried,
+                                    onBack = { vm.select(null) },
+                                )
+                            }
                             if (vm.placesLoading) item { Note("Loading places…") }
                             items(vm.places, key = { it.id }) { place ->
-                                PlaceRow(place, busy = vm.busyPlace == place.id) { vm.toggleVisit(place) }
+                                PlaceRow(
+                                    place,
+                                    busy = vm.busyPlace == place.id,
+                                    dishes = vm.dishesOf(place.countries),
+                                    tried = tried,
+                                    nowSeconds = now,
+                                    onDish = { vm.logDish(place, it) },
+                                    onUndo = { vm.undoCheckIn(place) },
+                                ) { vm.checkIn(place) }
                             }
                         } else {
                             item {
@@ -182,6 +211,19 @@ fun AppScreen(vm: AppViewModel = viewModel()) {
                         }
                     }
                 }
+            }
+        }
+    }
+
+    if (shareOpen) {
+        ModalBottomSheet(onDismissRequest = { shareOpen = false }, containerColor = colors.panel) {
+            Column(Modifier.padding(start = 16.dp, end = 16.dp, bottom = 24.dp)) { ShareSheet(vm, dark) }
+        }
+    }
+    if (backupOpen) {
+        ModalBottomSheet(onDismissRequest = { backupOpen = false }, containerColor = colors.panel) {
+            Column(Modifier.padding(start = 16.dp, end = 16.dp, bottom = 24.dp)) {
+                BackupSheet(vm, onDone = { backupOpen = false })
             }
         }
     }

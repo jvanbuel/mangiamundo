@@ -25,6 +25,7 @@ import app.mangiamundo.core.Reminder
 import java.time.LocalDate
 import app.mangiamundo.core.CountryProgress
 import app.mangiamundo.core.Discover
+import app.mangiamundo.core.Dish
 import app.mangiamundo.core.GroupProgress
 import app.mangiamundo.core.Place
 import app.mangiamundo.core.Profile
@@ -72,9 +73,14 @@ class ScreensTest {
             Badge("complete-1", BadgeKind.COMPLETED, "1 country complete", "", 1, 1, true),
             Badge("continent-EU", BadgeKind.CONTINENT, "Europe", "", 2, 3, false),
             Badge("world", BadgeKind.WORLD, "Whole world", "", 4, 10, false),
+            Badge("dish-1", BadgeKind.DISHES, "First signature dish", "", 1, 1, true),
+            Badge("regular", BadgeKind.REGULAR, "Regular", "", 3, 5, false),
         ),
-        profile = Profile(xp = 300, level = 2, levelXp = 100, nextLevelXp = 400, visits = 10, countries = 4),
+        profile = Profile(xp = 300, level = 2, levelXp = 100, nextLevelXp = 400, visits = 12, countries = 4, dishes = 2),
+        dishesTried = listOf("jp-ramen"),
     )
+    private val japanese = listOf(Dish("jp-ramen", "JP", "Ramen"), Dish("jp-sushi", "JP", "Sushi"), Dish("jp-okonomiyaki", "JP", "Okonomiyaki"))
+    private val now = 1_794_830_400L
 
     @Composable
     private fun Home(kind: ProjectionKind, camera: Camera) {
@@ -96,7 +102,7 @@ class ScreensTest {
             }
             Column(Modifier.weight(0.58f).padding(16.dp)) {
                 Header(leuven, 10) {}
-                Passport(discover)
+                Passport(discover, onShare = {}, onBackup = {})
                 ContinentHeader(discover.continents[2])
                 for (code in listOf("FR", "GR", "IT")) {
                     CountryRow(progress.first { it.code == code }, countries.first { it.code == code }) {}
@@ -125,11 +131,22 @@ class ScreensTest {
     fun countryDetailLight() = snapshot(dark = false) {
         val colors = LocalAppColors.current
         Column(Modifier.fillMaxSize().background(colors.panel).padding(16.dp)) {
-            CountryHeader(progress.first { it.code == "JP" }, countries.first { it.code == "JP" }) {}
-            PlaceRow(Place("a", "Sushi Kaito", 50.88, 4.70, "Naamsestraat 12, Leuven", "https://example.org", listOf("JP"), 420, 1, true), busy = false) {}
-            PlaceRow(Place("b", "Ramen Bar Ichi", 50.87, 4.71, "Bondgenotenlaan 40", null, listOf("JP"), 1250, 1, false), busy = false) {}
-            PlaceRow(Place("c", "Izakaya Kumo", 50.86, 4.69, null, null, listOf("JP"), 3400), busy = false) {}
-            BadgeGrid(discover.badges)
+            val tried = discover.dishesTried.toSet()
+            CountryHeader(progress.first { it.code == "JP" }, countries.first { it.code == "JP" }, japanese, tried) {}
+            // Checked in an hour ago, with a dish logged: the picker is still open.
+            PlaceRow(
+                Place(
+                    "a", "Sushi Kaito", 50.88, 4.70, "Naamsestraat 12, Leuven", "https://example.org", listOf("JP"), 420,
+                    visitedAt = now - 40 * 86_400, verified = true, visits = 3, lastVisitedAt = now - 3600,
+                    lastCheckinId = 7, lastDish = "jp-sushi", nextCheckInAt = now + 11 * 3600,
+                ),
+                busy = false, dishes = japanese, tried = tried, nowSeconds = now,
+            ) {}
+            PlaceRow(
+                Place("b", "Ramen Bar Ichi", 50.87, 4.71, "Bondgenotenlaan 40", null, listOf("JP"), 1250, visitedAt = now - 9 * 86_400, lastVisitedAt = now - 9 * 86_400),
+                busy = false, dishes = japanese, tried = tried, nowSeconds = now,
+            ) {}
+            PlaceRow(Place("c", "Izakaya Kumo", 50.86, 4.69, null, null, listOf("JP"), 3400), busy = false, nowSeconds = now) {}
         }
     }
 
