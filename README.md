@@ -75,22 +75,49 @@ HTTPS (or localhost), and iPhones only for apps added to the home screen.
 - **Tasted**: you checked in at one or more places of a country.
 - **Completed**: you visited every place of that country within your radius.
 - **Continent / world badges**: taste every country that is available in your city.
-- **XP**: 10 per check-in, 50 per new country. Level *n* starts at 100·(n−1)² XP.
+- **Coming back counts**: every check-in is recorded, at most one per place every 12
+  hours. Five check-ins at one place earn the *Regular* badge.
+- **Signature dishes**: right after a check-in you can log which of the country's
+  signature dishes you had (`backend/data/dishes.json`, three per cuisine). Each
+  different dish is worth bonus XP, with badges at 1, 10 and 25 dishes. A dish id is
+  the country code plus a slug of its name (`jp-ramen`), so renaming a dish in the file
+  orphans the check-ins that logged it.
+- **XP**: 10 per check-in, 50 per new country, 25 per new signature dish. Level *n*
+  starts at 100·(n−1)² XP.
 - A check-in made within 250 m of the place is marked as verified.
 
+## Backups and share cards
+
+- **Recovery code**: every account can show a 16-character code (Crockford base32, so
+  O/0 and I/1 mix-ups are forgiven). Entering it on another device moves that device
+  onto the passport; whatever the device had collected on its own is merged in. On the
+  web the code also comes as a QR code that opens `/?restore=CODE`. "New code" retires
+  the old one.
+- **Share card**: `GET /api/share/card.png` draws a 1080×1350 PNG on the server (resvg,
+  Nunito from `backend/assets/fonts`, outlines from `mobile/shared/world.json`), so the
+  web app and both native apps share one design and only have to show and share it.
+
 Accounts are anonymous: each device asks `POST /api/session` for a token once and
-sends it as `Authorization: Bearer <token>`.
+sends it as `Authorization: Bearer <token>`. A recovery code moves the account to
+another device.
 
 ## API
 
 | Method | Path | |
 | --- | --- | --- |
 | `POST` | `/api/session` | Create an anonymous account, returns `{ token }` |
-| `GET` | `/api/countries` | Country and continent catalog |
+| `GET` | `/api/session/recovery` | This account's recovery code, `{ code }` |
+| `POST` | `/api/session/recovery` | Replace the recovery code |
+| `POST` | `/api/session/restore` | `{ code }`: returns `{ token, merged }` for that account and merges the calling account into it |
+| `GET` | `/api/countries` | Country, continent and signature dish catalog |
 | `GET` | `/api/discover?lat&lng&radius_km` | Countries available here, progress, badges, profile |
-| `GET` | `/api/places?lat&lng&radius_km&country` | Places, nearest first |
-| `PUT` | `/api/visits/{place_id}` | Check in; optional body `{ lat, lng }` to verify |
-| `DELETE` | `/api/visits/{place_id}` | Undo a check-in |
+| `GET` | `/api/places?lat&lng&radius_km&country` | Places, nearest first, with visit counts and the latest check-in |
+| `POST` | `/api/visits/{place_id}` | Check in (again); optional body `{ lat, lng, dish }`. 409 within 12 hours of the last one |
+| `PUT` | `/api/visits/{place_id}` | First check-in only (for older clients) |
+| `DELETE` | `/api/visits/{place_id}` | Remove every check-in at a place |
+| `PATCH` | `/api/checkins/{id}` | `{ dish }`: log or clear (`null`) the dish eaten; `PUT` works too |
+| `DELETE` | `/api/checkins/{id}` | Undo one check-in |
+| `GET` | `/api/share/card.png?lat&lng&radius_km&place&theme` | Share card PNG, `theme` is `light` or `dark` |
 | `GET` | `/api/celebrations?lat&lng&radius_km&days` | Upcoming celebrations with food nearby |
 | `GET` | `/api/push/key` | VAPID public key for Web Push |
 | `PUT` | `/api/push/subscription` | Subscribe a browser: PushSubscription JSON plus `lat`, `lng`, `radius_km`, `timezone` |
