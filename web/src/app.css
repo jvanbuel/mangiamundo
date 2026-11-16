@@ -3,24 +3,24 @@
 
 :root {
 	/* Light theme. The map colours are read by WorldMap.svelte. */
-	--bg: #f4efe6;
-	--panel: #fffdf9;
-	--panel-raised: #f3ece0;
-	--line: #dfd5c4;
-	--text: #1c2333;
-	--muted: #626b7f;
-	--accent: #c5481f;
+	--bg: #f2f5f8;
+	--panel: #ffffff;
+	--panel-raised: #eef3f8;
+	--line: #d5dee8;
+	--text: #14263a;
+	--muted: #5a6a7d;
+	--accent: #2873c2;
 	--on-accent: #ffffff;
 	--danger: #b3261e;
-	--glass: rgb(255 253 249 / 0.92);
-	--shadow: rgb(60 45 20 / 0.18);
-	--space: #fbf8f2;
-	--ocean: #dce8f1;
-	--land: #c3cbd6;
-	--available: #e8694a;
-	--discovered: #efa51c;
-	--completed: #27a872;
-	--on-completed: #ffffff;
+	--ocean: #c4daef;
+	--land: #e3e7eb;
+	--available: #2873c2;
+	--discovered: #c98508;
+	--completed: #3da35a;
+	--on-completed: #0b2a14;
+	--glass: rgb(255 255 255 / 0.92);
+	--shadow: rgb(20 38 58 / 0.16);
+	--space: #FAFCFE;
 	color-scheme: light;
 
 	--radius: 14px;
@@ -31,47 +31,47 @@
 /* Dark theme: by system preference unless light was chosen, or when chosen explicitly. */
 @media (prefers-color-scheme: dark) {
 	:root:not([data-theme='light']) {
-		--bg: #0b1220;
-		--panel: #141f33;
-		--panel-raised: #1b2942;
-		--line: #2a3a58;
-		--text: #eef2f8;
-		--muted: #96a5be;
-		--accent: #ff8a5c;
-		--on-accent: #1b0f08;
+		--bg: #0d1a28;
+		--panel: #132536;
+		--panel-raised: #1a3047;
+		--line: #28425d;
+		--text: #eaf1f8;
+		--muted: #93a6bb;
+		--accent: #5ba6ee;
+		--on-accent: #07182a;
 		--danger: #ff9d8a;
-		--glass: rgb(20 31 51 / 0.9);
+		--ocean: #0f2133;
+		--land: #233a52;
+		--available: #3b8fd9;
+		--discovered: #f2b53d;
+		--completed: #54b96f;
+		--on-completed: #06210f;
+		--glass: rgb(19 37 54 / 0.9);
 		--shadow: rgb(0 0 0 / 0.45);
-		--space: #16233b;
-		--ocean: #0f1a2e;
-		--land: #223150;
-		--available: #e8694a;
-		--discovered: #f4b942;
-		--completed: #3ecf8e;
-		--on-completed: #06281a;
+		--space: #17324D;
 		color-scheme: dark;
 	}
 }
 
 :root[data-theme='dark'] {
-	--bg: #0b1220;
-	--panel: #141f33;
-	--panel-raised: #1b2942;
-	--line: #2a3a58;
-	--text: #eef2f8;
-	--muted: #96a5be;
-	--accent: #ff8a5c;
-	--on-accent: #1b0f08;
+	--bg: #0d1a28;
+	--panel: #132536;
+	--panel-raised: #1a3047;
+	--line: #28425d;
+	--text: #eaf1f8;
+	--muted: #93a6bb;
+	--accent: #5ba6ee;
+	--on-accent: #07182a;
 	--danger: #ff9d8a;
-	--glass: rgb(20 31 51 / 0.9);
+	--ocean: #0f2133;
+	--land: #233a52;
+	--available: #3b8fd9;
+	--discovered: #f2b53d;
+	--completed: #54b96f;
+	--on-completed: #06210f;
+	--glass: rgb(19 37 54 / 0.9);
 	--shadow: rgb(0 0 0 / 0.45);
-	--space: #16233b;
-	--ocean: #0f1a2e;
-	--land: #223150;
-	--available: #e8694a;
-	--discovered: #f4b942;
-	--completed: #3ecf8e;
-	--on-completed: #06281a;
+	--space: #17324D;
 	color-scheme: dark;
 }
 
