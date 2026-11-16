@@ -4,6 +4,7 @@ pub mod catalog;
 pub mod config;
 pub mod game;
 pub mod geo;
+pub mod hours;
 pub mod providers;
 pub mod push;
 pub mod store;

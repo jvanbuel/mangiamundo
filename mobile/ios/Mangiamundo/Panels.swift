@@ -607,9 +607,26 @@ struct CountryDetail: View {
             if model.placesLoading {
                 Text("Loading places…").foregroundStyle(Theme.muted)
             }
-            ForEach(model.places) { place in
+            // The API sorts open places first, then closed, then unknown hours.
+            let showGroups = model.places.contains { $0.openNow != nil }
+            ForEach(Array(model.places.enumerated()), id: \.element.id) { index, place in
+                if showGroups && (index == 0 || model.places[index - 1].openNow != place.openNow) {
+                    Text(groupName(place.openNow))
+                        .font(Theme.font(.footnote, .extraBold))
+                        .textCase(.uppercase)
+                        .foregroundStyle(Theme.muted)
+                        .padding(.top, 14)
+                }
                 PlaceRow(place: place)
             }
+        }
+    }
+
+    private func groupName(_ openNow: Bool?) -> String {
+        switch openNow {
+        case true?: "Open now"
+        case false?: "Closed"
+        case nil: "Hours unknown"
         }
     }
 
@@ -631,6 +648,11 @@ struct PlaceRow: View {
             HStack(spacing: 12) {
                 VStack(alignment: .leading, spacing: 3) {
                     Text(place.name).font(Theme.font(.headline, .extraBold))
+                    if let hours = place.hoursText {
+                        Text(hours)
+                            .font(Theme.font(.subheadline, .bold))
+                            .foregroundStyle(place.openNow == true ? Theme.completed : Theme.muted)
+                    }
                     Text(details)
                         .font(Theme.font(.subheadline))
                         .foregroundStyle(Theme.muted)

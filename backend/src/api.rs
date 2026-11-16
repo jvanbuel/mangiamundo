@@ -20,7 +20,7 @@ use crate::calendar::{self, Celebration};
 use crate::game::{self, Lifetime, PlaceRow, Summary};
 use crate::providers::GeoResult;
 use crate::store::{self, Area, PlaceView};
-use crate::{catalog, geo, AppState};
+use crate::{catalog, geo, hours, AppState};
 
 /// A check-in counts as verified when made within this distance of the place.
 const VERIFY_DISTANCE_M: f64 = 250.0;
@@ -354,11 +354,27 @@ async fn places(
     let area = resolve_area(&state, &area_query).await?;
     let country = query.country.map(|c| c.to_uppercase());
     let mut places = store::area_places(&state.db, &area.key, country.as_deref(), user.as_deref()).await?;
+    let now = state.now();
     for place in &mut places {
         place.distance_m = geo::distance_m(query.lat, query.lng, place.lat, place.lng).round() as u32;
+        if let Some((open, text)) =
+            place.opening_hours.as_deref().and_then(|raw| hours::status(raw, place.lat, place.lng, now))
+        {
+            place.open_now = Some(open);
+            place.hours_text = Some(text);
+        }
     }
-    places.sort_by_key(|p| p.distance_m);
+    // Open first, then closed, then unknown hours; alphabetical within each group.
+    places.sort_by_cached_key(|p| (group(p.open_now), p.name.to_lowercase()));
     Ok(Json(places))
+}
+
+fn group(open_now: Option<bool>) -> u8 {
+    match open_now {
+        Some(true) => 0,
+        Some(false) => 1,
+        None => 2,
+    }
 }
 
 #[derive(Deserialize, Default)]

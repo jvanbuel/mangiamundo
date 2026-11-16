@@ -140,6 +140,12 @@ data class Place(
     val lng: Double,
     val address: String? = null,
     val url: String? = null,
+    /** Raw OSM opening_hours. */
+    @SerialName("opening_hours") val openingHours: String? = null,
+    /** Null when the hours are unknown. */
+    @SerialName("open_now") val openNow: Boolean? = null,
+    /** Short status line, e.g. "Open until 22:00". */
+    @SerialName("hours_text") val hoursText: String? = null,
     val countries: List<String> = emptyList(),
     @SerialName("distance_m") val distanceM: Int,
     @SerialName("visited_at") val visitedAt: Long? = null,

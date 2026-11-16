@@ -96,6 +96,12 @@ export interface Place {
 	address: string | null;
 	url: string | null;
 	cuisine: string | null;
+	/** Raw OSM opening_hours. */
+	opening_hours: string | null;
+	/** Null when the hours are unknown. */
+	open_now: boolean | null;
+	/** Short status line, e.g. "Open until 22:00". */
+	hours_text: string | null;
 	countries: string[];
 	distance_m: number;
 	visited_at: number | null;

@@ -125,6 +125,12 @@ struct Place: Decodable, Identifiable {
     let lng: Double
     let address: String?
     let url: String?
+    /// Raw OSM opening_hours.
+    let openingHours: String?
+    /// Nil when the hours are unknown.
+    let openNow: Bool?
+    /// Short status line, e.g. "Open until 22:00".
+    let hoursText: String?
     let countries: [String]
     let distanceM: Int
     var visitedAt: Int?

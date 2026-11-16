@@ -443,6 +443,21 @@ fun CountryHeader(progress: CountryProgress, info: Country?, onBack: () -> Unit)
 private fun distance(meters: Int) = if (meters < 1000) "${meters / 10 * 10} m" else "%.1f km".format(meters / 1000.0)
 
 @Composable
+fun PlaceGroupHeader(openNow: Boolean?) {
+    Text(
+        when (openNow) {
+            true -> "OPEN NOW"
+            false -> "CLOSED"
+            null -> "HOURS UNKNOWN"
+        },
+        style = MaterialTheme.typography.labelMedium,
+        fontWeight = FontWeight.ExtraBold,
+        color = LocalAppColors.current.muted,
+        modifier = Modifier.padding(top = 18.dp, bottom = 2.dp),
+    )
+}
+
+@Composable
 fun PlaceRow(place: Place, busy: Boolean, onToggle: () -> Unit) {
     val colors = LocalAppColors.current
     val context = LocalContext.current
@@ -451,6 +466,14 @@ fun PlaceRow(place: Place, busy: Boolean, onToggle: () -> Unit) {
         Row(Modifier.fillMaxWidth().padding(vertical = 14.dp), verticalAlignment = Alignment.CenterVertically) {
             Column(Modifier.weight(1f).padding(end = 12.dp)) {
                 Text(place.name, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.ExtraBold, color = colors.text)
+                place.hoursText?.let {
+                    Text(
+                        it,
+                        style = MaterialTheme.typography.bodyMedium,
+                        fontWeight = FontWeight.Bold,
+                        color = if (place.openNow == true) colors.completed else colors.muted,
+                    )
+                }
                 Text(
                     distance(place.distanceM) + (place.address?.let { " · $it" } ?: "") +
                         if (place.verified) " · checked in on the spot" else "",

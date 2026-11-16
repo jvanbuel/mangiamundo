@@ -155,8 +155,13 @@ fun AppScreen(vm: AppViewModel = viewModel()) {
                         if (selected != null) {
                             item { CountryHeader(selected, vm.country(selected.code), onBack = { vm.select(null) }) }
                             if (vm.placesLoading) item { Note("Loading places…") }
-                            items(vm.places, key = { it.id }) { place ->
-                                PlaceRow(place, busy = vm.busyPlace == place.id) { vm.toggleVisit(place) }
+                            // The API sorts open places first, then closed, then unknown hours.
+                            val showGroups = vm.places.any { it.openNow != null }
+                            for ((openNow, group) in vm.places.groupBy { it.openNow }) {
+                                if (showGroups) item(key = "group-$openNow") { PlaceGroupHeader(openNow) }
+                                items(group, key = { it.id }) { place ->
+                                    PlaceRow(place, busy = vm.busyPlace == place.id) { vm.toggleVisit(place) }
+                                }
                             }
                         } else {
                             item {

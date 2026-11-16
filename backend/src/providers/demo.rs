@@ -26,6 +26,16 @@ impl Rng {
     }
 }
 
+/// Typical restaurant hours; `None` for places whose hours nobody mapped.
+const HOURS: &[Option<&str>] = &[
+    Some("Mo-Su 11:30-14:00,18:00-22:00"),
+    Some("Tu-Su 12:00-22:00"),
+    Some("Mo-Sa 17:00-23:00"),
+    Some("Mo-Fr 11:00-15:00"),
+    Some("24/7"),
+    None,
+];
+
 const NAMES: &[&str] = &["Casa", "Chez", "Little", "Golden", "Mama's", "Old Town", "Royal", "Taste of"];
 
 #[async_trait]
@@ -58,6 +68,7 @@ impl PlacesProvider for Demo {
                     address: Some(format!("{} Demo Street", 1 + rng.next() % 200)),
                     url: None,
                     cuisine: Some(cuisine.osm[0].to_string()),
+                    opening_hours: HOURS[(rng.next() % HOURS.len() as u64) as usize].map(str::to_string),
                     countries: vec![cuisine.country],
                 });
             }

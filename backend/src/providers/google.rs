@@ -15,8 +15,8 @@ use crate::catalog::{Cuisine, CUISINES};
 
 const NEARBY_URL: &str = "https://places.googleapis.com/v1/places:searchNearby";
 const GEOCODE_URL: &str = "https://maps.googleapis.com/maps/api/geocode/json";
-const FIELD_MASK: &str =
-    "places.id,places.displayName,places.location,places.formattedAddress,places.googleMapsUri";
+const FIELD_MASK: &str = "places.id,places.displayName,places.location,places.formattedAddress,\
+    places.googleMapsUri,places.regularOpeningHours";
 /// Nearby Search rejects a larger radius.
 const MAX_RADIUS_M: u32 = 50_000;
 const CONCURRENCY: usize = 6;
@@ -91,6 +91,54 @@ struct NearbyPlace {
     location: Location,
     formatted_address: Option<String>,
     google_maps_uri: Option<String>,
+    regular_opening_hours: Option<OpeningHours>,
+}
+
+#[derive(Deserialize)]
+struct OpeningHours {
+    #[serde(default)]
+    periods: Vec<Period>,
+}
+
+#[derive(Deserialize)]
+struct Period {
+    open: Point,
+    close: Option<Point>,
+}
+
+#[derive(Deserialize)]
+struct Point {
+    /// 0 is Sunday.
+    day: usize,
+    hour: u32,
+    minute: u32,
+}
+
+/// Converts Google's weekly periods to OSM syntax, e.g. "Mo 11:00-14:00,18:00-22:00; Tu …".
+/// A period that runs past midnight ends at a time before it starts, which OSM reads
+/// as continuing into the next day.
+fn osm_hours(hours: &OpeningHours) -> Option<String> {
+    const DAYS: [&str; 7] = ["Su", "Mo", "Tu", "We", "Th", "Fr", "Sa"];
+    // Google's way of saying "always open": one period that opens and never closes.
+    if hours.periods.iter().any(|p| p.close.is_none()) {
+        return Some("24/7".into());
+    }
+    let mut by_day: Vec<Vec<String>> = vec![Vec::new(); 7];
+    for period in &hours.periods {
+        let close = period.close.as_ref()?;
+        let end = match (close.hour, close.minute) {
+            (0, 0) => "24:00".to_string(),
+            (h, m) => format!("{h:02}:{m:02}"),
+        };
+        by_day.get_mut(period.open.day)?.push(format!("{:02}:{:02}-{end}", period.open.hour, period.open.minute));
+    }
+    // Monday first, as OSM mappers write it.
+    let rules: Vec<String> = [1, 2, 3, 4, 5, 6, 0]
+        .into_iter()
+        .filter(|&d| !by_day[d].is_empty())
+        .map(|d| format!("{} {}", DAYS[d], by_day[d].join(",")))
+        .collect();
+    (!rules.is_empty()).then(|| rules.join("; "))
 }
 
 #[derive(Deserialize)]
@@ -133,6 +181,7 @@ impl PlacesProvider for GooglePlaces {
                             address: p.formatted_address,
                             url: p.google_maps_uri,
                             cuisine: Some(cuisine.osm[0].to_string()),
+                            opening_hours: p.regular_opening_hours.as_ref().and_then(osm_hours),
                             countries: Vec::new(),
                         });
                         if !entry.countries.contains(&cuisine.country) {
@@ -246,5 +295,31 @@ impl Geocoder for GoogleGeocoder {
                 .map(|c| c.long_name)
                 .unwrap_or(r.formatted_address)
         }))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn hours(json: &str) -> Option<String> {
+        osm_hours(&serde_json::from_str(json).unwrap())
+    }
+
+    #[test]
+    fn converts_periods_to_osm_syntax() {
+        let json = r#"{"periods":[
+            {"open":{"day":1,"hour":11,"minute":30},"close":{"day":1,"hour":14,"minute":0}},
+            {"open":{"day":1,"hour":18,"minute":0},"close":{"day":2,"hour":0,"minute":0}},
+            {"open":{"day":5,"hour":18,"minute":0},"close":{"day":6,"hour":2,"minute":0}},
+            {"open":{"day":0,"hour":12,"minute":0},"close":{"day":0,"hour":15,"minute":0}}
+        ]}"#;
+        assert_eq!(hours(json).as_deref(), Some("Mo 11:30-14:00,18:00-24:00; Fr 18:00-02:00; Su 12:00-15:00"));
+    }
+
+    #[test]
+    fn always_open_and_empty() {
+        assert_eq!(hours(r#"{"periods":[{"open":{"day":0,"hour":0,"minute":0}}]}"#).as_deref(), Some("24/7"));
+        assert_eq!(hours(r#"{"periods":[]}"#), None);
     }
 }

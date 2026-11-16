@@ -103,6 +103,7 @@ fn parse(body: &str) -> anyhow::Result<Vec<FoundPlace>> {
                 .or_else(|| el.tags.get("contact:website"))
                 .cloned(),
             cuisine: Some(cuisine.clone()),
+            opening_hours: el.tags.get("opening_hours").cloned(),
             countries,
         });
     }

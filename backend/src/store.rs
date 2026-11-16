@@ -84,11 +84,12 @@ pub async fn save_area(db: &SqlitePool, area: &Area, places: &[FoundPlace]) -> s
 
     for place in places {
         sqlx::query(
-            "INSERT INTO places (id, name, lat, lng, address, url, cuisine, updated_at)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            "INSERT INTO places (id, name, lat, lng, address, url, cuisine, opening_hours, updated_at)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
              ON CONFLICT(id) DO UPDATE SET name = excluded.name, lat = excluded.lat,
                  lng = excluded.lng, address = excluded.address, url = excluded.url,
-                 cuisine = excluded.cuisine, updated_at = excluded.updated_at",
+                 cuisine = excluded.cuisine, opening_hours = excluded.opening_hours,
+                 updated_at = excluded.updated_at",
         )
         .bind(&place.id)
         .bind(&place.name)
@@ -97,6 +98,7 @@ pub async fn save_area(db: &SqlitePool, area: &Area, places: &[FoundPlace]) -> s
         .bind(&place.address)
         .bind(&place.url)
         .bind(&place.cuisine)
+        .bind(&place.opening_hours)
         .bind(area.fetched_at)
         .execute(&mut *tx)
         .await?;
@@ -174,13 +176,20 @@ pub struct PlaceView {
     pub address: Option<String>,
     pub url: Option<String>,
     pub cuisine: Option<String>,
+    /// Raw OSM `opening_hours`.
+    pub opening_hours: Option<String>,
+    /// `None` when the hours are unknown.
+    pub open_now: Option<bool>,
+    /// Short status line, e.g. "Open until 22:00".
+    pub hours_text: Option<String>,
     pub countries: Vec<String>,
     pub distance_m: u32,
     pub visited_at: Option<i64>,
     pub verified: bool,
 }
 
-/// Places of an area, optionally restricted to one country. `distance_m` is left at 0.
+/// Places of an area, optionally restricted to one country. `distance_m`, `open_now`
+/// and `hours_text` are left empty.
 pub async fn area_places(
     db: &SqlitePool,
     area_key: &str,
@@ -188,7 +197,7 @@ pub async fn area_places(
     user: Option<&str>,
 ) -> sqlx::Result<Vec<PlaceView>> {
     let rows = sqlx::query(
-        "SELECT p.id, p.name, p.lat, p.lng, p.address, p.url, p.cuisine,
+        "SELECT p.id, p.name, p.lat, p.lng, p.address, p.url, p.cuisine, p.opening_hours,
                 (SELECT group_concat(country) FROM place_countries WHERE place_id = p.id) AS countries,
                 v.visited_at, COALESCE(v.verified, 0) AS verified
          FROM area_places ap
@@ -213,6 +222,9 @@ pub async fn area_places(
             address: r.get("address"),
             url: r.get("url"),
             cuisine: r.get("cuisine"),
+            opening_hours: r.get("opening_hours"),
+            open_now: None,
+            hours_text: None,
             countries: r
                 .get::<Option<String>, _>("countries")
                 .map(|s| s.split(',').map(str::to_string).collect())

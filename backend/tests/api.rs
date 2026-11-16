@@ -101,7 +101,13 @@ async fn visiting_every_place_completes_a_country() {
     let places = places.as_array().unwrap().clone();
     assert_eq!(places.len() as u64, discover["countries"][0]["places"].as_u64().unwrap());
     assert!(places.iter().all(|p| p["countries"].as_array().unwrap().contains(&Value::from(country.clone()))));
-    assert!(places.windows(2).all(|w| w[0]["distance_m"].as_u64() <= w[1]["distance_m"].as_u64()));
+    // Open places first, then closed, then unknown hours; alphabetical within each group.
+    let key = |p: &Value| {
+        let group = match p["open_now"].as_bool() { Some(true) => 0, Some(false) => 1, None => 2 };
+        (group, p["name"].as_str().unwrap().to_lowercase())
+    };
+    assert!(places.windows(2).all(|w| key(&w[0]) <= key(&w[1])));
+    assert!(places.iter().all(|p| p["open_now"].is_null() == p["hours_text"].is_null()));
 
     // First check-in, made on the spot: verified, 10 XP for the visit + 50 for the country.
     let first = &places[0];
@@ -228,7 +234,7 @@ async fn visits_between_counts_distinct_places_inside_the_window() {
     let db = store::connect("sqlite::memory:").await.unwrap();
     let place = |id: &str, countries: Vec<&'static str>| FoundPlace {
         id: id.into(), name: id.into(), lat: 50.0, lng: 4.0, address: None, url: None,
-        cuisine: None, countries,
+        cuisine: None, opening_hours: None, countries,
     };
     let area = Area { key: area_key("test", 50.0, 4.0, 1000), lat: 50.0, lng: 4.0, radius_m: 1000, provider: "test".into(), fetched_at: START };
     save_area(&db, &area, &[place("sushi", vec!["JP"]), place("ramen", vec!["JP"]), place("fusion", vec!["JP", "KR"]), place("pasta", vec!["IT"])]).await.unwrap();

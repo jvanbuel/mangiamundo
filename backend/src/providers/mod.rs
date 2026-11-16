@@ -22,6 +22,8 @@ pub struct FoundPlace {
     pub address: Option<String>,
     pub url: Option<String>,
     pub cuisine: Option<String>,
+    /// In OSM `opening_hours` syntax.
+    pub opening_hours: Option<String>,
     /// ISO alpha-2 codes of the countries whose cuisine this place serves.
     pub countries: Vec<&'static str>,
 }

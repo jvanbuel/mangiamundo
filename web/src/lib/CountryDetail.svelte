@@ -14,6 +14,11 @@
 	const directions = (lat: number, lng: number) =>
 		`https://www.google.com/maps/dir/?api=1&destination=${lat},${lng}`;
 
+	// The API sorts open places first, then closed, then unknown hours.
+	const groupName = (open: boolean | null) =>
+		open === true ? 'Open now' : open === false ? 'Closed' : 'Hours unknown';
+	const showGroups = $derived(app.places.some((p) => p.open_now !== null));
+
 	async function toggle(place: Place) {
 		busy = place.id;
 		await toggleVisit(place);
@@ -42,11 +47,17 @@
 	<p class="muted">Loading places…</p>
 {:else}
 	<ul>
-		{#each app.places as place (place.id)}
+		{#each app.places as place, i (place.id)}
 			{@const visited = place.visited_at !== null}
+			{#if showGroups && (i === 0 || app.places[i - 1].open_now !== place.open_now)}
+				<li class="group">{groupName(place.open_now)}</li>
+			{/if}
 			<li>
 				<div class="info">
 					<strong>{place.name}</strong>
+					{#if place.hours_text}
+						<span class="hours" class:open={place.open_now} title={place.opening_hours}>{place.hours_text}</span>
+					{/if}
 					<span class="muted">
 						{distance(place.distance_m)}{place.address ? ` · ${place.address}` : ''}
 						{#if place.verified}<span class="verified"> · checked in on the spot</span>{/if}
@@ -126,6 +137,24 @@
 		gap: 12px;
 		padding: 14px 0;
 		border-bottom: 1px solid var(--line);
+	}
+
+	li.group {
+		padding: 18px 0 6px;
+		color: var(--muted);
+		font-size: 13px;
+		font-weight: 800;
+		text-transform: uppercase;
+		letter-spacing: 0.04em;
+	}
+
+	.hours {
+		color: var(--muted);
+		font-weight: 700;
+	}
+
+	.hours.open {
+		color: var(--completed);
 	}
 
 	.info {
