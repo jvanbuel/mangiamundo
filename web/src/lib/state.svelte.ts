@@ -1,6 +1,7 @@
 import * as api from './api';
 import {
 	statusOf,
+	type BadgeKind,
 	type Catalog,
 	type Country,
 	type Discover,
@@ -17,9 +18,12 @@ export type Theme = 'system' | 'light' | 'dark';
 
 export const RADII = [5, 10, 25];
 
+/** What a toast shows on its left: a flag (or other text), a badge medal, or nothing. */
+export type ToastIcon = { text: string } | { badge: BadgeKind } | null;
+
 export interface Toast {
 	id: number;
-	icon: string;
+	icon: ToastIcon;
 	title: string;
 	text: string;
 }
@@ -59,7 +63,7 @@ export function country(code: string): Country | undefined {
 	return app.catalog?.countries.find((c) => c.code === code);
 }
 
-export function toast(icon: string, title: string, text: string) {
+export function toast(icon: ToastIcon, title: string, text: string) {
 	const id = ++toastId;
 	app.toasts.push({ id, icon, title, text });
 	setTimeout(() => {
@@ -189,7 +193,7 @@ export async function select(code: string | null) {
 		const result = await api.places(location.lat, location.lng, app.radiusKm, code);
 		if (app.selected === code) app.places = result;
 	} catch (error) {
-		toast('⚠️', 'Could not load places', message(error));
+		toast(null, 'Could not load places', message(error));
 	} finally {
 		if (app.selected === code) app.placesLoading = false;
 	}
@@ -203,18 +207,18 @@ function celebrate(before: Discover, after: Discover, place: Place) {
 		const info = country(code);
 		if (!was || !now || !info) continue;
 		if (statusOf(now) === 'completed' && statusOf(was) !== 'completed') {
-			toast(info.flag, `${info.name} completed!`, 'You visited every place in this city.');
+			toast({ text: info.flag }, `${info.name} complete`, 'You visited every place in this city.');
 		} else if (was.visited === 0) {
-			toast(info.flag, `${info.name} discovered!`, `${now.places - now.visited} more to complete it.`);
+			toast({ text: info.flag }, `${info.name} tasted`, `${now.places - now.visited} more to complete it.`);
 		}
 	}
 	for (const badge of after.badges) {
 		if (badge.earned && !before.badges.find((b) => b.id === badge.id)?.earned) {
-			toast(badge.icon, `Badge earned: ${badge.title}`, badge.description);
+			toast({ badge: badge.kind }, `Badge: ${badge.title}`, badge.description);
 		}
 	}
 	if (after.profile.level > before.profile.level) {
-		toast('⬆️', `Level ${after.profile.level}`, 'Your passport is filling up.');
+		toast({ text: String(after.profile.level) }, `Level ${after.profile.level}`, `${after.profile.xp} XP so far.`);
 	}
 }
 
@@ -238,6 +242,6 @@ export async function toggleVisit(place: Place) {
 		app.discover = after;
 		if (visiting) celebrate(before, after, place);
 	} catch (error) {
-		toast('⚠️', 'That did not work', message(error));
+		toast(null, 'That did not work', message(error));
 	}
 }

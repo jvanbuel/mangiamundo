@@ -1,6 +1,8 @@
 <script lang="ts">
+	import ArrowLeft from '@lucide/svelte/icons/arrow-left';
+	import Check from '@lucide/svelte/icons/check';
 	import { app, country, toggleVisit } from './state.svelte';
-	import { statusOf, type CountryProgress } from './types';
+	import { statusOf, type CountryProgress, type Place } from './types';
 
 	let { progress, onback }: { progress: CountryProgress; onback: () => void } = $props();
 
@@ -12,14 +14,14 @@
 	const directions = (lat: number, lng: number) =>
 		`https://www.google.com/maps/dir/?api=1&destination=${lat},${lng}`;
 
-	async function toggle(place: (typeof app.places)[number]) {
+	async function toggle(place: Place) {
 		busy = place.id;
 		await toggleVisit(place);
 		busy = null;
 	}
 </script>
 
-<button class="back" onclick={onback}>← All countries</button>
+<button class="back" onclick={onback}><ArrowLeft size={16} strokeWidth={2.5} /> All countries</button>
 
 <header>
 	<span class="flag" aria-hidden="true">{info?.flag}</span>
@@ -27,7 +29,7 @@
 		<h2>{info?.name ?? progress.code}</h2>
 		<p class="muted">
 			{#if status === 'completed'}
-				Completed · all {progress.places} visited
+				Complete: all {progress.places} visited
 			{:else}
 				{progress.visited} of {progress.places} {progress.places === 1 ? 'place' : 'places'} visited
 			{/if}
@@ -41,25 +43,27 @@
 {:else}
 	<ul>
 		{#each app.places as place (place.id)}
-			<li class:visited={place.visited_at !== null}>
+			{@const visited = place.visited_at !== null}
+			<li>
 				<div class="info">
 					<strong>{place.name}</strong>
 					<span class="muted">
 						{distance(place.distance_m)}{place.address ? ` · ${place.address}` : ''}
+						{#if place.verified}<span class="verified"> · checked in on the spot</span>{/if}
 					</span>
 					<span class="links">
 						<a href={directions(place.lat, place.lng)} target="_blank" rel="noopener">Directions</a>
 						{#if place.url}<a href={place.url} target="_blank" rel="noopener">Website</a>{/if}
-						{#if place.verified}<span class="verified" title="Checked in on the spot">✓ verified</span>{/if}
 					</span>
 				</div>
 				<button
 					class="check"
-					aria-pressed={place.visited_at !== null}
+					class:done={visited}
+					aria-pressed={visited}
 					disabled={busy === place.id}
 					onclick={() => toggle(place)}
 				>
-					{place.visited_at !== null ? '✓ Visited' : 'Check in'}
+					{#if visited}<Check size={16} strokeWidth={3} /> Visited{:else}Check in{/if}
 				</button>
 			</li>
 		{/each}
@@ -68,8 +72,12 @@
 
 <style>
 	.back {
+		display: inline-flex;
+		align-items: center;
+		gap: 6px;
 		color: var(--muted);
-		font-size: 13px;
+		font-size: 14px;
+		font-weight: 700;
 		padding: 4px 0;
 	}
 
@@ -81,7 +89,7 @@
 		display: flex;
 		align-items: center;
 		gap: 14px;
-		margin: 10px 0 12px;
+		margin: 12px 0;
 	}
 
 	.flag {
@@ -95,7 +103,7 @@
 
 	p {
 		margin: 2px 0 0;
-		font-size: 13px;
+		font-size: 14px;
 	}
 
 	.bar span.discovered {
@@ -108,24 +116,16 @@
 
 	ul {
 		list-style: none;
-		margin: 16px 0 0;
+		margin: 8px 0 0;
 		padding: 0;
-		display: grid;
-		gap: 8px;
 	}
 
 	li {
 		display: flex;
 		align-items: center;
 		gap: 12px;
-		padding: 12px;
-		border-radius: 12px;
-		background: var(--panel-raised);
-		border: 1px solid transparent;
-	}
-
-	li.visited {
-		border-color: color-mix(in srgb, var(--completed) 45%, transparent);
+		padding: 14px 0;
+		border-bottom: 1px solid var(--line);
 	}
 
 	.info {
@@ -133,38 +133,54 @@
 		min-width: 0;
 		display: grid;
 		gap: 2px;
-		font-size: 13px;
+		font-size: 14px;
 	}
 
 	.info strong {
-		font-size: 15px;
+		font-size: 16px;
+		font-weight: 800;
 		overflow-wrap: anywhere;
 	}
 
 	.links {
 		display: flex;
 		flex-wrap: wrap;
-		gap: 12px;
+		gap: 14px;
 		margin-top: 2px;
+		font-weight: 700;
+	}
+
+	.links a {
+		text-decoration: none;
 	}
 
 	.verified {
 		color: var(--completed);
 	}
 
+	/* Chunky, pressable buttons: a solid face on a darker lower edge. */
 	.check {
+		--face: var(--accent);
 		flex: none;
-		padding: 8px 12px;
-		border-radius: 999px;
-		border: 1px solid var(--accent);
-		color: var(--accent);
-		font-size: 13px;
-		font-weight: 700;
+		display: inline-flex;
+		align-items: center;
+		gap: 4px;
+		padding: 9px 14px 11px;
+		border-radius: 12px;
+		background: var(--face);
+		color: var(--on-accent);
+		font-size: 14px;
+		font-weight: 800;
+		box-shadow: inset 0 -3px 0 color-mix(in srgb, var(--face) 70%, #000);
 	}
 
-	.check[aria-pressed='true'] {
-		background: var(--completed);
-		border-color: var(--completed);
+	.check:active {
+		padding: 10px 14px;
+		box-shadow: none;
+	}
+
+	.check.done {
+		--face: var(--completed);
 		color: var(--on-completed);
 	}
 

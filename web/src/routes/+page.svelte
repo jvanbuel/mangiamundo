@@ -7,6 +7,8 @@
 	import Passport from '#lib/Passport.svelte';
 	import Toasts from '#lib/Toasts.svelte';
 	import WorldMap from '#lib/WorldMap.svelte';
+	import MapPin from '@lucide/svelte/icons/map-pin';
+	import Navigation from '@lucide/svelte/icons/navigation';
 	import { app, init, refresh, select, setProjection, setTheme, toast, type Theme } from '#lib/state.svelte.ts';
 
 	let tab = $state<'countries' | 'badges'>('countries');
@@ -42,7 +44,7 @@
 			tab = 'countries';
 			select(code);
 		} else {
-			toast('🔍', `No ${name} here yet`, `No places from ${name} were found within ${app.radiusKm} km.`);
+			toast(null, `No ${name} food here yet`, `No places from ${name} were found within ${app.radiusKm} km.`);
 		}
 	}
 </script>
@@ -87,7 +89,7 @@
 			<h1><img src="/icon.svg" alt="" width="32" height="32" />Mangiamundo</h1>
 			{#if app.location}
 				<button class="where" aria-expanded={pickerOpen} onclick={() => (pickerOpen = !pickerOpen)}>
-					<span aria-hidden="true">{app.location.source === 'gps' ? '◎' : '⌖'}</span>
+					{#if app.location.source === 'gps'}<Navigation size={15} strokeWidth={2.5} aria-hidden="true" />{:else}<MapPin size={15} strokeWidth={2.5} aria-hidden="true" />{/if}
 					<span class="name">{place}</span>
 					<span class="muted">· {app.radiusKm} km</span>
 					<span class="change">{pickerOpen ? 'Close' : 'Change'}</span>
@@ -126,7 +128,7 @@
 			<div class="card" class:dim={app.loading}><Passport discover={app.discover} /></div>
 
 			{#if selected}
-				<div class="card"><CountryDetail progress={selected} onback={() => select(null)} /></div>
+				<section><CountryDetail progress={selected} onback={() => select(null)} /></section>
 			{:else}
 				<div class="tabs" role="tablist">
 					<button role="tab" aria-selected={tab === 'countries'} onclick={() => (tab = 'countries')}>
@@ -212,11 +214,13 @@
 		font-size: 13px;
 	}
 
+	/* Panels have a solid outline and a heavier lower edge rather than a soft shadow. */
 	.card {
 		padding: 16px;
-		border-radius: var(--radius);
-		border: 1px solid var(--line);
-		background: color-mix(in srgb, var(--panel-raised) 45%, var(--panel));
+		border-radius: 16px;
+		border: 2px solid var(--line);
+		border-bottom-width: 4px;
+		background: var(--panel);
 		transition: opacity 0.2s;
 	}
 

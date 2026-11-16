@@ -1,4 +1,5 @@
 <script lang="ts">
+	import Medal from './Medal.svelte';
 	import type { Badge } from './types';
 
 	let { badges }: { badges: Badge[] } = $props();
@@ -8,19 +9,13 @@
 
 <ul>
 	{#each sorted as badge (badge.id)}
-		<li class:earned={badge.earned}>
-			<span class="icon" aria-hidden="true">{badge.icon}</span>
-			<div>
-				<strong>{badge.title}</strong>
-				<p class="muted">{badge.description}</p>
-				{#if !badge.earned}
-					<div class="progress">
-						<div class="bar"><span style:width="{(badge.progress / badge.target) * 100}%"></span></div>
-						<span class="muted">{badge.progress}/{badge.target}</span>
-					</div>
-				{/if}
-			</div>
-			{#if badge.earned}<span class="tick" aria-label="Earned">✓</span>{/if}
+		<li title={badge.description}>
+			<Medal kind={badge.kind} earned={badge.earned} />
+			<strong>{badge.title}</strong>
+			<span class="muted">
+				{#if badge.earned}Earned{:else}{badge.progress} / {badge.target}{/if}
+			</span>
+			<span class="sr-only">{badge.description}</span>
 		</li>
 	{/each}
 </ul>
@@ -29,55 +24,37 @@
 	ul {
 		list-style: none;
 		margin: 0;
-		padding: 0;
+		padding: 4px 0 0;
 		display: grid;
-		gap: 8px;
+		grid-template-columns: repeat(auto-fill, minmax(104px, 1fr));
+		gap: 20px 8px;
 	}
 
 	li {
-		display: flex;
-		align-items: center;
-		gap: 12px;
-		padding: 12px;
-		border-radius: 12px;
-		background: var(--panel-raised);
+		display: grid;
+		justify-items: center;
+		align-content: start;
+		gap: 4px;
+		text-align: center;
 	}
 
-	li > div {
-		flex: 1;
-		min-width: 0;
-	}
-
-	.icon {
-		font-size: 26px;
-		filter: grayscale(1);
-		opacity: 0.55;
-	}
-
-	li.earned .icon {
-		filter: none;
-		opacity: 1;
-	}
-
-	p {
-		margin: 0;
-		font-size: 13px;
-	}
-
-	.progress {
-		display: flex;
-		align-items: center;
-		gap: 8px;
+	strong {
 		margin-top: 6px;
-		font-size: 12px;
-	}
-
-	.progress .bar {
-		flex: 1;
-	}
-
-	.tick {
-		color: var(--completed);
+		font-size: 14px;
 		font-weight: 800;
+		line-height: 1.2;
+	}
+
+	.muted {
+		font-size: 13px;
+		font-variant-numeric: tabular-nums;
+	}
+
+	.sr-only {
+		position: absolute;
+		width: 1px;
+		height: 1px;
+		overflow: hidden;
+		clip-path: inset(50%);
 	}
 </style>

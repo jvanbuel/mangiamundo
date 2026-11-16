@@ -52,10 +52,22 @@ pub struct GroupProgress {
     pub completed: u32,
 }
 
+/// What a badge rewards. Clients pick the badge's icon and colour from it.
+#[derive(Debug, Clone, Copy, Serialize, PartialEq)]
+#[serde(rename_all = "snake_case")]
+pub enum BadgeKind {
+    Visits,
+    Countries,
+    Completed,
+    Continent,
+    World,
+    Everything,
+}
+
 #[derive(Debug, Serialize, PartialEq)]
 pub struct Badge {
     pub id: String,
-    pub icon: &'static str,
+    pub kind: BadgeKind,
     pub title: String,
     pub description: String,
     pub progress: u32,
@@ -102,10 +114,17 @@ pub fn profile(lifetime: Lifetime) -> Profile {
     }
 }
 
-fn badge(id: impl Into<String>, icon: &'static str, title: impl Into<String>, description: impl Into<String>, progress: u32, target: u32) -> Badge {
+fn badge(
+    id: impl Into<String>,
+    kind: BadgeKind,
+    title: impl Into<String>,
+    description: impl Into<String>,
+    progress: u32,
+    target: u32,
+) -> Badge {
     Badge {
         id: id.into(),
-        icon,
+        kind,
         title: title.into(),
         description: description.into(),
         progress: progress.min(target),
@@ -157,37 +176,38 @@ pub fn summarize(rows: &[PlaceRow], lifetime: Lifetime) -> Summary {
         .collect();
     let world = group("WORLD", "World", &countries.iter().collect::<Vec<_>>());
 
+    use BadgeKind::*;
     let mut badges = vec![
-        badge("first-bite", "🍴", "First bite", "Check in at your first place.", lifetime.visits, 1),
-        badge("flags-5", "🧭", "Curious palate", "Taste 5 different countries.", lifetime.countries, 5),
-        badge("flags-10", "🎒", "Seasoned traveller", "Taste 10 different countries.", lifetime.countries, 10),
-        badge("flags-25", "🚀", "Citizen of the world", "Taste 25 different countries.", lifetime.countries, 25),
-        badge("complete-1", "⭐", "Regular", "Visit every place of one country in this city.", world.completed, 1),
-        badge("complete-5", "🏅", "Completionist", "Visit every place of 5 countries in this city.", world.completed, 5),
+        badge("first-bite", Visits, "First check-in", "Check in at any place.", lifetime.visits, 1),
+        badge("flags-5", Countries, "5 countries", "Eat the food of 5 countries.", lifetime.countries, 5),
+        badge("flags-10", Countries, "10 countries", "Eat the food of 10 countries.", lifetime.countries, 10),
+        badge("flags-25", Countries, "25 countries", "Eat the food of 25 countries.", lifetime.countries, 25),
+        badge("complete-1", Completed, "1 country complete", "Visit every place of a country here.", world.completed, 1),
+        badge("complete-5", Completed, "5 countries complete", "Visit every place of 5 countries here.", world.completed, 5),
     ];
     for continent in continents.iter().filter(|c| c.available > 0) {
         badges.push(badge(
             format!("continent-{}", continent.code),
-            "🗺️",
-            format!("{} explorer", continent.name),
-            format!("Taste every {} country available in this city.", continent.name),
+            Continent,
+            continent.name.clone(),
+            format!("Eat from every {} country found here.", continent.name),
             continent.discovered,
             continent.available,
         ));
     }
     badges.push(badge(
         "world",
-        "🌍",
-        "Around the world",
-        "Taste every country available in this city.",
+        World,
+        "Whole world",
+        "Eat from every country found here.",
         world.discovered,
         world.available,
     ));
     badges.push(badge(
         "world-complete",
-        "👑",
-        "Mangiamundo",
-        "Visit every single place in this city.",
+        Everything,
+        "Every place",
+        "Visit every single place here.",
         visited_places.len() as u32,
         all_places.len() as u32,
     ));

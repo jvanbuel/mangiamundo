@@ -28,9 +28,11 @@ export interface GroupProgress {
 	completed: number;
 }
 
+export type BadgeKind = 'visits' | 'countries' | 'completed' | 'continent' | 'world' | 'everything';
+
 export interface Badge {
 	id: string;
-	icon: string;
+	kind: BadgeKind;
 	title: string;
 	description: string;
 	progress: number;

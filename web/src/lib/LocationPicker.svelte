@@ -1,4 +1,5 @@
 <script lang="ts">
+	import Navigation from '@lucide/svelte/icons/navigation';
 	import * as api from './api';
 	import { app, locate, setLocation, setRadius, RADII } from './state.svelte';
 	import type { GeoResult } from './types';
@@ -39,7 +40,7 @@
 
 <div class="picker">
 	<button class="gps" onclick={useGps} disabled={app.locating}>
-		<span aria-hidden="true">◎</span>
+		<Navigation size={16} strokeWidth={2.5} aria-hidden="true" />
 		{app.locating ? 'Finding you…' : 'Use my current location'}
 	</button>
 	{#if app.locateError}<p class="error">{app.locateError}</p>{/if}
@@ -88,11 +89,12 @@
 		align-items: center;
 		justify-content: center;
 		gap: 8px;
-		padding: 10px;
-		border-radius: 10px;
+		padding: 10px 10px 13px;
+		border-radius: 12px;
 		background: var(--accent);
 		color: var(--on-accent);
-		font-weight: 700;
+		font-weight: 800;
+		box-shadow: inset 0 -3px 0 color-mix(in srgb, var(--accent) 70%, #000);
 	}
 
 	.gps:disabled {
