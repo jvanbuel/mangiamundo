@@ -274,18 +274,6 @@ pub async fn run(state: AppState, pusher: Pusher, every: StdDuration) {
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn names_cuisines_naturally() {
-        assert_eq!(cuisine_names(&["LB"]), "Lebanese");
-        assert_eq!(cuisine_names(&["CN", "VN"]), "Chinese or Vietnamese");
-        assert_eq!(cuisine_names(&["CN", "KR", "VN"]), "Chinese, Korean or Vietnamese");
-    }
-}
-
 /// Reads a subscription row.
 pub(crate) fn subscription_from_row(row: &sqlx::sqlite::SqliteRow) -> (String, Subscription) {
     (
@@ -300,4 +288,16 @@ pub(crate) fn subscription_from_row(row: &sqlx::sqlite::SqliteRow) -> (String, S
             timezone: row.get("timezone"),
         },
     )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn names_cuisines_naturally() {
+        assert_eq!(cuisine_names(&["LB"]), "Lebanese");
+        assert_eq!(cuisine_names(&["CN", "VN"]), "Chinese or Vietnamese");
+        assert_eq!(cuisine_names(&["CN", "KR", "VN"]), "Chinese, Korean or Vietnamese");
+    }
 }
