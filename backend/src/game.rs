@@ -18,8 +18,13 @@ pub struct PlaceRow {
 /// Lifetime totals of a user, independent of the current area.
 #[derive(Debug, Clone, Copy, Default)]
 pub struct Lifetime {
+    /// Check-ins, repeat visits included.
     pub visits: u32,
     pub countries: u32,
+    /// Different signature dishes logged.
+    pub dishes: u32,
+    /// Check-ins at the user's most visited place.
+    pub most_at_one_place: u32,
 }
 
 #[derive(Debug, Serialize, PartialEq)]
@@ -62,6 +67,8 @@ pub enum BadgeKind {
     Continent,
     World,
     Everything,
+    Dishes,
+    Regular,
 }
 
 #[derive(Debug, Serialize, PartialEq)]
@@ -84,6 +91,7 @@ pub struct Profile {
     pub next_level_xp: u32,
     pub visits: u32,
     pub countries: u32,
+    pub dishes: u32,
 }
 
 #[derive(Debug, Serialize, PartialEq)]
@@ -99,9 +107,12 @@ pub struct Summary {
 
 pub const XP_PER_VISIT: u32 = 10;
 pub const XP_PER_COUNTRY: u32 = 50;
+pub const XP_PER_DISH: u32 = 25;
+/// Check-ins at one place that make someone a regular.
+pub const REGULAR_VISITS: u32 = 5;
 
 pub fn profile(lifetime: Lifetime) -> Profile {
-    let xp = lifetime.visits * XP_PER_VISIT + lifetime.countries * XP_PER_COUNTRY;
+    let xp = lifetime.visits * XP_PER_VISIT + lifetime.countries * XP_PER_COUNTRY + lifetime.dishes * XP_PER_DISH;
     // Level n starts at 100 * (n - 1)^2 XP: 0, 100, 400, 900, ...
     let level = (xp as f64 / 100.0).sqrt().floor() as u32 + 1;
     Profile {
@@ -111,6 +122,7 @@ pub fn profile(lifetime: Lifetime) -> Profile {
         next_level_xp: 100 * level.pow(2),
         visits: lifetime.visits,
         countries: lifetime.countries,
+        dishes: lifetime.dishes,
     }
 }
 
@@ -184,6 +196,17 @@ pub fn summarize(rows: &[PlaceRow], lifetime: Lifetime) -> Summary {
         badge("flags-25", Countries, "25 countries", "Eat the food of 25 countries.", lifetime.countries, 25),
         badge("complete-1", Completed, "1 country complete", "Visit every place of a country here.", world.completed, 1),
         badge("complete-5", Completed, "5 countries complete", "Visit every place of 5 countries here.", world.completed, 5),
+        badge("dish-1", Dishes, "First signature dish", "Log a country's signature dish.", lifetime.dishes, 1),
+        badge("dishes-10", Dishes, "10 signature dishes", "Log 10 different signature dishes.", lifetime.dishes, 10),
+        badge("dishes-25", Dishes, "25 signature dishes", "Log 25 different signature dishes.", lifetime.dishes, 25),
+        badge(
+            "regular",
+            Regular,
+            "Regular",
+            format!("Check in at the same place {REGULAR_VISITS} times."),
+            lifetime.most_at_one_place,
+            REGULAR_VISITS,
+        ),
     ];
     for continent in continents.iter().filter(|c| c.available > 0) {
         badges.push(badge(
@@ -252,7 +275,7 @@ mod tests {
             row("d", "FR", false),
             row("e", "JP", false),
         ];
-        let s = summarize(&rows, Lifetime { visits: 3, countries: 2 });
+        let s = summarize(&rows, Lifetime { visits: 3, countries: 2, ..Default::default() });
 
         let italy = s.countries.iter().find(|c| c.code == "IT").unwrap();
         assert!(italy.completed() && italy.discovered());
@@ -276,21 +299,32 @@ mod tests {
     #[test]
     fn a_place_serving_two_countries_counts_once_as_a_place() {
         let rows = [row("a", "TH", true), row("a", "VN", true)];
-        let s = summarize(&rows, Lifetime { visits: 1, countries: 2 });
+        let s = summarize(&rows, Lifetime { visits: 1, countries: 2, ..Default::default() });
         assert_eq!((s.places, s.places_visited), (1, 1));
         assert_eq!(s.world.discovered, 2);
         assert!(earned(&s, "world") && earned(&s, "world-complete"));
     }
 
     #[test]
+    fn dishes_and_regulars_earn_xp_and_badges() {
+        let lifetime = Lifetime { visits: 5, countries: 1, dishes: 2, most_at_one_place: 5 };
+        assert_eq!(profile(lifetime).xp, 5 * 10 + 50 + 2 * 25);
+        let s = summarize(&[row("a", "JP", true)], lifetime);
+        assert!(earned(&s, "dish-1") && !earned(&s, "dishes-10"));
+        assert!(earned(&s, "regular"));
+        let s = summarize(&[row("a", "JP", true)], Lifetime { most_at_one_place: 4, ..lifetime });
+        assert!(!earned(&s, "regular"));
+    }
+
+    #[test]
     fn levels_follow_the_quadratic_curve() {
-        assert_eq!(profile(Lifetime { visits: 0, countries: 0 }).level, 1);
+        assert_eq!(profile(Lifetime { visits: 0, countries: 0, ..Default::default() }).level, 1);
         // 1 visit in a new country: 60 XP, still level 1.
-        let p = profile(Lifetime { visits: 1, countries: 1 });
+        let p = profile(Lifetime { visits: 1, countries: 1, ..Default::default() });
         assert_eq!((p.xp, p.level, p.level_xp, p.next_level_xp), (60, 1, 0, 100));
         // 5 visits over 5 countries: 300 XP, level 2 (100..400).
-        let p = profile(Lifetime { visits: 5, countries: 5 });
+        let p = profile(Lifetime { visits: 5, countries: 5, ..Default::default() });
         assert_eq!((p.xp, p.level, p.level_xp, p.next_level_xp), (300, 2, 100, 400));
-        assert_eq!(profile(Lifetime { visits: 10, countries: 6 }).level, 3);
+        assert_eq!(profile(Lifetime { visits: 10, countries: 6, ..Default::default() }).level, 3);
     }
 }

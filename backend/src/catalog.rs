@@ -43,6 +43,70 @@ pub fn country(code: &str) -> Option<&'static Country> {
         .copied()
 }
 
+/// A signature dish of a country. Logging one at a check-in earns bonus XP.
+#[derive(Debug, Clone, Serialize)]
+pub struct Dish {
+    /// Country code plus a slug of the name, e.g. `jp-ramen`. Stable as long as the name is.
+    pub id: String,
+    pub country: String,
+    pub name: String,
+}
+
+/// All signature dishes from `data/dishes.json`, in file order per country.
+pub fn dishes() -> &'static [Dish] {
+    static DATA: OnceLock<Vec<Dish>> = OnceLock::new();
+    DATA.get_or_init(|| {
+        let raw: serde_json::Map<String, serde_json::Value> =
+            serde_json::from_str(include_str!("../data/dishes.json")).expect("data/dishes.json is valid");
+        raw.into_iter()
+            .flat_map(|(country, names)| {
+                let names: Vec<String> = serde_json::from_value(names).expect("dish names are strings");
+                names.into_iter().map(move |name| Dish {
+                    id: format!("{}-{}", country.to_lowercase(), slug(&name)),
+                    country: country.clone(),
+                    name,
+                })
+            })
+            .collect()
+    })
+}
+
+pub fn dish(id: &str) -> Option<&'static Dish> {
+    dishes().iter().find(|d| d.id == id)
+}
+
+/// Lowercase ASCII slug: accents are folded, everything else becomes a single dash.
+fn slug(name: &str) -> String {
+    let mut out = String::new();
+    for ch in name.chars().flat_map(char::to_lowercase) {
+        let folded = match ch {
+            'a'..='z' | '0'..='9' => Some(ch.to_string()),
+            'à' | 'á' | 'â' | 'ã' | 'ä' | 'å' | 'ā' | 'ă' | 'ả' => Some("a".into()),
+            'æ' => Some("ae".into()),
+            'ç' | 'ć' | 'č' => Some("c".into()),
+            'đ' => Some("d".into()),
+            'è' | 'é' | 'ê' | 'ë' | 'ē' => Some("e".into()),
+            'ì' | 'í' | 'î' | 'ï' | 'ī' | 'ı' => Some("i".into()),
+            'ł' => Some("l".into()),
+            'ñ' => Some("n".into()),
+            'ò' | 'ó' | 'ô' | 'õ' | 'ö' | 'ø' | 'ơ' | 'ở' => Some("o".into()),
+            'œ' => Some("oe".into()),
+            'š' | 'ś' => Some("s".into()),
+            'ù' | 'ú' | 'û' | 'ü' | 'ū' => Some("u".into()),
+            'ž' | 'ż' | 'ź' => Some("z".into()),
+            // The dot of a lowercased 'İ'.
+            '\u{307}' => Some(String::new()),
+            _ => None,
+        };
+        match folded {
+            Some(text) => out.push_str(&text),
+            None if !out.is_empty() && !out.ends_with('-') => out.push('-'),
+            None => {}
+        }
+    }
+    out.trim_end_matches('-').to_string()
+}
+
 /// One national cuisine and how each data source refers to it.
 pub struct Cuisine {
     pub country: &'static str,
@@ -242,6 +306,23 @@ mod tests {
         for co in countries() {
             assert!(CONTINENTS.iter().any(|(code, _)| *code == co.continent), "{}", co.code);
         }
+    }
+
+    #[test]
+    fn every_cuisine_has_signature_dishes_with_unique_ids() {
+        let mut ids = std::collections::HashSet::new();
+        for dish in dishes() {
+            assert!(country(&dish.country).is_some(), "unknown country {}", dish.country);
+            assert!(dish.id.len() > 3 && !dish.id.contains("--"), "bad id {}", dish.id);
+            assert!(ids.insert(dish.id.clone()), "duplicate dish {}", dish.id);
+        }
+        for cu in CUISINES {
+            assert!(dishes().iter().any(|d| d.country == cu.country), "no dishes for {}", cu.country);
+        }
+        assert_eq!(dish("jp-ramen").map(|d| d.name.as_str()), Some("Ramen"));
+        assert_eq!(slug("Bœuf bourguignon"), "boeuf-bourguignon");
+        assert_eq!(slug("İskender kebap"), "iskender-kebap");
+        assert_eq!(slug("Phở"), "pho");
     }
 
     #[test]

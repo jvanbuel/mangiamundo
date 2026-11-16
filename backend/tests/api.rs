@@ -236,14 +236,152 @@ async fn visits_between_counts_distinct_places_inside_the_window() {
     let user = store::user_for_token(&db, &token).await.unwrap().unwrap();
 
     let (from, until) = (START, START + 30 * DAY);
-    store::add_visit(&db, &user, "sushi", false, from - 1).await.unwrap(); // just before
-    store::add_visit(&db, &user, "ramen", false, from).await.unwrap(); // first second
-    store::add_visit(&db, &user, "fusion", false, until - 1).await.unwrap(); // last second, two countries
-    store::add_visit(&db, &user, "pasta", false, from + DAY).await.unwrap(); // wrong country
+    store::add_checkin(&db, &user, "sushi", false, None, from - 1).await.unwrap(); // just before
+    store::add_checkin(&db, &user, "ramen", false, None, from).await.unwrap(); // first second
+    store::add_checkin(&db, &user, "fusion", false, None, until - 1).await.unwrap(); // last second, two countries
+    store::add_checkin(&db, &user, "pasta", false, None, from + DAY).await.unwrap(); // wrong country
+    store::add_checkin(&db, &user, "ramen", false, None, from + DAY).await.unwrap(); // a second visit, same place
 
     let japan = vec!["JP".to_string()];
     assert_eq!(store::visits_between(&db, &user, &japan, from, until).await.unwrap(), 2);
     let east_asia = vec!["JP".to_string(), "KR".to_string()];
     assert_eq!(store::visits_between(&db, &user, &east_asia, from, until).await.unwrap(), 2, "a place counts once");
     assert_eq!(store::visits_between(&db, &user, &[], from, until).await.unwrap(), 0);
+}
+
+/// The first place in the area and one of its countries' signature dishes.
+async fn place_with_dish(app: &Router, token: &str) -> (String, String, String) {
+    let (_, catalog) = call(app, "GET", "/api/countries", None, None).await;
+    let (_, discover) = call(app, "GET", &format!("/api/discover?{HERE}"), Some(token), None).await;
+    for country in discover["countries"].as_array().unwrap() {
+        let code = country["code"].as_str().unwrap();
+        let Some(dish) = catalog["dishes"].as_array().unwrap().iter().find(|d| d["country"] == code) else {
+            continue;
+        };
+        let (_, places) = call(app, "GET", &format!("/api/places?{HERE}&country={code}"), Some(token), None).await;
+        let place = places[0]["id"].as_str().unwrap().to_string();
+        return (place, code.to_string(), dish["id"].as_str().unwrap().to_string());
+    }
+    panic!("no country with dishes in the demo area");
+}
+
+#[tokio::test]
+async fn returning_counts_again_once_per_cooldown_and_dishes_earn_xp() {
+    let (app, clock) = app_with_clock().await;
+    let token = session(&app).await;
+    let (place, country, dish) = place_with_dish(&app, &token).await;
+    let uri = format!("/api/visits/{place}");
+
+    // First visit: 10 + 50 XP.
+    let (status, first) = call(&app, "POST", &uri, Some(&token), None).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(first["profile"]["xp"], 60);
+
+    // Too soon to count again.
+    let (status, _) = call(&app, "POST", &uri, Some(&token), None).await;
+    assert_eq!(status, StatusCode::CONFLICT);
+    let (_, places) = call(&app, "GET", &format!("/api/places?{HERE}&country={country}"), Some(&token), None).await;
+    let row = places.as_array().unwrap().iter().find(|p| p["id"] == place).unwrap();
+    assert_eq!(row["visits"], 1);
+    assert_eq!(row["next_check_in_at"], START + 12 * 3600);
+    assert_eq!(row["last_checkin_id"], first["checkin_id"]);
+
+    // Logging the signature dish on that visit: +25 XP, once per dish.
+    let patch = format!("/api/checkins/{}", first["checkin_id"]);
+    let (status, profile) = call(&app, "PATCH", &patch, Some(&token), Some(&format!(r#"{{"dish":"{dish}"}}"#))).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(profile["xp"], 85);
+    assert_eq!(profile["dishes"], 1);
+    let (status, _) = call(&app, "PATCH", &patch, Some(&token), Some(r#"{"dish":"jp-not-a-dish"}"#)).await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+
+    // The next day: a second visit with the same dish adds only the visit XP.
+    clock.store(START + DAY, std::sync::atomic::Ordering::Relaxed);
+    let (status, second) = call(&app, "POST", &uri, Some(&token), Some(&format!(r#"{{"dish":"{dish}"}}"#))).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(second["profile"]["xp"], 95);
+    assert_eq!(second["profile"]["visits"], 2);
+
+    let (_, discover) = call(&app, "GET", &format!("/api/discover?{HERE}"), Some(&token), None).await;
+    assert_eq!(discover["dishes_tried"], serde_json::json!([dish]));
+    assert_eq!(badge(&discover, "dish-1")["earned"], true);
+    assert_eq!(badge(&discover, "regular")["progress"], 2);
+
+    // Undoing the latest check-in leaves the first one.
+    let (status, _) = call(&app, "DELETE", &format!("/api/checkins/{}", second["checkin_id"]), Some(&token), None).await;
+    assert_eq!(status, StatusCode::NO_CONTENT);
+    let (_, places) = call(&app, "GET", &format!("/api/places?{HERE}&country={country}"), Some(&token), None).await;
+    let row = places.as_array().unwrap().iter().find(|p| p["id"] == place).unwrap();
+    assert_eq!(row["visits"], 1);
+    assert_eq!(row["next_check_in_at"], Value::Null);
+    // Someone else cannot touch it.
+    let other = session(&app).await;
+    let (status, _) = call(&app, "DELETE", &format!("/api/checkins/{}", first["checkin_id"]), Some(&other), None).await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+}
+
+#[tokio::test]
+async fn a_recovery_code_moves_the_passport_to_another_device() {
+    let app = app().await;
+    let phone = session(&app).await;
+    let (place, _, _) = place_with_dish(&app, &phone).await;
+    call(&app, "POST", &format!("/api/visits/{place}"), Some(&phone), None).await;
+
+    let (status, body) = call(&app, "GET", "/api/session/recovery", Some(&phone), None).await;
+    assert_eq!(status, StatusCode::OK);
+    let code = body["code"].as_str().unwrap().to_string();
+    assert_eq!(code.len(), 19, "four groups of four: {code}");
+    let (_, again) = call(&app, "GET", "/api/session/recovery", Some(&phone), None).await;
+    assert_eq!(again["code"], code.as_str(), "the code stays the same until rotated");
+
+    // A new laptop that already checked in somewhere else restores the phone's passport.
+    let laptop = session(&app).await;
+    let (_, places) = call(&app, "GET", &format!("/api/places?{HERE}"), Some(&laptop), None).await;
+    let elsewhere = places.as_array().unwrap().iter().find(|p| p["id"] != place.as_str()).unwrap()["id"].clone();
+    call(&app, "POST", &format!("/api/visits/{}", elsewhere.as_str().unwrap()), Some(&laptop), None).await;
+
+    let typed = code.to_lowercase().replace('-', " ");
+    let (status, restored) =
+        call(&app, "POST", "/api/session/restore", Some(&laptop), Some(&format!(r#"{{"code":"{typed}"}}"#))).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(restored["token"], phone.as_str());
+    assert_eq!(restored["merged"], 1);
+    let (_, discover) = call(&app, "GET", &format!("/api/discover?{HERE}"), Some(&phone), None).await;
+    assert_eq!(discover["profile"]["visits"], 2);
+    // The laptop's own account is gone.
+    let (status, _) = call(&app, "GET", "/api/session/recovery", Some(&laptop), None).await;
+    assert_eq!(status, StatusCode::UNAUTHORIZED);
+
+    // Rotating the code retires the old one.
+    let (_, rotated) = call(&app, "POST", "/api/session/recovery", Some(&phone), None).await;
+    assert_ne!(rotated["code"], code.as_str());
+    let (status, _) = call(&app, "POST", "/api/session/restore", None, Some(&format!(r#"{{"code":"{code}"}}"#))).await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+    let (status, _) = call(&app, "POST", "/api/session/restore", None, Some(r#"{"code":"nope"}"#)).await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+}
+
+#[tokio::test]
+async fn share_card_is_a_png() {
+    let app = app().await;
+    let token = session(&app).await;
+    let (place, _, _) = place_with_dish(&app, &token).await;
+    call(&app, "POST", &format!("/api/visits/{place}"), Some(&token), None).await;
+
+    for theme in ["light", "dark"] {
+        let request = Request::builder()
+            .uri(format!("/api/share/card.png?{HERE}&place=Leuven&theme={theme}"))
+            .header("authorization", format!("Bearer {token}"))
+            .body(Body::empty())
+            .unwrap();
+        let response = app.clone().oneshot(request).await.unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        assert_eq!(response.headers()["content-type"], "image/png");
+        let bytes = response.into_body().collect().await.unwrap().to_bytes();
+        assert_eq!(&bytes[1..4], b"PNG");
+        // Set SHARE_CARD_DIR to look at the result.
+        if let Ok(dir) = std::env::var("SHARE_CARD_DIR") {
+            std::fs::write(format!("{dir}/card-{theme}.png"), &bytes).unwrap();
+        }
+    }
 }

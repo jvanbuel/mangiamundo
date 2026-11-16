@@ -5,7 +5,7 @@ use axum::extract::{FromRequestParts, Path, Query, State};
 use axum::http::request::Parts;
 use axum::http::{header, StatusCode};
 use axum::response::{IntoResponse, Response};
-use axum::routing::{get, post, put};
+use axum::routing::{get, patch, post, put};
 use axum::{Json, Router};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
@@ -24,16 +24,22 @@ use crate::{catalog, geo, AppState};
 
 /// A check-in counts as verified when made within this distance of the place.
 const VERIFY_DISTANCE_M: f64 = 250.0;
+/// Time between two check-ins at the same place, so one meal counts once.
+pub const CHECKIN_COOLDOWN_SECS: i64 = 12 * 3600;
 
 pub fn router(state: AppState) -> Router {
     Router::new()
         .route("/api/health", get(|| async { Json(json!({ "ok": true })) }))
         .route("/api/session", post(create_session))
+        .route("/api/session/recovery", get(recovery_code).post(rotate_recovery_code))
+        .route("/api/session/restore", post(restore_session))
         .route("/api/countries", get(countries))
         .route("/api/discover", get(discover))
         .route("/api/places", get(places))
         .route("/api/celebrations", get(celebrations))
-        .route("/api/visits/{place_id}", put(add_visit).delete(remove_visit))
+        .route("/api/visits/{place_id}", put(add_visit).post(check_in).delete(remove_visits))
+        .route("/api/checkins/{id}", patch(update_checkin).delete(remove_checkin))
+        .route("/api/share/card.png", get(crate::share::card))
         .route("/api/push/key", get(push_key))
         .route("/api/push/subscription", put(subscribe).delete(unsubscribe))
         .route("/api/geocode", get(geocode))
@@ -51,6 +57,8 @@ pub enum ApiError {
     Unauthorized,
     #[error("{0} not found")]
     NotFound(&'static str),
+    #[error("{0}")]
+    Conflict(String),
     #[error("the places provider is unavailable")]
     Upstream(#[source] anyhow::Error),
     #[error("internal error")]
@@ -63,6 +71,7 @@ impl IntoResponse for ApiError {
             ApiError::BadRequest(_) => StatusCode::BAD_REQUEST,
             ApiError::Unauthorized => StatusCode::UNAUTHORIZED,
             ApiError::NotFound(_) => StatusCode::NOT_FOUND,
+            ApiError::Conflict(_) => StatusCode::CONFLICT,
             ApiError::Upstream(error) => {
                 tracing::error!(error = format!("{error:#}"), "provider request failed");
                 StatusCode::BAD_GATEWAY
@@ -76,12 +85,12 @@ impl IntoResponse for ApiError {
     }
 }
 
-type ApiResult<T> = Result<Json<T>, ApiError>;
+pub(crate) type ApiResult<T> = Result<Json<T>, ApiError>;
 
 /// The user behind the `Authorization: Bearer <token>` header, if there is one.
-struct MaybeUser(Option<String>);
+pub(crate) struct MaybeUser(pub Option<String>);
 /// Like [`MaybeUser`] but rejects anonymous requests.
-struct User(String);
+pub(crate) struct User(pub String);
 
 impl FromRequestParts<AppState> for MaybeUser {
     type Rejection = ApiError;
@@ -120,13 +129,67 @@ async fn create_session(State(state): State<AppState>) -> ApiResult<serde_json::
 }
 
 #[derive(Serialize)]
+struct RecoveryCode {
+    /// Formatted in groups of four for reading and writing down.
+    code: String,
+}
+
+fn recovery_view(code: &str) -> Json<RecoveryCode> {
+    let groups: Vec<&str> = code.as_bytes().chunks(4).map(|c| std::str::from_utf8(c).unwrap_or("")).collect();
+    Json(RecoveryCode { code: groups.join("-") })
+}
+
+/// The code that restores this passport on another device.
+async fn recovery_code(State(state): State<AppState>, User(user): User) -> ApiResult<RecoveryCode> {
+    Ok(recovery_view(&store::recovery_code(&state.db, &user).await?))
+}
+
+/// Replaces the recovery code; the old one stops working.
+async fn rotate_recovery_code(State(state): State<AppState>, User(user): User) -> ApiResult<RecoveryCode> {
+    Ok(recovery_view(&store::rotate_recovery_code(&state.db, &user).await?))
+}
+
+#[derive(Deserialize)]
+struct RestoreBody {
+    code: String,
+}
+
+#[derive(Serialize)]
+struct Restored {
+    token: String,
+    /// Check-ins this device had made on its own account and brought along.
+    merged: u64,
+}
+
+/// Swaps this device onto the passport behind a recovery code. Whatever the device had
+/// collected under its own account is merged in, so nothing is lost either way.
+async fn restore_session(
+    State(state): State<AppState>,
+    MaybeUser(current): MaybeUser,
+    Json(body): Json<RestoreBody>,
+) -> ApiResult<Restored> {
+    let code = store::normalize_recovery_code(&body.code)
+        .ok_or_else(|| ApiError::BadRequest("a recovery code has 16 letters and digits".into()))?;
+    let (target, token) = store::user_for_recovery_code(&state.db, &code)
+        .await?
+        .ok_or(ApiError::NotFound("recovery code"))?;
+    let merged = match current {
+        Some(current) if current != target => store::merge_users(&state.db, &current, &target).await?,
+        _ => 0,
+    };
+    Ok(Json(Restored { token, merged }))
+}
+
+#[derive(Serialize)]
 struct Catalog {
     countries: &'static [catalog::Country],
     continents: Vec<serde_json::Value>,
+    dishes: &'static [catalog::Dish],
 }
 
 async fn countries() -> Json<Catalog> {
     Json(Catalog {
+        dishes: catalog::dishes(),
         countries: catalog::countries(),
         continents: catalog::CONTINENTS
             .iter()
@@ -136,10 +199,10 @@ async fn countries() -> Json<Catalog> {
 }
 
 #[derive(Deserialize)]
-struct AreaQuery {
-    lat: f64,
-    lng: f64,
-    radius_km: Option<f64>,
+pub(crate) struct AreaQuery {
+    pub lat: f64,
+    pub lng: f64,
+    pub radius_km: Option<f64>,
 }
 
 impl AreaQuery {
@@ -157,7 +220,7 @@ impl AreaQuery {
 
 /// Returns the cached area for a location, asking the provider when the cache is
 /// missing or stale. A stale cache is still used when the provider is down.
-async fn resolve_area(state: &AppState, query: &AreaQuery) -> Result<Area, ApiError> {
+pub(crate) async fn resolve_area(state: &AppState, query: &AreaQuery) -> Result<Area, ApiError> {
     let radius_m = query.validate()?;
     let (lat, lng) = store::snap(query.lat, query.lng);
     let provider = state.places.name();
@@ -193,6 +256,8 @@ struct Discover {
     #[serde(flatten)]
     summary: Summary,
     events: Vec<EventProgress>,
+    /// Ids of the signature dishes the user ever logged.
+    dishes_tried: Vec<String>,
 }
 
 #[derive(Serialize, PartialEq, Debug)]
@@ -280,7 +345,11 @@ async fn discover(
         None => Lifetime::default(),
     };
     let events = event_progress(&state, user.as_deref(), &rows).await?;
-    Ok(Json(Discover { summary: game::summarize(&rows, lifetime), area, events }))
+    let dishes_tried = match &user {
+        Some(user) => store::dishes_tried(&state.db, user).await?,
+        None => Vec::new(),
+    };
+    Ok(Json(Discover { summary: game::summarize(&rows, lifetime), area, events, dishes_tried }))
 }
 
 #[derive(Deserialize)]
@@ -354,8 +423,10 @@ async fn places(
     let area = resolve_area(&state, &area_query).await?;
     let country = query.country.map(|c| c.to_uppercase());
     let mut places = store::area_places(&state.db, &area.key, country.as_deref(), user.as_deref()).await?;
+    let now = state.now();
     for place in &mut places {
         place.distance_m = geo::distance_m(query.lat, query.lng, place.lat, place.lng).round() as u32;
+        place.next_check_in_at = place.last_visited_at.map(|at| at + CHECKIN_COOLDOWN_SECS).filter(|&at| at > now);
     }
     places.sort_by_key(|p| p.distance_m);
     Ok(Json(places))
@@ -366,41 +437,121 @@ struct CheckIn {
     /// Where the user is right now. Optional; used to mark the visit as verified.
     lat: Option<f64>,
     lng: Option<f64>,
+    /// A signature dish of one of the place's countries.
+    dish: Option<String>,
 }
 
 #[derive(Serialize)]
 struct VisitResult {
     place_id: String,
+    checkin_id: i64,
     verified: bool,
     profile: game::Profile,
 }
 
+/// Whether a check-in made from `body`'s position counts as on the spot.
+async fn verify(state: &AppState, place_id: &str, body: &CheckIn) -> Result<bool, ApiError> {
+    let (plat, plng) = store::place_location(&state.db, place_id).await?.ok_or(ApiError::NotFound("place"))?;
+    Ok(match (body.lat, body.lng) {
+        (Some(lat), Some(lng)) => geo::distance_m(lat, lng, plat, plng) <= VERIFY_DISTANCE_M,
+        _ => false,
+    })
+}
+
+/// Checks that a dish id exists and belongs to one of the place's countries.
+async fn valid_dish(state: &AppState, place_id: &str, dish: Option<&str>) -> Result<(), ApiError> {
+    let Some(id) = dish else { return Ok(()) };
+    let dish = catalog::dish(id).ok_or_else(|| ApiError::BadRequest(format!("unknown dish {id}")))?;
+    if !store::place_countries(&state.db, place_id).await?.contains(&dish.country) {
+        return Err(ApiError::BadRequest(format!("{} is not served here", dish.name)));
+    }
+    Ok(())
+}
+
+async fn visit_result(state: &AppState, user: &str, place_id: String, checkin_id: i64, verified: bool) -> ApiResult<VisitResult> {
+    let profile = game::profile(store::lifetime(&state.db, user).await?);
+    Ok(Json(VisitResult { place_id, checkin_id, verified, profile }))
+}
+
+/// A new check-in. Returning to a place counts again, once per cooldown period.
+async fn check_in(
+    State(state): State<AppState>,
+    User(user): User,
+    Path(place_id): Path<String>,
+    body: Option<Json<CheckIn>>,
+) -> ApiResult<VisitResult> {
+    let body = body.map(|Json(b)| b).unwrap_or_default();
+    let verified = verify(&state, &place_id, &body).await?;
+    valid_dish(&state, &place_id, body.dish.as_deref()).await?;
+    let now = state.now();
+    if let Some(last) = store::last_checkin_at(&state.db, &user, &place_id).await? {
+        if now - last < CHECKIN_COOLDOWN_SECS {
+            return Err(ApiError::Conflict("You already checked in here today.".into()));
+        }
+    }
+    let id = store::add_checkin(&state.db, &user, &place_id, verified, body.dish.as_deref(), now).await?;
+    visit_result(&state, &user, place_id, id, verified).await
+}
+
+/// Marks a place as visited: the first check-in only. Repeating it keeps the original
+/// date but can upgrade the visit to verified. Kept for clients from before repeat visits.
 async fn add_visit(
     State(state): State<AppState>,
     User(user): User,
     Path(place_id): Path<String>,
     body: Option<Json<CheckIn>>,
 ) -> ApiResult<VisitResult> {
-    let (plat, plng) = store::place_location(&state.db, &place_id)
-        .await?
-        .ok_or(ApiError::NotFound("place"))?;
-    let check_in = body.map(|Json(b)| b).unwrap_or_default();
-    let verified = match (check_in.lat, check_in.lng) {
-        (Some(lat), Some(lng)) => geo::distance_m(lat, lng, plat, plng) <= VERIFY_DISTANCE_M,
-        _ => false,
-    };
-    store::add_visit(&state.db, &user, &place_id, verified, state.now()).await?;
-    let profile = game::profile(store::lifetime(&state.db, &user).await?);
-    Ok(Json(VisitResult { place_id, verified, profile }))
+    let body = body.map(|Json(b)| b).unwrap_or_default();
+    let verified = verify(&state, &place_id, &body).await?;
+    if store::last_checkin_at(&state.db, &user, &place_id).await?.is_some() {
+        if verified {
+            store::verify_latest_checkin(&state.db, &user, &place_id).await?;
+        }
+        let id = store::latest_checkin_id(&state.db, &user, &place_id).await?;
+        return visit_result(&state, &user, place_id, id, verified).await;
+    }
+    let id = store::add_checkin(&state.db, &user, &place_id, verified, None, state.now()).await?;
+    visit_result(&state, &user, place_id, id, verified).await
 }
 
-async fn remove_visit(
+/// Removes every check-in at a place.
+async fn remove_visits(
     State(state): State<AppState>,
     User(user): User,
     Path(place_id): Path<String>,
 ) -> Result<StatusCode, ApiError> {
-    store::remove_visit(&state.db, &user, &place_id).await?;
+    store::remove_visits(&state.db, &user, &place_id).await?;
     Ok(StatusCode::NO_CONTENT)
+}
+
+#[derive(Deserialize)]
+struct CheckinUpdate {
+    /// The signature dish eaten, or null to clear it.
+    dish: Option<String>,
+}
+
+async fn update_checkin(
+    State(state): State<AppState>,
+    User(user): User,
+    Path(id): Path<i64>,
+    Json(body): Json<CheckinUpdate>,
+) -> ApiResult<game::Profile> {
+    let place_id = store::checkin_place(&state.db, &user, id).await?.ok_or(ApiError::NotFound("check-in"))?;
+    valid_dish(&state, &place_id, body.dish.as_deref()).await?;
+    store::set_checkin_dish(&state.db, &user, id, body.dish.as_deref()).await?;
+    Ok(Json(game::profile(store::lifetime(&state.db, &user).await?)))
+}
+
+async fn remove_checkin(
+    State(state): State<AppState>,
+    User(user): User,
+    Path(id): Path<i64>,
+) -> Result<StatusCode, ApiError> {
+    if store::remove_checkin(&state.db, &user, id).await? {
+        Ok(StatusCode::NO_CONTENT)
+    } else {
+        Err(ApiError::NotFound("check-in"))
+    }
 }
 
 async fn push_key(State(state): State<AppState>) -> ApiResult<serde_json::Value> {

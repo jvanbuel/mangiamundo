@@ -24,6 +24,7 @@ chrono-tz = "0.10"
 base64 = "0.22"
 http = "0.2"
 getrandom = "0.3"
+resvg = { version = "0.45", default-features = false, features = ["text"] }
 
 [dev-dependencies]
 tower = { version = "0.5", features = ["util"] }

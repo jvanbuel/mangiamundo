@@ -6,6 +6,7 @@ pub mod game;
 pub mod geo;
 pub mod providers;
 pub mod push;
+pub mod share;
 pub mod store;
 
 use std::sync::Arc;
