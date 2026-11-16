@@ -1,0 +1,28 @@
+app = "mangiamundo"
+primary_region = "ams"
+
+[build]
+  dockerfile = "Dockerfile"
+
+# SQLite lives here, including the generated VAPID key, so it must survive deploys.
+[mounts]
+  source = "mangiamundo_data"
+  destination = "/data"
+
+[http_service]
+  internal_port = 8080
+  force_https = true
+  # Push reminders run in-process, so keep one machine awake.
+  auto_stop_machines = "off"
+  min_machines_running = 1
+
+  [[http_service.checks]]
+    method = "GET"
+    path = "/api/health"
+    interval = "30s"
+    timeout = "5s"
+    grace_period = "10s"
+
+[[vm]]
+  size = "shared-cpu-1x"
+  memory = "512mb"
