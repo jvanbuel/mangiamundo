@@ -294,6 +294,9 @@ async fn returning_counts_again_once_per_cooldown_and_dishes_earn_xp() {
     assert_eq!(profile["dishes"], 1);
     let (status, _) = call(&app, "PATCH", &patch, Some(&token), Some(r#"{"dish":"jp-not-a-dish"}"#)).await;
     assert_eq!(status, StatusCode::BAD_REQUEST);
+    // PUT does the same, for HTTP clients that cannot send PATCH.
+    let (status, profile) = call(&app, "PUT", &patch, Some(&token), Some(&format!(r#"{{"dish":"{dish}"}}"#))).await;
+    assert_eq!((status, profile["xp"].as_u64()), (StatusCode::OK, Some(85)));
 
     // The next day: a second visit with the same dish adds only the visit XP.
     clock.store(START + DAY, std::sync::atomic::Ordering::Relaxed);

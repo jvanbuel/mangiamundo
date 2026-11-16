@@ -38,7 +38,7 @@ pub fn router(state: AppState) -> Router {
         .route("/api/places", get(places))
         .route("/api/celebrations", get(celebrations))
         .route("/api/visits/{place_id}", put(add_visit).post(check_in).delete(remove_visits))
-        .route("/api/checkins/{id}", patch(update_checkin).delete(remove_checkin))
+        .route("/api/checkins/{id}", patch(update_checkin).put(update_checkin).delete(remove_checkin))
         .route("/api/share/card.png", get(crate::share::card))
         .route("/api/push/key", get(push_key))
         .route("/api/push/subscription", put(subscribe).delete(unsubscribe))
