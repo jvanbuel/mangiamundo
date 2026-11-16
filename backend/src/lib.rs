@@ -5,6 +5,7 @@ pub mod config;
 pub mod game;
 pub mod geo;
 pub mod providers;
+pub mod push;
 pub mod store;
 
 use std::sync::Arc;
@@ -20,6 +21,8 @@ pub struct AppState {
     pub cache_ttl_secs: i64,
     /// The current Unix time. Replaceable so tests can pin a moment.
     pub clock: Arc<dyn Fn() -> i64 + Send + Sync>,
+    /// The VAPID public key browsers subscribe with, when Web Push is enabled.
+    pub push_key: Option<String>,
 }
 
 impl AppState {

@@ -21,6 +21,12 @@ pub struct Config {
     pub cache_ttl_secs: i64,
     /// Directory with the built web app, served at `/` when it exists.
     pub static_dir: Option<PathBuf>,
+    /// Raw P-256 private key (base64url) for Web Push. Generated and stored when unset.
+    pub vapid_private_key: Option<String>,
+    /// Contact sent to push services: a `mailto:` or `https:` URL.
+    pub vapid_subject: String,
+    /// Seconds between passes over push subscriptions; 0 turns reminders off.
+    pub push_interval_secs: u64,
 }
 
 /// The main public instance is often overloaded, so community mirrors back it up.
@@ -61,6 +67,9 @@ impl Config {
                 .transpose()?
                 .unwrap_or(7)
                 * 86_400,
+            vapid_private_key: var("VAPID_PRIVATE_KEY"),
+            vapid_subject: var("VAPID_SUBJECT").unwrap_or_else(|| "mailto:hello@mangiamundo.app".into()),
+            push_interval_secs: var("PUSH_INTERVAL_SECS").map(|v| v.parse()).transpose()?.unwrap_or(600),
             static_dir: Some(PathBuf::from(
                 var("STATIC_DIR").unwrap_or_else(|| "../web/build".into()),
             )),

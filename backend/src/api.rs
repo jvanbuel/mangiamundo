@@ -34,6 +34,8 @@ pub fn router(state: AppState) -> Router {
         .route("/api/places", get(places))
         .route("/api/celebrations", get(celebrations))
         .route("/api/visits/{place_id}", put(add_visit).delete(remove_visit))
+        .route("/api/push/key", get(push_key))
+        .route("/api/push/subscription", put(subscribe).delete(unsubscribe))
         .route("/api/geocode", get(geocode))
         .route("/api/geocode/reverse", get(reverse_geocode))
         .layer(CorsLayer::permissive())
@@ -394,6 +396,70 @@ async fn remove_visit(
     Path(place_id): Path<String>,
 ) -> Result<StatusCode, ApiError> {
     store::remove_visit(&state.db, &user, &place_id).await?;
+    Ok(StatusCode::NO_CONTENT)
+}
+
+async fn push_key(State(state): State<AppState>) -> ApiResult<serde_json::Value> {
+    let key = state.push_key.clone().ok_or(ApiError::NotFound("push"))?;
+    Ok(Json(json!({ "public_key": key })))
+}
+
+/// A browser's PushSubscription (as from `subscription.toJSON()`), plus where the user is.
+#[derive(Deserialize)]
+struct SubscribeBody {
+    endpoint: String,
+    keys: SubscribeKeys,
+    lat: f64,
+    lng: f64,
+    radius_km: f64,
+    timezone: String,
+}
+
+#[derive(Deserialize)]
+struct SubscribeKeys {
+    p256dh: String,
+    auth: String,
+}
+
+async fn subscribe(
+    State(state): State<AppState>,
+    User(user): User,
+    Json(body): Json<SubscribeBody>,
+) -> Result<StatusCode, ApiError> {
+    if state.push_key.is_none() {
+        return Err(ApiError::NotFound("push"));
+    }
+    if !body.endpoint.starts_with("https://") && !body.endpoint.starts_with("http://127.0.0.1") {
+        return Err(ApiError::BadRequest("endpoint must be an https URL".into()));
+    }
+    AreaQuery { lat: body.lat, lng: body.lng, radius_km: Some(body.radius_km) }.validate()?;
+    if body.timezone.parse::<chrono_tz::Tz>().is_err() {
+        return Err(ApiError::BadRequest("unknown time zone".into()));
+    }
+    let subscription = crate::push::Subscription {
+        endpoint: body.endpoint,
+        p256dh: body.keys.p256dh,
+        auth: body.keys.auth,
+        lat: body.lat,
+        lng: body.lng,
+        radius_km: body.radius_km,
+        timezone: body.timezone,
+    };
+    store::save_push_subscription(&state.db, &user, &subscription, state.now()).await?;
+    Ok(StatusCode::NO_CONTENT)
+}
+
+#[derive(Deserialize)]
+struct UnsubscribeBody {
+    endpoint: String,
+}
+
+async fn unsubscribe(
+    State(state): State<AppState>,
+    User(user): User,
+    Json(body): Json<UnsubscribeBody>,
+) -> Result<StatusCode, ApiError> {
+    store::remove_user_push_subscription(&state.db, &user, &body.endpoint).await?;
     Ok(StatusCode::NO_CONTENT)
 }
 

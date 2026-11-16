@@ -177,6 +177,20 @@ pub const CUISINES: &[Cuisine] = &[
     c("NZ", &["new_zealand"], None),
 ];
 
+/// The cuisine's adjective, like "Lebanese" or "Sri Lankan", when the catalog has one.
+pub fn cuisine_adjective(country: &str) -> Option<String> {
+    let tag = CUISINES.iter().find(|c| c.country == country)?.osm[0];
+    Some(
+        tag.split('_')
+            .map(|word| {
+                let mut chars = word.chars();
+                chars.next().map(|first| first.to_uppercase().chain(chars).collect::<String>()).unwrap_or_default()
+            })
+            .collect::<Vec<_>>()
+            .join(" "),
+    )
+}
+
 /// Maps a raw `cuisine` tag value ("italian;pizza", "Thai", "sri lankan") to country codes.
 pub fn countries_for_cuisine_tag(raw: &str) -> Vec<&'static str> {
     static INDEX: OnceLock<HashMap<&'static str, &'static str>> = OnceLock::new();
@@ -228,6 +242,13 @@ mod tests {
         for co in countries() {
             assert!(CONTINENTS.iter().any(|(code, _)| *code == co.continent), "{}", co.code);
         }
+    }
+
+    #[test]
+    fn names_cuisines() {
+        assert_eq!(cuisine_adjective("LK").as_deref(), Some("Sri Lankan"));
+        assert_eq!(cuisine_adjective("LB").as_deref(), Some("Lebanese"));
+        assert_eq!(cuisine_adjective("AQ"), None);
     }
 
     #[test]

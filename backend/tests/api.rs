@@ -32,6 +32,7 @@ async fn app_with_clock() -> (Router, Arc<AtomicI64>) {
         geocoder: Arc::new(Demo),
         cache_ttl_secs: 3600,
         clock: Arc::new(move || clock.load(Ordering::Relaxed)),
+        push_key: None,
     });
     (router, now)
 }

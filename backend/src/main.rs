@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use mangiamundo::{api, calendar, config::Config, providers, store, AppState};
+use mangiamundo::{api, calendar, config::Config, providers, push, store, AppState};
 use tower_http::services::{ServeDir, ServeFile};
 
 #[tokio::main]
@@ -9,15 +9,22 @@ async fn main() -> anyhow::Result<()> {
 
     let config = Config::from_env()?;
     let (places, geocoder) = providers::build(&config)?;
+    let db = store::connect(&config.database_url).await?;
+    let pusher = push::Pusher::load(&db, config.vapid_private_key.clone(), config.vapid_subject.clone()).await?;
     let state = AppState {
-        db: store::connect(&config.database_url).await?,
+        db,
         places,
         geocoder,
         cache_ttl_secs: config.cache_ttl_secs,
         clock: Arc::new(store::now),
+        push_key: Some(pusher.public_key.clone()),
     };
     calendar::validate().map_err(anyhow::Error::msg)?;
     tracing::info!(provider = state.places.name(), "places provider ready");
+
+    if config.push_interval_secs > 0 {
+        tokio::spawn(push::run(state.clone(), pusher, std::time::Duration::from_secs(config.push_interval_secs)));
+    }
 
     let mut app = api::router(state);
     if let Some(dir) = config.static_dir.filter(|dir| dir.join("index.html").is_file()) {

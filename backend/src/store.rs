@@ -278,6 +278,78 @@ pub async fn remove_visit(db: &SqlitePool, user: &str, place_id: &str) -> sqlx::
     Ok(())
 }
 
+pub async fn setting(db: &SqlitePool, key: &str) -> sqlx::Result<Option<String>> {
+    sqlx::query_scalar("SELECT value FROM settings WHERE key = ?").bind(key).fetch_optional(db).await
+}
+
+pub async fn set_setting(db: &SqlitePool, key: &str, value: &str) -> sqlx::Result<()> {
+    sqlx::query("INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value")
+        .bind(key)
+        .bind(value)
+        .execute(db)
+        .await?;
+    Ok(())
+}
+
+/// Adds a browser subscription, or moves an existing one to a new user, place or time zone.
+pub async fn save_push_subscription(db: &SqlitePool, user: &str, sub: &crate::push::Subscription, at: i64) -> sqlx::Result<()> {
+    sqlx::query(
+        "INSERT INTO push_subscriptions (endpoint, user_id, p256dh, auth, lat, lng, radius_km, timezone, created_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+         ON CONFLICT(endpoint) DO UPDATE SET user_id = excluded.user_id, p256dh = excluded.p256dh,
+             auth = excluded.auth, lat = excluded.lat, lng = excluded.lng,
+             radius_km = excluded.radius_km, timezone = excluded.timezone",
+    )
+    .bind(&sub.endpoint)
+    .bind(user)
+    .bind(&sub.p256dh)
+    .bind(&sub.auth)
+    .bind(sub.lat)
+    .bind(sub.lng)
+    .bind(sub.radius_km)
+    .bind(&sub.timezone)
+    .bind(at)
+    .execute(db)
+    .await?;
+    Ok(())
+}
+
+pub async fn remove_push_subscription(db: &SqlitePool, endpoint: &str) -> sqlx::Result<()> {
+    sqlx::query("DELETE FROM push_subscriptions WHERE endpoint = ?").bind(endpoint).execute(db).await?;
+    Ok(())
+}
+
+/// Removes a subscription only when it belongs to `user`. Returns whether one was removed.
+pub async fn remove_user_push_subscription(db: &SqlitePool, user: &str, endpoint: &str) -> sqlx::Result<bool> {
+    let done = sqlx::query("DELETE FROM push_subscriptions WHERE endpoint = ? AND user_id = ?")
+        .bind(endpoint)
+        .bind(user)
+        .execute(db)
+        .await?;
+    Ok(done.rows_affected() > 0)
+}
+
+pub async fn push_subscriptions(db: &SqlitePool) -> sqlx::Result<Vec<(String, crate::push::Subscription)>> {
+    let rows = sqlx::query("SELECT * FROM push_subscriptions").fetch_all(db).await?;
+    Ok(rows.iter().map(crate::push::subscription_from_row).collect())
+}
+
+/// Records that a reminder is being sent. False when it was sent before.
+pub async fn mark_push_sent(db: &SqlitePool, endpoint: &str, key: &str, at: i64) -> sqlx::Result<bool> {
+    let done = sqlx::query("INSERT OR IGNORE INTO push_sent (endpoint, key, sent_at) VALUES (?, ?, ?)")
+        .bind(endpoint)
+        .bind(key)
+        .bind(at)
+        .execute(db)
+        .await?;
+    Ok(done.rows_affected() > 0)
+}
+
+pub async fn unmark_push_sent(db: &SqlitePool, endpoint: &str, key: &str) -> sqlx::Result<()> {
+    sqlx::query("DELETE FROM push_sent WHERE endpoint = ? AND key = ?").bind(endpoint).bind(key).execute(db).await?;
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
