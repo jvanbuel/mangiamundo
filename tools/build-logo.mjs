@@ -1,6 +1,6 @@
 // Builds the app icon with a real outline of the continents:
 //   web/static/icon.svg and the Android launcher foreground.
-// Run from the repository root after `npm install` in web/:  node tools/build-logo.mjs plate
+// Run from the repository root after `npm install` in web/:  node tools/build-logo.mjs bite
 // The iOS icon is a 1024px PNG render of the SVG with square corners.
 import { writeFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
@@ -113,7 +113,7 @@ function androidForeground(icon) {
     android:height="108dp"
     android:viewportWidth="108"
     android:viewportHeight="108">
-    <group android:scaleX="0.15" android:scaleY="0.15" android:translateX="15.6" android:translateY="15.6">
+    <group android:scaleX="0.18" android:scaleY="0.18" android:translateX="7.92" android:translateY="7.92">
 ${paths.join('\n')}
     </group>
 </vector>
