@@ -197,6 +197,9 @@ export async function setLocation(location: Location) {
 	app.location = location;
 	app.selected = null;
 	app.places = [];
+	// The old area's countries must not show while the new area loads.
+	app.discover = null;
+	app.celebrations = [];
 	localStorage.setItem(LOCATION_KEY, JSON.stringify(location));
 	await refresh();
 }
