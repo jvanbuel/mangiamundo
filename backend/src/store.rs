@@ -3,6 +3,7 @@
 use std::str::FromStr;
 use std::time::{SystemTime, UNIX_EPOCH};
 
+use chrono::NaiveDate;
 use serde::Serialize;
 use sqlx::sqlite::{SqliteConnectOptions, SqliteJournalMode, SqlitePoolOptions};
 use sqlx::{Row, SqlitePool};
@@ -264,13 +265,14 @@ pub async fn area_places(
         .collect())
 }
 
-/// Different places in `countries` the user checked in at between two instants.
+/// Different places in `countries` the user checked in at on the local days `first` to
+/// `last`, inclusive. Each visit is judged by its own local date, stored at check-in.
 pub async fn visits_between(
     db: &SqlitePool,
     user: &str,
     countries: &[String],
-    from: i64,
-    until: i64,
+    first: NaiveDate,
+    last: NaiveDate,
 ) -> sqlx::Result<u32> {
     if countries.is_empty() {
         return Ok(0);
@@ -279,9 +281,9 @@ pub async fn visits_between(
     let sql = format!(
         "SELECT COUNT(DISTINCT v.place_id) FROM visits v
          JOIN place_countries pc ON pc.place_id = v.place_id
-         WHERE v.user_id = ? AND v.visited_at >= ? AND v.visited_at < ? AND pc.country IN ({marks})"
+         WHERE v.user_id = ? AND v.local_date BETWEEN ? AND ? AND pc.country IN ({marks})"
     );
-    let mut query = sqlx::query_scalar::<_, i64>(&sql).bind(user).bind(from).bind(until);
+    let mut query = sqlx::query_scalar::<_, i64>(&sql).bind(user).bind(first.to_string()).bind(last.to_string());
     for country in countries {
         query = query.bind(country);
     }
@@ -293,19 +295,19 @@ pub async fn place_location(db: &SqlitePool, place_id: &str) -> sqlx::Result<Opt
     Ok(row.map(|r| (r.get("lat"), r.get("lng"))))
 }
 
-/// Records a visit. A repeated check-in keeps the original date but can upgrade an
-/// unverified visit to a verified one.
 /// Records a visit and returns it as stored: checking in again keeps the first date, and the visit
-/// stays verified once any check-in was made on the spot.
+/// stays verified once any check-in was made on the spot. `local_date` is the day of `at` in the
+/// user's time zone.
 pub async fn add_visit(
     db: &SqlitePool,
     user: &str,
     place_id: &str,
     verified: bool,
     at: i64,
+    local_date: NaiveDate,
 ) -> sqlx::Result<(i64, bool)> {
     sqlx::query_as(
-        "INSERT INTO visits (user_id, place_id, visited_at, verified) VALUES (?, ?, ?, ?)
+        "INSERT INTO visits (user_id, place_id, visited_at, verified, local_date) VALUES (?, ?, ?, ?, ?)
          ON CONFLICT(user_id, place_id) DO UPDATE SET verified = MAX(verified, excluded.verified)
          RETURNING visited_at, verified",
     )
@@ -313,6 +315,7 @@ pub async fn add_visit(
     .bind(place_id)
     .bind(at)
     .bind(verified)
+    .bind(local_date.to_string())
     .fetch_one(db)
     .await
 }

@@ -3,7 +3,8 @@
 use std::collections::HashMap;
 use std::sync::OnceLock;
 
-use chrono::{Datelike, Duration, NaiveDate};
+use chrono::{DateTime, Datelike, Duration, NaiveDate};
+use chrono_tz::Tz;
 use serde::{Deserialize, Serialize};
 
 use crate::catalog;
@@ -126,6 +127,12 @@ pub fn events_starting_on(day: NaiveDate) -> impl Iterator<Item = &'static Event
     events().iter().filter(move |e| e.starts == day)
 }
 
+/// The date at Unix time `now` in `zone`. Celebrations and events are calendar days, so
+/// "today" is the user's day, not the server's.
+pub fn local_date(now: i64, zone: Tz) -> NaiveDate {
+    DateTime::from_timestamp(now, 0).unwrap_or_default().with_timezone(&zone).date_naive()
+}
+
 /// Checks the data files for unknown countries and impossible dates.
 pub fn validate() -> Result<(), String> {
     for c in celebrations() {
@@ -185,6 +192,15 @@ mod tests {
         let new_year = upcoming(day("2026-12-20"), 60);
         assert!(new_year.iter().any(|c| c.id == "burns-night" && c.starts == day("2027-01-25")));
         assert!(starting_on(day("2027-02-06")).iter().any(|c| c.id == "lunar-new-year"));
+    }
+
+    #[test]
+    fn today_is_the_local_date() {
+        let tokyo: Tz = "Asia/Tokyo".parse().unwrap();
+        // 1 December 2026 00:00 in Tokyo is 30 November 15:00 UTC.
+        assert_eq!(local_date(1_796_050_800, tokyo), day("2026-12-01"));
+        assert_eq!(local_date(1_796_050_799, tokyo), day("2026-11-30"));
+        assert_eq!(local_date(1_796_050_800, Tz::UTC), day("2026-11-30"));
     }
 
     #[test]

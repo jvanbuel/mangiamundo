@@ -31,7 +31,7 @@ actor APIClient {
     }
 
     func discover(areaID: String) async throws -> Discover {
-        try decode(await authed("GET", "/api/discover?\(area(areaID))"))
+        try decode(await authed("GET", "/api/discover?\(area(areaID))&\(timeZone())"))
     }
 
     /// Distances are measured from `from` when given, otherwise from the area's centre.
@@ -41,7 +41,7 @@ actor APIClient {
     }
 
     func celebrations(areaID: String, days: Int = 60) async throws -> [Celebration] {
-        try decode(await request("GET", "/api/celebrations?\(area(areaID))&days=\(days)"))
+        try decode(await request("GET", "/api/celebrations?\(area(areaID))&days=\(days)&\(timeZone())"))
     }
 
     /// `here` is the device position, sent so the server can mark the visit as verified.
@@ -51,7 +51,7 @@ actor APIClient {
             body = ["lat": here.lat, "lng": here.lng]
         }
         let data = try JSONSerialization.data(withJSONObject: body)
-        return try decode(await authed("PUT", "/api/visits/\(encode(placeID))", body: data))
+        return try decode(await authed("PUT", "/api/visits/\(encode(placeID))?\(timeZone())", body: data))
     }
 
     func undoCheckIn(placeID: String) async throws {
@@ -78,6 +78,11 @@ actor APIClient {
 
     private func area(_ id: String) -> String {
         "area=\(encode(id))"
+    }
+
+    /// The device's time zone, so event days begin and end at local midnight.
+    private func timeZone() -> String {
+        "tz=\(encode(TimeZone.current.identifier))"
     }
 
     private func encode(_ value: String) -> String {

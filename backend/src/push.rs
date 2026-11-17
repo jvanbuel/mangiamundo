@@ -197,9 +197,7 @@ async fn due(
                 },
             ));
         } else if event.ends - Duration::days(LAST_CHANCE_DAYS - 1) == day {
-            let from = day_start(event.starts);
-            let until = day_start(event.ends + Duration::days(1));
-            let done = store::visits_between(&state.db, user, &event.countries, from, until).await?;
+            let done = store::visits_between(&state.db, user, &event.countries, event.starts, event.ends).await?;
             if done < event.target {
                 let left = event.target - done;
                 out.push((
@@ -215,10 +213,6 @@ async fn due(
         }
     }
     Ok(out)
-}
-
-fn day_start(day: NaiveDate) -> i64 {
-    day.and_hms_opt(0, 0, 0).map(|t| t.and_utc().timestamp()).unwrap_or(0)
 }
 
 /// One pass over all subscriptions. Returns how many notifications were sent.

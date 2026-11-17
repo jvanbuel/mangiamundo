@@ -29,7 +29,7 @@ class ApiClient(private val baseUrl: String, private val tokens: TokenStore) {
     suspend fun catalog(): Catalog = json.decodeFromString(request("GET", "/api/countries"))
 
     suspend fun discover(areaId: String): Discover =
-        json.decodeFromString(authed("GET", "/api/discover?${area(areaId)}"))
+        json.decodeFromString(authed("GET", "/api/discover?${area(areaId)}&${tz()}"))
 
     /** Distances are measured from `from` (lat, lng) when given, otherwise from the area's centre. */
     suspend fun places(areaId: String, country: String, from: Pair<Double, Double>?): List<Place> {
@@ -38,12 +38,12 @@ class ApiClient(private val baseUrl: String, private val tokens: TokenStore) {
     }
 
     suspend fun celebrations(areaId: String, days: Int = 60): List<Celebration> =
-        json.decodeFromString(request("GET", "/api/celebrations?${area(areaId)}&days=$days"))
+        json.decodeFromString(request("GET", "/api/celebrations?${area(areaId)}&days=$days&${tz()}"))
 
     /** `here` is the device position, sent so the server can mark the visit as verified. */
     suspend fun checkIn(placeId: String, here: Pair<Double, Double>?): VisitResult {
         val body = json.encodeToString(CheckInBody.serializer(), CheckInBody(here?.first, here?.second))
-        return json.decodeFromString(authed("PUT", "/api/visits/${encode(placeId)}", body))
+        return json.decodeFromString(authed("PUT", "/api/visits/${encode(placeId)}?${tz()}", body))
     }
 
     suspend fun undoCheckIn(placeId: String) {
@@ -59,6 +59,9 @@ class ApiClient(private val baseUrl: String, private val tokens: TokenStore) {
         json.decodeFromString(request("GET", "/api/areas/locate?lat=$lat&lng=$lng"))
 
     private fun area(id: String) = "area=${encode(id)}"
+
+    /** The device's time zone, so event days begin and end at local midnight. */
+    private fun tz() = "tz=${encode(java.util.TimeZone.getDefault().id)}"
 
     private fun encode(value: String) = URLEncoder.encode(value, "UTF-8").replace("+", "%20")
 

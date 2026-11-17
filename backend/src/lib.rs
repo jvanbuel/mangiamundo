@@ -12,6 +12,7 @@ pub mod store;
 use std::sync::Arc;
 
 use chrono::NaiveDate;
+use chrono_tz::Tz;
 use sqlx::SqlitePool;
 
 #[derive(Clone)]
@@ -33,8 +34,8 @@ impl AppState {
         (self.clock)()
     }
 
-    /// Today's date in UTC.
-    pub fn today(&self) -> NaiveDate {
-        chrono::DateTime::from_timestamp(self.now(), 0).unwrap_or_default().date_naive()
+    /// Today's date in `zone`.
+    pub fn today(&self, zone: Tz) -> NaiveDate {
+        calendar::local_date(self.now(), zone)
     }
 }

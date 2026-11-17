@@ -63,9 +63,12 @@ async function authed<T>(method: string, path: string, body?: unknown): Promise<
 
 const area = (id: string) => `area=${encodeURIComponent(id)}`;
 
+/** The device's time zone, so event days begin and end at local midnight. */
+const tz = () => `tz=${encodeURIComponent(Intl.DateTimeFormat().resolvedOptions().timeZone ?? '')}`;
+
 export const catalog = () => raw<Catalog>('GET', '/api/countries', null);
 
-export const discover = (areaId: string) => authed<Discover>('GET', `/api/discover?${area(areaId)}`);
+export const discover = (areaId: string) => authed<Discover>('GET', `/api/discover?${area(areaId)}&${tz()}`);
 
 /** Distances are measured from `from` when given, otherwise from the area's centre. */
 export const places = (areaId: string, country: string, from: { lat: number; lng: number } | null) =>
@@ -77,7 +80,7 @@ export const places = (areaId: string, country: string, from: { lat: number; lng
 export const checkIn = (placeId: string, here: { lat: number; lng: number } | null) =>
 	authed<{ visited_at: number; verified: boolean; profile: Profile }>(
 		'PUT',
-		`/api/visits/${encodeURIComponent(placeId)}`,
+		`/api/visits/${encodeURIComponent(placeId)}?${tz()}`,
 		here ?? {}
 	);
 
@@ -100,7 +103,7 @@ export const locateArea = (lat: number, lng: number) =>
 	raw<Located>('GET', `/api/areas/locate?lat=${lat}&lng=${lng}`, null);
 
 export const celebrations = (areaId: string, days = 60) =>
-	raw<Celebration[]>('GET', `/api/celebrations?${area(areaId)}&days=${days}`, null);
+	raw<Celebration[]>('GET', `/api/celebrations?${area(areaId)}&days=${days}&${tz()}`, null);
 
 export const pushKey = () => raw<{ public_key: string }>('GET', '/api/push/key', null);
 
