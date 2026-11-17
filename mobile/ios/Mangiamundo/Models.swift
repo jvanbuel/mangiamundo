@@ -183,6 +183,7 @@ struct Located: Decodable {
 }
 
 struct VisitResult: Decodable {
+    let visitedAt: Int
     let verified: Bool
     let profile: Profile
 }

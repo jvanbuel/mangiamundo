@@ -275,7 +275,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
                 val updated = if (!place.visited) {
                     val fix = gpsFix?.takeIf { System.currentTimeMillis() - it.third < 10 * 60_000 }
                     val result = api.checkIn(place.id, fix?.let { it.first to it.second })
-                    place.copy(visitedAt = System.currentTimeMillis() / 1000, verified = result.verified)
+                    place.copy(visitedAt = result.visitedAt, verified = result.verified)
                 } else {
                     api.undoCheckIn(place.id)
                     place.copy(visitedAt = null, verified = false)

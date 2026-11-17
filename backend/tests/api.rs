@@ -174,6 +174,31 @@ async fn visiting_every_place_completes_a_country() {
 }
 
 #[tokio::test]
+async fn checking_in_again_keeps_the_first_visit() {
+    let (app, clock) = app_with_clock().await;
+    let token = session(&app).await;
+    let (_, discover) = call(&app, "GET", &format!("/api/discover?{HERE}"), Some(&token), None).await;
+    let country = discover["countries"][0]["code"].as_str().unwrap();
+    let (_, places) = call(&app, "GET", &format!("/api/places?{HERE}&country={country}"), Some(&token), None).await;
+    let place = &places[0];
+    let uri = format!("/api/visits/{}", place["id"].as_str().unwrap());
+
+    let here = format!(r#"{{"lat":{},"lng":{}}}"#, place["lat"], place["lng"]);
+    let (status, first) = call(&app, "PUT", &uri, Some(&token), Some(&here)).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(first["visited_at"], START);
+    assert_eq!(first["verified"], true);
+    assert!(first.get("place_id").is_none());
+
+    // A day later, from elsewhere: still the first date, and still verified.
+    clock.fetch_add(DAY, Ordering::Relaxed);
+    let (status, again) = call(&app, "PUT", &uri, Some(&token), None).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(again["visited_at"], START);
+    assert_eq!(again["verified"], true);
+}
+
+#[tokio::test]
 async fn rejects_bad_input() {
     let app = app().await;
     let (status, _) = call(&app, "GET", "/api/discover?area=Not%20An%20Id", None, None).await;

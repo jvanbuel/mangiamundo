@@ -519,7 +519,8 @@ struct CheckIn {
 
 #[derive(Serialize)]
 struct VisitResult {
-    place_id: String,
+    /// When the visit was first recorded (unix seconds), kept when checking in again.
+    visited_at: i64,
     verified: bool,
     profile: game::Profile,
 }
@@ -538,9 +539,9 @@ async fn add_visit(
         (Some(lat), Some(lng)) => geo::distance_m(lat, lng, plat, plng) <= VERIFY_DISTANCE_M,
         _ => false,
     };
-    store::add_visit(&state.db, &user, &place_id, verified, state.now()).await?;
+    let (visited_at, verified) = store::add_visit(&state.db, &user, &place_id, verified, state.now()).await?;
     let profile = game::profile(store::lifetime(&state.db, &user).await?);
-    Ok(Json(VisitResult { place_id, verified, profile }))
+    Ok(Json(VisitResult { visited_at, verified, profile }))
 }
 
 async fn remove_visit(
