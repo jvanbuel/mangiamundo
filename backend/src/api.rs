@@ -8,14 +8,17 @@ use axum::extract::{FromRequest, FromRequestParts, OptionalFromRequest, Request,
 use axum::http::request::Parts;
 use axum::http::{header, StatusCode};
 use axum::response::{IntoResponse, Response};
-use axum::routing::{any, get, post, put};
+use axum::routing::{any, get};
 use axum::{Json, Router};
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
-use serde_json::json;
 use tower_http::cors::CorsLayer;
 use tower_http::services::{ServeDir, ServeFile};
 use tower_http::trace::TraceLayer;
+use utoipa::openapi::security::{HttpAuthScheme, HttpBuilder, SecurityScheme};
+use utoipa::{IntoParams, OpenApi, ToSchema};
+use utoipa_axum::router::OpenApiRouter;
+use utoipa_axum::routes;
 
 use std::collections::HashMap;
 
@@ -31,21 +34,48 @@ use crate::{catalog, geo, hours, AppState};
 /// A check-in counts as verified when made within this distance of the place.
 const VERIFY_DISTANCE_M: f64 = 250.0;
 
+/// The OpenAPI document's header. The paths come from the routes in [`api_router`].
+#[derive(OpenApi)]
+#[openapi(
+    info(title = "Mangiamundo API", description = "Find restaurants from around the world near you, and collect the countries you have tasted."),
+    modifiers(&BearerToken),
+)]
+struct ApiDoc;
+
+/// Routes that need an account send `Authorization: Bearer <token>` from `POST /api/session`.
+struct BearerToken;
+
+impl utoipa::Modify for BearerToken {
+    fn modify(&self, openapi: &mut utoipa::openapi::OpenApi) {
+        let components = openapi.components.get_or_insert_with(Default::default);
+        components.add_security_scheme("token", SecurityScheme::Http(HttpBuilder::new().scheme(HttpAuthScheme::Bearer).build()));
+    }
+}
+
+/// The documented API routes and the OpenAPI document that describes them. A route
+/// registered with `routes!` can't exist without being in the document.
+fn api_router() -> (Router<AppState>, utoipa::openapi::OpenApi) {
+    OpenApiRouter::with_openapi(ApiDoc::openapi())
+        .routes(routes!(health))
+        .routes(routes!(create_session))
+        .routes(routes!(countries))
+        .routes(routes!(discover))
+        .routes(routes!(places))
+        .routes(routes!(celebrations))
+        .routes(routes!(report_closed))
+        .routes(routes!(add_visit, remove_visit))
+        .routes(routes!(push_key))
+        .routes(routes!(subscribe, unsubscribe))
+        .routes(routes!(search_areas))
+        .routes(routes!(locate_area))
+        .routes(routes!(suggest_areas))
+        .split_for_parts()
+}
+
 pub fn router(state: AppState) -> Router {
-    Router::new()
-        .route("/api/health", get(health))
-        .route("/api/session", post(create_session))
-        .route("/api/countries", get(countries))
-        .route("/api/discover", get(discover))
-        .route("/api/places", get(places))
-        .route("/api/celebrations", get(celebrations))
-        .route("/api/places/{place_id}/closed", put(report_closed))
-        .route("/api/visits/{place_id}", put(add_visit).delete(remove_visit))
-        .route("/api/push/key", get(push_key))
-        .route("/api/push/subscription", put(subscribe).delete(unsubscribe))
-        .route("/api/areas", get(search_areas))
-        .route("/api/areas/locate", get(locate_area))
-        .route("/api/areas/suggest", get(suggest_areas))
+    let (api, doc) = api_router();
+    // The document itself and the catch-alls below are the only routes not in it.
+    api.route("/api/openapi.json", get(move || std::future::ready(Json(doc.clone()))))
         // Unknown API paths get a JSON 404 rather than the web app's index.html.
         .route("/api", any(not_found))
         .route("/api/", any(not_found))
@@ -56,12 +86,21 @@ pub fn router(state: AppState) -> Router {
         .with_state(state)
 }
 
+#[derive(Serialize, ToSchema)]
+struct Health {
+    ok: bool,
+    /// The server's Cargo version.
+    version: &'static str,
+    /// The git commit it was built from: `GIT_COMMIT` at compile time (set by the
+    /// Dockerfile), `null` in builds without it.
+    #[schema(required = true)]
+    commit: Option<&'static str>,
+}
+
 /// Liveness check, also telling clients which build of the server they talk to.
-///
-/// `commit` is the `GIT_COMMIT` environment variable at compile time (set by the
-/// Dockerfile), and `null` in builds without it.
-async fn health() -> Json<serde_json::Value> {
-    Json(json!({ "ok": true, "version": env!("CARGO_PKG_VERSION"), "commit": option_env!("GIT_COMMIT") }))
+#[utoipa::path(get, path = "/api/health", tag = "meta", responses((status = 200, body = Health)))]
+async fn health() -> Json<Health> {
+    Json(Health { ok: true, version: env!("CARGO_PKG_VERSION"), commit: option_env!("GIT_COMMIT") })
 }
 
 /// Serves the web app from `dir` next to the API. It is a single-page app, so unknown
@@ -74,15 +113,32 @@ async fn not_found() -> ApiError {
     ApiError::NotFound("API endpoint")
 }
 
-/// Every error response is `{ "error": "<message for people>", "code": "<one of these>" }`.
-/// Clients branch on `code`; the message may change.
-pub mod code {
-    pub const BAD_REQUEST: &str = "bad_request";
-    pub const UNAUTHORIZED: &str = "unauthorized";
-    pub const NOT_FOUND: &str = "not_found";
-    pub const METHOD_NOT_ALLOWED: &str = "method_not_allowed";
-    pub const UPSTREAM: &str = "upstream";
-    pub const INTERNAL: &str = "internal";
+/// Every error response, whatever the status.
+#[derive(Serialize, ToSchema)]
+struct ErrorBody {
+    /// For people. It may change, so clients branch on `code` instead.
+    error: String,
+    code: ErrorCode,
+}
+
+/// What went wrong, for clients that react to a specific case:
+///
+/// - `bad_request` (400, 413, 415, 422): invalid or missing parameters, or a malformed,
+///   oversized (over 2 MiB) or non-JSON body.
+/// - `unauthorized` (401): a missing or unknown session token.
+/// - `not_found` (404): an unknown place, area or `/api` path.
+/// - `method_not_allowed` (405): the path exists, but not with this method.
+/// - `upstream` (502): the places or areas provider failed.
+/// - `internal` (500): anything else, such as a database error.
+#[derive(Serialize, ToSchema, Clone, Copy)]
+#[serde(rename_all = "snake_case")]
+enum ErrorCode {
+    BadRequest,
+    Unauthorized,
+    NotFound,
+    MethodNotAllowed,
+    Upstream,
+    Internal,
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -108,21 +164,21 @@ pub enum ApiError {
 impl IntoResponse for ApiError {
     fn into_response(self) -> Response {
         let (status, code) = match &self {
-            ApiError::BadRequest(_) => (StatusCode::BAD_REQUEST, code::BAD_REQUEST),
-            ApiError::Rejected(status, _) => (*status, code::BAD_REQUEST),
-            ApiError::MethodNotAllowed => (StatusCode::METHOD_NOT_ALLOWED, code::METHOD_NOT_ALLOWED),
-            ApiError::Unauthorized => (StatusCode::UNAUTHORIZED, code::UNAUTHORIZED),
-            ApiError::NotFound(_) => (StatusCode::NOT_FOUND, code::NOT_FOUND),
+            ApiError::BadRequest(_) => (StatusCode::BAD_REQUEST, ErrorCode::BadRequest),
+            ApiError::Rejected(status, _) => (*status, ErrorCode::BadRequest),
+            ApiError::MethodNotAllowed => (StatusCode::METHOD_NOT_ALLOWED, ErrorCode::MethodNotAllowed),
+            ApiError::Unauthorized => (StatusCode::UNAUTHORIZED, ErrorCode::Unauthorized),
+            ApiError::NotFound(_) => (StatusCode::NOT_FOUND, ErrorCode::NotFound),
             ApiError::Upstream(error) => {
                 tracing::error!(error = format!("{error:#}"), "provider request failed");
-                (StatusCode::BAD_GATEWAY, code::UPSTREAM)
+                (StatusCode::BAD_GATEWAY, ErrorCode::Upstream)
             }
             ApiError::Database(error) => {
                 tracing::error!(%error, "database error");
-                (StatusCode::INTERNAL_SERVER_ERROR, code::INTERNAL)
+                (StatusCode::INTERNAL_SERVER_ERROR, ErrorCode::Internal)
             }
         };
-        (status, Json(json!({ "error": self.to_string(), "code": code }))).into_response()
+        (status, Json(ErrorBody { error: self.to_string(), code })).into_response()
     }
 }
 
@@ -227,25 +283,37 @@ impl FromRequestParts<AppState> for User {
     }
 }
 
-/// Accounts are anonymous: a device asks for a token once and keeps it.
-async fn create_session(State(state): State<AppState>) -> ApiResult<serde_json::Value> {
-    let token = store::create_user(&state.db).await?;
-    Ok(Json(json!({ "token": token })))
+#[derive(Serialize, ToSchema)]
+struct Session {
+    /// Send it as `Authorization: Bearer <token>`.
+    token: String,
 }
 
-#[derive(Serialize)]
+/// Creates an anonymous account. A device asks for a token once and keeps it.
+#[utoipa::path(post, path = "/api/session", tag = "account", responses((status = 200, body = Session), (status = "default", description = "An error", body = ErrorBody)))]
+async fn create_session(State(state): State<AppState>) -> ApiResult<Session> {
+    let token = store::create_user(&state.db).await?;
+    Ok(Json(Session { token }))
+}
+
+#[derive(Serialize, ToSchema)]
 struct Catalog {
     countries: &'static [catalog::Country],
-    continents: Vec<serde_json::Value>,
+    continents: Vec<Continent>,
 }
 
+#[derive(Serialize, ToSchema)]
+struct Continent {
+    code: &'static str,
+    name: &'static str,
+}
+
+/// Every country and continent the game knows.
+#[utoipa::path(get, path = "/api/countries", tag = "meta", responses((status = 200, body = Catalog)))]
 async fn countries() -> Json<Catalog> {
     Json(Catalog {
         countries: catalog::countries(),
-        continents: catalog::CONTINENTS
-            .iter()
-            .map(|(code, name)| json!({ "code": code, "name": name }))
-            .collect(),
+        continents: catalog::CONTINENTS.iter().map(|&(code, name)| Continent { code, name }).collect(),
     })
 }
 
@@ -253,7 +321,8 @@ async fn countries() -> Json<Catalog> {
 /// region or a country (which would make for a huge Overpass query) doesn't.
 const MAX_AREA_DEGREES: f64 = 1.5;
 
-#[derive(Deserialize)]
+#[derive(Deserialize, IntoParams)]
+#[into_params(parameter_in = Query)]
 struct AreaQuery {
     /// An area id from `/api/areas` or `/api/areas/locate`.
     area: String,
@@ -329,7 +398,7 @@ async fn resolve_area(state: &AppState, id: &str) -> Result<Area, ApiError> {
 }
 
 /// An area as clients see it.
-#[derive(Serialize)]
+#[derive(Serialize, ToSchema)]
 struct AreaView {
     #[serde(flatten)]
     info: AreaInfo,
@@ -342,7 +411,7 @@ impl From<&Area> for AreaView {
     }
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, ToSchema)]
 struct Discover {
     area: AreaView,
     #[serde(flatten)]
@@ -350,7 +419,7 @@ struct Discover {
     events: Vec<EventProgress>,
 }
 
-#[derive(Serialize, PartialEq, Debug)]
+#[derive(Serialize, PartialEq, Debug, ToSchema)]
 #[serde(rename_all = "snake_case")]
 enum EventStatus {
     Upcoming,
@@ -359,7 +428,7 @@ enum EventStatus {
 }
 
 /// A time-limited challenge and how far the user got.
-#[derive(Serialize)]
+#[derive(Serialize, ToSchema)]
 struct EventProgress {
     #[serde(flatten)]
     event: calendar::Event,
@@ -418,6 +487,14 @@ async fn event_progress(
     Ok(out)
 }
 
+/// Countries available in the area, progress, badges, profile and events.
+#[utoipa::path(
+    get, path = "/api/discover", tag = "game",
+    params(AreaQuery),
+    // Anonymous requests work too; an unknown token is still a 401.
+    security((), ("token" = [])),
+    responses((status = 200, body = Discover), (status = "default", description = "An error", body = ErrorBody)),
+)]
 async fn discover(
     State(state): State<AppState>,
     MaybeUser(user): MaybeUser,
@@ -434,22 +511,24 @@ async fn discover(
     Ok(Json(Discover { summary: game::summarize(&rows, lifetime), area: (&area).into(), events }))
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, IntoParams)]
+#[into_params(parameter_in = Query)]
 struct CelebrationsQuery {
+    /// As for `/api/discover`.
     area: String,
-    /// How far ahead to look.
+    /// How many days ahead to look: 0 to 366, 60 when missing.
     days: Option<i64>,
     /// As for `/api/discover`.
     tz: Option<String>,
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, ToSchema)]
 struct NearbyCountry {
     code: String,
     places: u32,
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, ToSchema)]
 struct CelebrationView {
     #[serde(flatten)]
     celebration: Celebration,
@@ -459,7 +538,12 @@ struct CelebrationView {
     reminder: crate::push::Notification,
 }
 
-/// Celebrations coming up for countries whose food can be found in the area.
+/// Celebrations coming up for countries whose food can be found in the area, with
+/// the reminder text.
+#[utoipa::path(
+    get, path = "/api/celebrations", tag = "calendar", params(CelebrationsQuery),
+    responses((status = 200, body = Vec<CelebrationView>), (status = "default", description = "An error", body = ErrorBody)),
+)]
 async fn celebrations(
     State(state): State<AppState>,
     Query(query): Query<CelebrationsQuery>,
@@ -488,15 +572,25 @@ fn nearby_celebrations(today: NaiveDate, days: i64, counts: &HashMap<&str, u32>)
         .collect()
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, IntoParams)]
+#[into_params(parameter_in = Query)]
 struct PlacesQuery {
+    /// As for `/api/discover`.
     area: String,
+    /// Only places serving this country's food (ISO 3166-1 alpha-2).
     country: Option<String>,
     /// Where the user is, for distances. Without it they are measured from the area's centre.
     lat: Option<f64>,
     lng: Option<f64>,
 }
 
+/// Places in the area: open first, then closed, then unknown hours, alphabetical
+/// within each group.
+#[utoipa::path(
+    get, path = "/api/places", tag = "game", params(PlacesQuery),
+    security((), ("token" = [])),
+    responses((status = 200, body = Vec<PlaceView>), (status = "default", description = "An error", body = ErrorBody)),
+)]
 async fn places(
     State(state): State<AppState>,
     MaybeUser(user): MaybeUser,
@@ -533,20 +627,21 @@ fn group(open_now: Option<bool>) -> u8 {
     }
 }
 
-#[derive(Deserialize, Default)]
+#[derive(Deserialize, Default, ToSchema)]
 struct CheckIn {
     /// Where the user is right now. Optional; used to mark the visit as verified.
     lat: Option<f64>,
     lng: Option<f64>,
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, IntoParams)]
+#[into_params(parameter_in = Query)]
 struct VisitQuery {
     /// As for `/api/discover`: the check-in counts for events by its date in this zone.
     tz: Option<String>,
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, ToSchema)]
 struct VisitResult {
     /// When the visit was first recorded (unix seconds), kept when checking in again.
     visited_at: i64,
@@ -554,6 +649,17 @@ struct VisitResult {
     profile: game::Profile,
 }
 
+/// Checks in at a place. Checking in again keeps the first date.
+#[utoipa::path(
+    put, path = "/api/visits/{place_id}", tag = "game",
+    params(("place_id" = String, Path, description = "A place id from `/api/places`."), VisitQuery),
+    request_body(
+        content = Option<CheckIn>,
+        description = "Optional. Sent with `Content-Type: application/json`, or it is ignored.",
+    ),
+    security(("token" = [])),
+    responses((status = 200, body = VisitResult), (status = "default", description = "An error", body = ErrorBody)),
+)]
 async fn add_visit(
     State(state): State<AppState>,
     User(user): User,
@@ -575,6 +681,12 @@ async fn add_visit(
     Ok(Json(VisitResult { visited_at, verified, profile }))
 }
 
+/// Undoes a check-in.
+#[utoipa::path(
+    delete, path = "/api/visits/{place_id}", tag = "game", params(("place_id" = String, Path, description = "A place id from `/api/places`.")),
+    security(("token" = [])),
+    responses((status = 204, description = "Removed, or there was no visit"), (status = "default", description = "An error", body = ErrorBody)),
+)]
 async fn remove_visit(
     State(state): State<AppState>,
     User(user): User,
@@ -585,6 +697,11 @@ async fn remove_visit(
 }
 
 /// "This place has closed": hides it for the reporter now, and for everyone after more reports.
+#[utoipa::path(
+    put, path = "/api/places/{place_id}/closed", tag = "game", params(("place_id" = String, Path, description = "A place id from `/api/places`.")),
+    security(("token" = [])),
+    responses((status = 204, description = "Reported"), (status = "default", description = "An error", body = ErrorBody)),
+)]
 async fn report_closed(
     State(state): State<AppState>,
     User(user): User,
@@ -624,26 +741,42 @@ async fn post_osm_note(url: String, lat: f64, lng: f64, text: String) {
     }
 }
 
-async fn push_key(State(state): State<AppState>) -> ApiResult<serde_json::Value> {
-    let key = state.push_key.clone().ok_or(ApiError::NotFound("push"))?;
-    Ok(Json(json!({ "public_key": key })))
+#[derive(Serialize, ToSchema)]
+struct PushKey {
+    /// The VAPID public key browsers subscribe with.
+    public_key: String,
+}
+
+/// The key for Web Push. A 404 when the server has push turned off.
+#[utoipa::path(get, path = "/api/push/key", tag = "push", responses((status = 200, body = PushKey), (status = "default", description = "An error", body = ErrorBody)))]
+async fn push_key(State(state): State<AppState>) -> ApiResult<PushKey> {
+    let public_key = state.push_key.clone().ok_or(ApiError::NotFound("push"))?;
+    Ok(Json(PushKey { public_key }))
 }
 
 /// A browser's PushSubscription (as from `subscription.toJSON()`), plus the user's area.
-#[derive(Deserialize)]
+#[derive(Deserialize, ToSchema)]
 struct SubscribeBody {
     endpoint: String,
     keys: SubscribeKeys,
+    /// The area to send reminders for.
     area: String,
+    /// IANA name. Reminders go out from 10:00 in this zone.
     timezone: String,
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, ToSchema)]
 struct SubscribeKeys {
     p256dh: String,
     auth: String,
 }
 
+/// Subscribes a browser to reminders.
+#[utoipa::path(
+    put, path = "/api/push/subscription", tag = "push", request_body = SubscribeBody,
+    security(("token" = [])),
+    responses((status = 204, description = "Subscribed"), (status = "default", description = "An error", body = ErrorBody)),
+)]
 async fn subscribe(
     State(state): State<AppState>,
     User(user): User,
@@ -669,11 +802,17 @@ async fn subscribe(
     Ok(StatusCode::NO_CONTENT)
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, ToSchema)]
 struct UnsubscribeBody {
     endpoint: String,
 }
 
+/// Unsubscribes a browser.
+#[utoipa::path(
+    delete, path = "/api/push/subscription", tag = "push", request_body = UnsubscribeBody,
+    security(("token" = [])),
+    responses((status = 204, description = "Unsubscribed"), (status = "default", description = "An error", body = ErrorBody)),
+)]
 async fn unsubscribe(
     State(state): State<AppState>,
     User(user): User,
@@ -683,12 +822,18 @@ async fn unsubscribe(
     Ok(StatusCode::NO_CONTENT)
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, IntoParams)]
+#[into_params(parameter_in = Query)]
 struct SearchQuery {
+    /// What someone typed. Fewer than 2 characters returns nothing.
     q: String,
 }
 
 /// Cities and postal codes matching what someone typed.
+#[utoipa::path(
+    get, path = "/api/areas", tag = "areas", params(SearchQuery),
+    responses((status = 200, body = Vec<AreaInfo>), (status = "default", description = "An error", body = ErrorBody)),
+)]
 async fn search_areas(State(state): State<AppState>, Query(query): Query<SearchQuery>) -> ApiResult<Vec<AreaInfo>> {
     let q = query.q.trim();
     if q.chars().count() < 2 {
@@ -697,14 +842,21 @@ async fn search_areas(State(state): State<AppState>, Query(query): Query<SearchQ
     state.areas.search(q).await.map(Json).map_err(ApiError::Upstream)
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, IntoParams)]
+#[into_params(parameter_in = Query)]
 struct SuggestQuery {
+    /// What someone typed so far. Fewer than 2 characters returns nothing.
     q: String,
+    /// Where the user is, to rank nearby areas first.
     lat: Option<f64>,
     lng: Option<f64>,
 }
 
 /// Suggestions while someone types a city or postal code.
+#[utoipa::path(
+    get, path = "/api/areas/suggest", tag = "areas", params(SuggestQuery),
+    responses((status = 200, body = Vec<AreaInfo>), (status = "default", description = "An error", body = ErrorBody)),
+)]
 async fn suggest_areas(State(state): State<AppState>, Query(query): Query<SuggestQuery>) -> ApiResult<Vec<AreaInfo>> {
     let q = query.q.trim();
     if q.chars().count() < 2 {
@@ -714,13 +866,18 @@ async fn suggest_areas(State(state): State<AppState>, Query(query): Query<Sugges
     state.areas.suggest(q, near).await.map(Json).map_err(ApiError::Upstream)
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, IntoParams)]
+#[into_params(parameter_in = Query)]
 struct LocateQuery {
     lat: f64,
     lng: f64,
 }
 
 /// The city and postal code a point (usually the device's position) lies in.
+#[utoipa::path(
+    get, path = "/api/areas/locate", tag = "areas", params(LocateQuery),
+    responses((status = 200, body = Located), (status = "default", description = "An error", body = ErrorBody)),
+)]
 async fn locate_area(State(state): State<AppState>, Query(query): Query<LocateQuery>) -> ApiResult<Located> {
     if !(-90.0..=90.0).contains(&query.lat) || !(-180.0..=180.0).contains(&query.lng) {
         return Err(ApiError::BadRequest("lat/lng out of range".into()));

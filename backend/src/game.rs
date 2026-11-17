@@ -22,7 +22,7 @@ pub struct Lifetime {
     pub countries: u32,
 }
 
-#[derive(Debug, Serialize, PartialEq)]
+#[derive(Debug, Serialize, PartialEq, utoipa::ToSchema)]
 pub struct CountryProgress {
     pub code: String,
     pub continent: String,
@@ -41,7 +41,7 @@ impl CountryProgress {
     }
 }
 
-#[derive(Debug, Serialize, PartialEq)]
+#[derive(Debug, Serialize, PartialEq, utoipa::ToSchema)]
 pub struct GroupProgress {
     pub code: String,
     pub name: String,
@@ -54,7 +54,7 @@ pub struct GroupProgress {
 }
 
 /// What a badge rewards. Clients pick the badge's icon and colour from it.
-#[derive(Debug, Clone, Copy, Serialize, PartialEq)]
+#[derive(Debug, Clone, Copy, Serialize, PartialEq, utoipa::ToSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum BadgeKind {
     Visits,
@@ -65,7 +65,7 @@ pub enum BadgeKind {
     Everything,
 }
 
-#[derive(Debug, Serialize, PartialEq)]
+#[derive(Debug, Serialize, PartialEq, utoipa::ToSchema)]
 pub struct Badge {
     pub id: String,
     pub kind: BadgeKind,
@@ -76,7 +76,7 @@ pub struct Badge {
     pub earned: bool,
 }
 
-#[derive(Debug, Serialize, PartialEq)]
+#[derive(Debug, Serialize, PartialEq, utoipa::ToSchema)]
 pub struct Profile {
     pub xp: u32,
     pub level: u32,
@@ -87,7 +87,7 @@ pub struct Profile {
     pub countries: u32,
 }
 
-#[derive(Debug, Serialize, PartialEq)]
+#[derive(Debug, Serialize, PartialEq, utoipa::ToSchema)]
 pub struct Summary {
     pub countries: Vec<CountryProgress>,
     pub continents: Vec<GroupProgress>,

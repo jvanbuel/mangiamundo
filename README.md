@@ -116,21 +116,11 @@ for people and may change; clients that react to a specific case check `code`:
 | `upstream` | 502 | The places or areas provider failed |
 | `internal` | 500 | Anything else, such as a database error |
 
-| Method | Path | |
-| --- | --- | --- |
-| `GET` | `/api/health` | `{ ok, version, commit }`: the server's Cargo version and the git commit it was built from (`null` when built without `GIT_COMMIT`) |
-| `POST` | `/api/session` | Create an anonymous account, returns `{ token }` |
-| `GET` | `/api/countries` | Country and continent catalog |
-| `GET` | `/api/areas?q` | Search cities and postal codes |
-| `GET` | `/api/areas/locate?lat&lng` | The city and postal code at a position: `{ city, postal_code }` |
-| `GET` | `/api/discover?area[&tz]` | Countries available in the area, progress, badges, profile |
-| `GET` | `/api/places?area&country[&lat&lng]` | Places: open first, then closed, then unknown hours, alphabetical within each. Distances from `lat`/`lng` when given, else from the area's centre |
-| `PUT` | `/api/visits/{place_id}[?tz]` | Check in; optional body `{ lat, lng }` to verify. Send it with `Content-Type: application/json`, or it is ignored. Returns `{ visited_at, verified, profile }`: checking in again keeps the first date |
-| `DELETE` | `/api/visits/{place_id}` | Undo a check-in |
-| `GET` | `/api/celebrations?area&days[&tz]` | Upcoming celebrations with food in the area |
-| `GET` | `/api/push/key` | VAPID public key for Web Push |
-| `PUT` | `/api/push/subscription` | Subscribe a browser: PushSubscription JSON plus `area`, `timezone` |
-| `DELETE` | `/api/push/subscription` | Unsubscribe; body `{ endpoint }` |
+Every route, parameter and response is described in the OpenAPI 3.1 document,
+served at `GET /api/openapi.json` and checked in as
+[`contract/openapi.json`](contract/openapi.json). It is generated from the handlers
+with [utoipa](https://github.com/juhaku/utoipa), and an API change shows up in that
+file's diff.
 
 ## Data credits
 

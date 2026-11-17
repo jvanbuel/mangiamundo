@@ -627,3 +627,15 @@ async fn writes_contract_fixtures() {
     newer["unknown_field"] = true.into();
     write("discover-newer", &newer);
 }
+
+/// Writes the OpenAPI document to `contract/`, so CI shows API changes in the diff.
+/// It must match what the server serves.
+#[tokio::test]
+async fn serves_and_writes_the_openapi_document() {
+    let app = app().await;
+    let (status, doc) = call(&app, "GET", "/api/openapi.json", None, None).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(doc["openapi"].as_str().unwrap().get(..3), Some("3.1"));
+    let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../contract/openapi.json");
+    std::fs::write(path, serde_json::to_string_pretty(&doc).unwrap() + "\n").unwrap();
+}

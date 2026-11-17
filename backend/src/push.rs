@@ -47,7 +47,7 @@ pub struct Subscription {
     pub timezone: String,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, utoipa::ToSchema)]
 pub struct Notification {
     pub title: String,
     pub body: String,

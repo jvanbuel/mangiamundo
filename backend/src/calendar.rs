@@ -31,7 +31,7 @@ fn one() -> u32 {
 }
 
 /// One occurrence of a celebration.
-#[derive(Debug, Clone, Serialize, PartialEq)]
+#[derive(Debug, Clone, Serialize, PartialEq, utoipa::ToSchema)]
 pub struct Celebration {
     pub id: String,
     pub title: String,
@@ -96,7 +96,7 @@ pub fn starting_on(day: NaiveDate) -> Vec<Celebration> {
 }
 
 /// A time-limited challenge, like "Japan month". Earned badges are kept for good.
-#[derive(Debug, Clone, Deserialize, Serialize, PartialEq)]
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, utoipa::ToSchema)]
 pub struct Event {
     pub id: String,
     pub title: String,
