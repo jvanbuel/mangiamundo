@@ -3,8 +3,8 @@
 
 use std::path::Path as FsPath;
 
-use axum::extract::rejection::{JsonRejection, QueryRejection};
-use axum::extract::{FromRequest, FromRequestParts, OptionalFromRequest, Path, Request, State};
+use axum::extract::rejection::{JsonRejection, PathRejection, QueryRejection};
+use axum::extract::{FromRequest, FromRequestParts, OptionalFromRequest, Request, State};
 use axum::http::request::Parts;
 use axum::http::{header, StatusCode};
 use axum::response::{IntoResponse, Response};
@@ -47,6 +47,7 @@ pub fn router(state: AppState) -> Router {
         .route("/api/areas/suggest", get(suggest_areas))
         // Unknown API paths get a JSON 404 rather than the web app's index.html.
         .route("/api", any(not_found))
+        .route("/api/", any(not_found))
         .route("/api/{*rest}", any(not_found))
         .method_not_allowed_fallback(|| async { ApiError::MethodNotAllowed })
         .layer(CorsLayer::permissive())
@@ -79,7 +80,8 @@ pub mod code {
 pub enum ApiError {
     #[error("{0}")]
     BadRequest(String),
-    /// A query string or body that axum could not parse, with axum's status (400, 415 or 422).
+    /// A path, query string or body that axum could not parse, with axum's status
+    /// (400, 413, 415 or 422).
     #[error("{1}")]
     Rejected(StatusCode, String),
     #[error("method not allowed")]
@@ -121,6 +123,12 @@ impl From<QueryRejection> for ApiError {
     }
 }
 
+impl From<PathRejection> for ApiError {
+    fn from(rejection: PathRejection) -> Self {
+        ApiError::Rejected(rejection.status(), rejection.body_text())
+    }
+}
+
 impl From<JsonRejection> for ApiError {
     fn from(rejection: JsonRejection) -> Self {
         ApiError::Rejected(rejection.status(), rejection.body_text())
@@ -136,6 +144,18 @@ impl<S: Send + Sync, T: DeserializeOwned> FromRequestParts<S> for Query<T> {
     async fn from_request_parts(parts: &mut Parts, state: &S) -> Result<Self, ApiError> {
         let axum::extract::Query(value) = axum::extract::Query::from_request_parts(parts, state).await?;
         Ok(Query(value))
+    }
+}
+
+/// axum's `Path`, but a path segment that does not decode is a JSON error like any other.
+struct Path<T>(T);
+
+impl<S: Send + Sync, T: DeserializeOwned + Send> FromRequestParts<S> for Path<T> {
+    type Rejection = ApiError;
+
+    async fn from_request_parts(parts: &mut Parts, state: &S) -> Result<Self, ApiError> {
+        let axum::extract::Path(value) = axum::extract::Path::from_request_parts(parts, state).await?;
+        Ok(Path(value))
     }
 }
 

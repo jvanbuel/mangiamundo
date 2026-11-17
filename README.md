@@ -100,7 +100,7 @@ for people and may change; clients that react to a specific case check `code`:
 
 | `code` | Status | |
 | --- | --- | --- |
-| `bad_request` | 400, 415, 422 | Invalid or missing parameters, a malformed body, or a body without `Content-Type: application/json` |
+| `bad_request` | 400, 413, 415, 422 | Invalid or missing parameters, a malformed or oversized (over 2 MiB) body, or a body without `Content-Type: application/json` |
 | `unauthorized` | 401 | Missing or unknown session token |
 | `not_found` | 404 | Unknown place, area or `/api` path |
 | `method_not_allowed` | 405 | The path exists, but not with this method |

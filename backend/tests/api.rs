@@ -235,6 +235,14 @@ async fn every_error_is_json_with_a_code() {
     let bytes = response.into_body().collect().await.unwrap().to_bytes();
     assert_error(&serde_json::from_slice(&bytes).unwrap(), "bad_request");
 
+    let big = format!(r#"{{"lat": 1, "pad": "{}"}}"#, "x".repeat(3 << 20));
+    let (status, body) = call(&app, "PUT", "/api/visits/demo-x", Some(&token), Some(&big)).await;
+    assert_eq!(status, StatusCode::PAYLOAD_TOO_LARGE);
+    assert_error(&body, "bad_request");
+    let (status, body) = call(&app, "PUT", "/api/visits/%FF", Some(&token), None).await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    assert_error(&body, "bad_request");
+
     let (status, body) = call(&app, "POST", "/api/countries", None, None).await;
     assert_eq!(status, StatusCode::METHOD_NOT_ALLOWED);
     assert_error(&body, "method_not_allowed");
@@ -247,7 +255,7 @@ async fn unknown_api_paths_are_a_json_404_even_next_to_the_web_app() {
     std::fs::write(dir.join("index.html"), "<!doctype html><title>web app</title>").unwrap();
     let app = api::with_web_app(app().await, &dir);
 
-    for path in ["/api/nope", "/api/visits", "/api"] {
+    for path in ["/api/nope", "/api/visits", "/api", "/api/"] {
         let (status, body) = call(&app, "GET", path, None, None).await;
         assert_eq!(status, StatusCode::NOT_FOUND, "{path}");
         assert_error(&body, "not_found");
@@ -460,3 +468,4 @@ async fn the_second_closed_report_of_an_osm_place_posts_one_osm_note() {
     assert!(notes[0].contains("lat=50.8798") && notes[0].contains("lon=4.7005"), "{}", notes[0]);
     assert!(notes[0].contains("openstreetmap.org%2Fnode%2F42"), "{}", notes[0]);
 }
+
