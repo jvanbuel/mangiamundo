@@ -13,6 +13,7 @@ import androidx.compose.ui.unit.dp
 import app.cash.paparazzi.DeviceConfig
 import app.cash.paparazzi.Paparazzi
 import app.mangiamundo.SavedLocation
+import app.mangiamundo.core.Area
 import app.mangiamundo.core.Badge
 import app.mangiamundo.core.BadgeKind
 import app.mangiamundo.core.Camera
@@ -41,7 +42,7 @@ class ScreensTest {
     val paparazzi = Paparazzi(deviceConfig = DeviceConfig.PIXEL_6, maxPercentDifference = 0.1)
 
     private val world = World.parse(File("../../shared/world.json").readText())
-    private val leuven = SavedLocation(50.8798, 4.7005, "Leuven", fromGps = true)
+    private val leuven = SavedLocation(Area("demo-leuven", "Leuven", lat = 50.8798, lng = 4.7005), 50.8798, 4.7005, fromGps = true)
 
     private val countries = listOf(
         Country("IT", "Italy", "EU", "🇮🇹"), Country("FR", "France", "EU", "🇫🇷"),
@@ -95,7 +96,7 @@ class ScreensTest {
                 Legend(Modifier.align(Alignment.BottomStart).padding(8.dp))
             }
             Column(Modifier.weight(0.58f).padding(16.dp)) {
-                Header(leuven, 10) {}
+                Header(leuven) {}
                 Passport(discover)
                 ContinentHeader(discover.continents[2])
                 for (code in listOf("FR", "GR", "IT")) {
@@ -126,9 +127,9 @@ class ScreensTest {
         val colors = LocalAppColors.current
         Column(Modifier.fillMaxSize().background(colors.panel).padding(16.dp)) {
             CountryHeader(progress.first { it.code == "JP" }, countries.first { it.code == "JP" }) {}
-            PlaceRow(Place("a", "Sushi Kaito", 50.88, 4.70, "Naamsestraat 12, Leuven", "https://example.org", listOf("JP"), 420, 1, true), busy = false) {}
-            PlaceRow(Place("b", "Ramen Bar Ichi", 50.87, 4.71, "Bondgenotenlaan 40", null, listOf("JP"), 1250, 1, false), busy = false) {}
-            PlaceRow(Place("c", "Izakaya Kumo", 50.86, 4.69, null, null, listOf("JP"), 3400), busy = false) {}
+            PlaceRow(Place("a", "Sushi Kaito", 50.88, 4.70, address = "Naamsestraat 12, Leuven", url = "https://example.org", countries = listOf("JP"), distanceM = 420, visitedAt = 1, verified = true), busy = false) {}
+            PlaceRow(Place("b", "Ramen Bar Ichi", 50.87, 4.71, address = "Bondgenotenlaan 40", countries = listOf("JP"), distanceM = 1250, visitedAt = 1), busy = false) {}
+            PlaceRow(Place("c", "Izakaya Kumo", 50.86, 4.69, countries = listOf("JP"), distanceM = 3400), busy = false) {}
             BadgeGrid(discover.badges)
         }
     }

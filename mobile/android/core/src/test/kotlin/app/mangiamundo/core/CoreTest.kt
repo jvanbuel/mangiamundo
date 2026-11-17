@@ -73,4 +73,21 @@ class CoreTest {
         assertEquals(Status.COMPLETED, CountryProgress("ET", "AF", 2, 2).status)
         assertEquals(Status.DISCOVERED, CountryProgress("ET", "AF", 2, 1).status)
     }
+
+    @Test
+    fun decodesAreas() {
+        val json = ApiClient("http://localhost", object : TokenStore { override var token: String? = null }).json
+        val located = json.decodeFromString<Located>(
+            """{"city":{"id":"osm-relation-196311","name":"Leuven","kind":"city","detail":"Flemish Brabant, Belgium",
+               "lat":50.88,"lng":4.70},
+               "postal_code":{"id":"osm-relation-3366463","name":"3000 Leuven","kind":"postal_code","detail":null,
+               "lat":50.878,"lng":4.702}}""",
+        )
+        assertEquals(listOf("osm-relation-196311", "osm-relation-3366463"), located.options.map { it.id })
+        assertEquals(AreaKind.POSTAL_CODE, located.postalCode?.kind)
+        assertEquals(Located(), json.decodeFromString<Located>("""{"city":null,"postal_code":null}"""))
+        // A kind this app doesn't know yet doesn't break decoding.
+        val newer = json.decodeFromString<Area>("""{"id":"x","name":"Mitte","kind":"district","lat":52.5,"lng":13.4}""")
+        assertEquals(AreaKind.CITY, newer.kind)
+    }
 }

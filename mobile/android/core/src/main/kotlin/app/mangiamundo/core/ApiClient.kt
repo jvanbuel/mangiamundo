@@ -19,19 +19,26 @@ interface TokenStore {
 
 class ApiClient(private val baseUrl: String, private val tokens: TokenStore) {
     @PublishedApi
-    internal val json = Json { ignoreUnknownKeys = true }
+    internal val json = Json {
+        ignoreUnknownKeys = true
+        // Unknown enum values fall back to the property's default where it has one.
+        coerceInputValues = true
+    }
     private val tokenLock = Mutex()
 
     suspend fun catalog(): Catalog = json.decodeFromString(request("GET", "/api/countries"))
 
-    suspend fun discover(lat: Double, lng: Double, radiusKm: Int): Discover =
-        json.decodeFromString(authed("GET", "/api/discover?${area(lat, lng, radiusKm)}"))
+    suspend fun discover(areaId: String): Discover =
+        json.decodeFromString(authed("GET", "/api/discover?${area(areaId)}"))
 
-    suspend fun places(lat: Double, lng: Double, radiusKm: Int, country: String): List<Place> =
-        json.decodeFromString(authed("GET", "/api/places?${area(lat, lng, radiusKm)}&country=$country"))
+    /** Distances are measured from `from` (lat, lng) when given, otherwise from the area's centre. */
+    suspend fun places(areaId: String, country: String, from: Pair<Double, Double>?): List<Place> {
+        val position = from?.let { "&lat=${it.first}&lng=${it.second}" }.orEmpty()
+        return json.decodeFromString(authed("GET", "/api/places?${area(areaId)}&country=$country$position"))
+    }
 
-    suspend fun celebrations(lat: Double, lng: Double, radiusKm: Int, days: Int = 60): List<Celebration> =
-        json.decodeFromString(request("GET", "/api/celebrations?${area(lat, lng, radiusKm)}&days=$days"))
+    suspend fun celebrations(areaId: String, days: Int = 60): List<Celebration> =
+        json.decodeFromString(request("GET", "/api/celebrations?${area(areaId)}&days=$days"))
 
     /** `here` is the device position, sent so the server can mark the visit as verified. */
     suspend fun checkIn(placeId: String, here: Pair<Double, Double>?): VisitResult {
@@ -43,13 +50,15 @@ class ApiClient(private val baseUrl: String, private val tokens: TokenStore) {
         authed("DELETE", "/api/visits/${encode(placeId)}")
     }
 
-    suspend fun geocode(query: String): List<GeoResult> =
-        json.decodeFromString(request("GET", "/api/geocode?q=${encode(query)}"))
+    /** Cities and postal codes matching what someone typed. */
+    suspend fun searchAreas(query: String): List<Area> =
+        json.decodeFromString(request("GET", "/api/areas?q=${encode(query)}"))
 
-    suspend fun reverseGeocode(lat: Double, lng: Double): String? =
-        json.decodeFromString<ReverseResult>(request("GET", "/api/geocode/reverse?lat=$lat&lng=$lng")).name
+    /** The city and postal code a point lies in. */
+    suspend fun locateArea(lat: Double, lng: Double): Located =
+        json.decodeFromString(request("GET", "/api/areas/locate?lat=$lat&lng=$lng"))
 
-    private fun area(lat: Double, lng: Double, radiusKm: Int) = "lat=$lat&lng=$lng&radius_km=$radiusKm"
+    private fun area(id: String) = "area=${encode(id)}"
 
     private fun encode(value: String) = URLEncoder.encode(value, "UTF-8").replace("+", "%20")
 

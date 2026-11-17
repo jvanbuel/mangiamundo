@@ -42,9 +42,13 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.SegmentedButton
+import androidx.compose.material3.SegmentedButtonDefaults
+import androidx.compose.material3.SingleChoiceSegmentedButtonRow
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -83,7 +87,8 @@ import app.mangiamundo.core.EventStatus
 import app.mangiamundo.core.Country
 import app.mangiamundo.core.CountryProgress
 import app.mangiamundo.core.Discover
-import app.mangiamundo.core.GeoResult
+import app.mangiamundo.core.Area
+import app.mangiamundo.core.AreaKind
 import app.mangiamundo.core.GroupProgress
 import app.mangiamundo.core.Place
 import app.mangiamundo.core.Status
@@ -183,7 +188,7 @@ fun Legend(modifier: Modifier = Modifier) {
 }
 
 @Composable
-fun Header(location: SavedLocation?, radiusKm: Int, onChange: () -> Unit) {
+fun Header(location: SavedLocation?, onChange: () -> Unit) {
     val colors = LocalAppColors.current
     Column(Modifier.padding(bottom = 6.dp)) {
         Text("Mangiamundo", style = MaterialTheme.typography.titleLarge, color = colors.text)
@@ -206,14 +211,14 @@ fun Header(location: SavedLocation?, radiusKm: Int, onChange: () -> Unit) {
                     modifier = Modifier.size(16.dp).padding(end = 2.dp),
                 )
                 Text(
-                    location.name ?: "Your location",
+                    location.area.name,
                     fontWeight = FontWeight.Bold,
                     color = colors.text,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                     modifier = Modifier.weight(1f, fill = false),
                 )
-                Text("  ·  $radiusKm km", color = colors.muted)
+                if (location.area.kind == AreaKind.POSTAL_CODE) Text("  ·  postal code", color = colors.muted)
                 Spacer(Modifier.weight(1f))
                 Text("Change", color = colors.accent, fontSize = 13.sp)
             }
@@ -255,12 +260,13 @@ fun ErrorCard(message: String, onRetry: () -> Unit) {
     }
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun LocationPicker(vm: AppViewModel, onUseGps: () -> Unit, onDone: () -> Unit) {
     val colors = LocalAppColors.current
     val scope = rememberCoroutineScope()
     var query by rememberSaveable { mutableStateOf("") }
-    var results by remember { mutableStateOf<List<GeoResult>?>(null) }
+    var results by remember { mutableStateOf<List<Area>?>(null) }
     var searching by remember { mutableStateOf(false) }
     var failure by remember { mutableStateOf<String?>(null) }
 
@@ -280,6 +286,29 @@ fun LocationPicker(vm: AppViewModel, onUseGps: () -> Unit, onDone: () -> Unit) {
     }
 
     Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        // The city and postal code found at the GPS position.
+        val location = vm.location
+        if (location != null && location.options.size > 1) {
+            SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
+                location.options.forEachIndexed { index, option ->
+                    SegmentedButton(
+                        selected = location.area.id == option.id,
+                        onClick = {
+                            vm.switchArea(option)
+                            onDone()
+                        },
+                        shape = SegmentedButtonDefaults.itemShape(index, location.options.size),
+                        icon = {},
+                    ) {
+                        Text(
+                            if (option.kind == AreaKind.CITY) "All of ${option.name}" else "Only ${option.name}",
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                    }
+                }
+            }
+        }
         ChunkyButton(
             if (vm.locating) "Finding you…" else "Use my current location",
             onClick = {
@@ -296,7 +325,7 @@ fun LocationPicker(vm: AppViewModel, onUseGps: () -> Unit, onDone: () -> Unit) {
             OutlinedTextField(
                 value = query,
                 onValueChange = { query = it },
-                placeholder = { Text("Search a city or address") },
+                placeholder = { Text("City or postal code") },
                 singleLine = true,
                 keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
                 keyboardActions = KeyboardActions(onSearch = { search() }),
@@ -307,27 +336,24 @@ fun LocationPicker(vm: AppViewModel, onUseGps: () -> Unit, onDone: () -> Unit) {
         failure?.let { Text(it, color = colors.danger, fontSize = 13.sp) }
 
         results?.let { found ->
-            if (found.isEmpty()) Text("No matches. Try a different spelling.", color = colors.muted, fontSize = 13.sp)
+            if (found.isEmpty()) {
+                Text("No city or postal code found. Try a different spelling.", color = colors.muted, fontSize = 13.sp)
+            }
             for (result in found) {
-                Text(
-                    result.name,
-                    color = colors.text,
-                    modifier = Modifier
+                Column(
+                    Modifier
                         .fillMaxWidth()
                         .clip(RoundedCornerShape(8.dp))
                         .clickable {
-                            vm.chooseLocation(result)
+                            vm.chooseArea(result)
                             onDone()
                         }
                         .padding(10.dp),
-                )
-            }
-        }
-
-        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            Text("Search radius", color = colors.muted, fontSize = 13.sp, modifier = Modifier.weight(1f))
-            for (km in listOf(5, 10, 25)) {
-                FilterChip(selected = vm.radiusKm == km, onClick = { vm.changeRadius(km) }, label = { Text("$km km") })
+                ) {
+                    Text(result.name, color = colors.text)
+                    val kind = if (result.kind == AreaKind.CITY) "City" else "Postal code"
+                    Text(listOfNotNull(kind, result.detail).joinToString(" · "), color = colors.muted, fontSize = 12.sp)
+                }
             }
         }
     }

@@ -12,7 +12,8 @@ import app.mangiamundo.core.Catalog
 import app.mangiamundo.core.Celebration
 import app.mangiamundo.core.Country
 import app.mangiamundo.core.Discover
-import app.mangiamundo.core.GeoResult
+import app.mangiamundo.core.Area
+import app.mangiamundo.core.AreaKind
 import app.mangiamundo.core.Place
 import app.mangiamundo.core.ProjectionKind
 import app.mangiamundo.core.ReminderPlan
@@ -33,7 +34,6 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     var world by mutableStateOf<World?>(null); private set
     var catalog by mutableStateOf<Catalog?>(null); private set
     var location by mutableStateOf(settings.location); private set
-    var radiusKm by mutableStateOf(settings.radiusKm); private set
     var discover by mutableStateOf<Discover?>(null); private set
     var loading by mutableStateOf(false); private set
     var error by mutableStateOf<String?>(null); private set
@@ -83,6 +83,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
                 ready = true
                 return@launch
             }
+            if (location == null) settings.legacyLocation?.let { (lat, lng, fromGps) -> moveLegacy(lat, lng, fromGps) }
             // Without a location the welcome screen shows right away; refresh() sets it otherwise.
             if (location != null) refresh() else ready = true
             // Follow the device when there is no location yet or the last one came from GPS.
@@ -97,15 +98,30 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         settings.projection = kind
     }
 
-    fun changeRadius(km: Int) {
-        radiusKm = km
-        settings.radiusKm = km
-        select(null)
-        refresh()
+    /** Picks a city or postal code from a search. */
+    fun chooseArea(area: Area) {
+        moveTo(SavedLocation(area, area.lat, area.lng, fromGps = false))
     }
 
-    fun chooseLocation(result: GeoResult) {
-        moveTo(SavedLocation(result.lat, result.lng, result.name.substringBefore(','), fromGps = false))
+    /** Switches between the city and the postal code found at the GPS position. */
+    fun switchArea(area: Area) {
+        val current = location ?: return
+        if (current.area.id != area.id) moveTo(current.copy(area = area))
+    }
+
+    /** Moves a location saved before areas existed to the city at that point. */
+    private suspend fun moveLegacy(lat: Double, lng: Double, fromGps: Boolean) {
+        val located = runCatching { api.locateArea(lat, lng) }.getOrNull() ?: return
+        val area = located.city ?: located.postalCode ?: return
+        val target = SavedLocation(area, lat, lng, fromGps, located.options)
+        location = target
+        settings.location = target
+    }
+
+    /** Where the user is, when known recently: distances are measured from it. */
+    private fun userPosition(): Pair<Double, Double>? {
+        gpsFix?.takeIf { System.currentTimeMillis() - it.third < 10 * 60_000 }?.let { return it.first to it.second }
+        return location?.takeIf { it.fromGps }?.let { it.lat to it.lng }
     }
 
     private fun moveTo(target: SavedLocation) {
@@ -132,8 +148,17 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
                 val moved = previous == null || !previous.fromGps ||
                     abs(previous.lat - fix.latitude) > 0.01 || abs(previous.lng - fix.longitude) > 0.01
                 if (moved) {
-                    val name = runCatching { api.reverseGeocode(fix.latitude, fix.longitude) }.getOrNull()
-                    moveTo(SavedLocation(fix.latitude, fix.longitude, name, fromGps = true))
+                    val located = runCatching { api.locateArea(fix.latitude, fix.longitude) }.getOrNull()
+                    // The city by default; someone who narrowed to their postal code before keeps that.
+                    val keepPostalCode = previous?.fromGps == true && previous.area.kind == AreaKind.POSTAL_CODE
+                    val area = located?.let { (if (keepPostalCode) it.postalCode else null) ?: it.city ?: it.postalCode }
+                    if (located == null || area == null) {
+                        if (!quiet || location == null) {
+                            locateError = "No city or postal code found here. Search for your city instead."
+                        }
+                    } else {
+                        moveTo(SavedLocation(area, fix.latitude, fix.longitude, fromGps = true, options = located.options))
+                    }
                 }
             }
             locating = false
@@ -144,7 +169,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         locateError = "Location access was denied. Search for your city instead."
     }
 
-    suspend fun search(query: String): List<GeoResult> = api.geocode(query)
+    suspend fun search(query: String): List<Area> = api.searchAreas(query)
 
     fun refresh() {
         val here = location ?: return
@@ -153,13 +178,13 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
             loading = true
             error = null
             try {
-                discover = api.discover(here.lat, here.lng, radiusKm)
+                discover = api.discover(here.area.id)
                 ready = true
                 pendingCountry?.let { code ->
                     pendingCountry = null
                     if (discover?.countries?.any { it.code == code } == true) select(code)
                 }
-                celebrations = runCatching { api.celebrations(here.lat, here.lng, radiusKm) }.getOrDefault(emptyList())
+                celebrations = runCatching { api.celebrations(here.area.id) }.getOrDefault(emptyList())
                 rescheduleReminders()
             } catch (e: kotlinx.coroutines.CancellationException) {
                 throw e
@@ -214,7 +239,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         placesJob = viewModelScope.launch {
             placesLoading = true
             try {
-                places = api.places(here.lat, here.lng, radiusKm, code)
+                places = api.places(here.area.id, code, userPosition())
             } catch (e: kotlinx.coroutines.CancellationException) {
                 throw e
             } catch (e: Exception) {
@@ -229,7 +254,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         if (discover?.countries?.any { it.code == code } == true) {
             select(code)
         } else if (discover != null) {
-            messageChannel.trySend("No places from $name within $radiusKm km.")
+            messageChannel.trySend("No places from $name in ${location?.area?.name ?: "this area"}.")
         }
     }
 
@@ -249,7 +274,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
                     place.copy(visitedAt = null, verified = false)
                 }
                 places = places.map { if (it.id == place.id) updated else it }
-                val after = api.discover(here.lat, here.lng, radiusKm)
+                val after = api.discover(here.area.id)
                 discover = after
                 if (updated.visited) celebrate(before, after, updated)
             } catch (e: Exception) {
