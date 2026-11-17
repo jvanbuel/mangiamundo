@@ -1,6 +1,8 @@
 package app.mangiamundo.ui
 
+import android.content.ActivityNotFoundException
 import android.content.Intent
+import android.net.Uri
 import androidx.core.net.toUri
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
@@ -512,7 +514,12 @@ fun PlaceRow(place: Place, busy: Boolean, onToggle: () -> Unit) {
                         style = MaterialTheme.typography.labelLarge,
                         color = colors.accent,
                         modifier = Modifier.clickable {
-                            open("https://www.google.com/maps/dir/?api=1&destination=${place.lat},${place.lng}")
+                            // geo: opens whichever maps app the user has; the web map covers phones without one.
+                            try {
+                                open("geo:0,0?q=${place.lat},${place.lng}(${Uri.encode(place.name)})")
+                            } catch (_: ActivityNotFoundException) {
+                                open("https://www.openstreetmap.org/directions?route=%3B${place.lat}%2C${place.lng}")
+                            }
                         },
                     )
                     place.url?.let { url ->

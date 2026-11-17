@@ -12,7 +12,7 @@
 
 	const distance = (m: number) => (m < 1000 ? `${Math.round(m / 10) * 10} m` : `${(m / 1000).toFixed(1)} km`);
 	const directions = (lat: number, lng: number) =>
-		`https://www.google.com/maps/dir/?api=1&destination=${lat},${lng}`;
+		`https://www.openstreetmap.org/directions?route=%3B${lat}%2C${lng}`;
 
 	// The API sorts open places first, then closed, then unknown hours.
 	const groupName = (open: boolean | null) =>
