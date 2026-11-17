@@ -14,6 +14,27 @@
 
 	const kindLabel = (area: Area) => (area.kind === 'city' ? 'City' : 'Postal code');
 
+	// Suggestions while typing. Failures are ignored: Search still works.
+	$effect(() => {
+		const text = query.trim();
+		searched = false;
+		if (text.length < 2) {
+			results = [];
+			return;
+		}
+		const near = app.location ? { lat: app.location.lat, lng: app.location.lng } : null;
+		let stale = false;
+		const timer = setTimeout(async () => {
+			const found = await api.suggestAreas(text, near).catch(() => []);
+			// An empty list while typing would show "not found" too early.
+			if (!stale && !searching && found.length) results = found;
+		}, 250);
+		return () => {
+			stale = true;
+			clearTimeout(timer);
+		};
+	});
+
 	async function search(event: SubmitEvent) {
 		event.preventDefault();
 		if (query.trim().length < 2) return;

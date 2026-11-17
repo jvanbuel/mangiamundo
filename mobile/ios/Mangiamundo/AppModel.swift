@@ -181,6 +181,11 @@ final class AppModel {
         try await api.searchAreas(query)
     }
 
+    func suggest(_ query: String) async throws -> [Area] {
+        let near = gpsFix.map { ($0.lat, $0.lng) } ?? location.map { ($0.lat, $0.lng) }
+        return try await api.suggestAreas(query, near: near)
+    }
+
     func refresh() {
         guard let here = location else { return }
         refreshTask?.cancel()

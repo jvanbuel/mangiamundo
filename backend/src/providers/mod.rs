@@ -80,6 +80,10 @@ pub trait AreaDirectory: Send + Sync {
     async fn locate(&self, lat: f64, lng: f64) -> anyhow::Result<Located>;
     /// An area's outline, or `None` when the id is not a city or postal code.
     async fn boundary(&self, id: &str) -> anyhow::Result<Option<Boundary>>;
+    /// Quick suggestions while someone types, nearest first when `near` is known.
+    async fn suggest(&self, query: &str, _near: Option<(f64, f64)>) -> anyhow::Result<Vec<AreaInfo>> {
+        self.search(query).await
+    }
 }
 
 pub fn build(config: &Config) -> anyhow::Result<(Arc<dyn PlacesProvider>, Arc<dyn AreaDirectory>)> {

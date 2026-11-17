@@ -202,6 +202,9 @@ async fn areas_can_be_searched_and_located() {
     let (_, codes) = call(&app, "GET", "/api/areas?q=3010", None, None).await;
     assert_eq!(codes[0]["name"], "3010 Leuven");
     assert_eq!(codes[0]["kind"], "postal_code");
+    let (status, suggested) = call(&app, "GET", "/api/areas/suggest?q=leu&lat=50.88&lng=4.7", None, None).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(suggested[0]["id"], "demo-leuven");
     let (_, here) = call(&app, "GET", "/api/areas/locate?lat=50.8798&lng=4.71", None, None).await;
     assert_eq!(here["city"]["id"], "demo-leuven");
     assert_eq!(here["postal_code"]["id"], "demo-leuven-3010");

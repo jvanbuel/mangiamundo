@@ -448,6 +448,7 @@ struct LocationPicker: View {
                     .buttonStyle(.bordered)
                     .disabled(searching)
             }
+            .task(id: query) { await suggest() }
             if let failure {
                 Text(failure).font(Theme.font(.footnote)).foregroundStyle(Theme.danger)
             }
@@ -476,6 +477,19 @@ struct LocationPicker: View {
                 }
             }
         }
+    }
+
+    /// Suggestions while typing. Failures are ignored: Search still works.
+    private func suggest() async {
+        let text = query.trimmingCharacters(in: .whitespaces)
+        guard text.count >= 2 else {
+            results = nil
+            return
+        }
+        try? await Task.sleep(for: .milliseconds(250))
+        guard !Task.isCancelled, let found = try? await model.suggest(text), !Task.isCancelled, !searching else { return }
+        // An empty list while typing would show "not found" too early.
+        if !found.isEmpty { results = found }
     }
 
     private func search() {
