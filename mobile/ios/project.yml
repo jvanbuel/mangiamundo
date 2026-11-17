@@ -26,7 +26,11 @@ targets:
       path: Mangiamundo/Info.plist
       properties:
         CFBundleDisplayName: Mangiamundo
-        UILaunchScreen: {}
+        # Whole globe on the theme background; StartupLoaderView then takes the bites.
+        UILaunchScreen:
+          UIImageName: LaunchGlobe
+          UIColorName: LaunchBackground
+          UIImageRespectsSafeAreaInsets: false
         UISupportedInterfaceOrientations:
           - UIInterfaceOrientationPortrait
         # Nunito, shipped in Mangiamundo/Fonts (SIL Open Font License).

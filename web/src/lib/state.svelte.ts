@@ -1,5 +1,6 @@
 import * as api from './api';
 import * as push from './push';
+import { hideSplash } from './splash';
 import {
 	statusOf,
 	type BadgeKind,
@@ -90,6 +91,7 @@ export async function init() {
 		app.catalog = await api.catalog();
 	} catch (error) {
 		app.error = message(error);
+		void hideSplash();
 		return;
 	}
 	void checkReminders();
@@ -97,9 +99,12 @@ export async function init() {
 	if (stored) {
 		app.location = stored;
 		await refresh();
+		void hideSplash();
 		// Keep following the device when the last location came from GPS.
 		if (stored.source === 'gps') void locate(true);
 	} else {
+		// First visit: show the welcome card while the browser asks for the location.
+		void hideSplash();
 		await locate(true);
 	}
 	await followLink();

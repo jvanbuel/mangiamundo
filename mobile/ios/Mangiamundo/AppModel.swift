@@ -19,6 +19,8 @@ final class AppModel {
     private(set) var discover: Discover?
     private(set) var loading = false
     private(set) var error: String?
+    /// The first data is in (or failed), so the startup loader can go.
+    private(set) var ready = false
 
     /// Code of the country whose places are shown.
     private(set) var selected: String?
@@ -78,9 +80,11 @@ final class AppModel {
             catalog = try await api.catalog()
         } catch {
             self.error = error.localizedDescription
+            ready = true
             return
         }
-        if location != nil { refresh() }
+        // Without a location the welcome screen shows right away; refresh() sets it otherwise.
+        if location != nil { refresh() } else { ready = true }
         // Follow the device when there is no location yet or the last one came from GPS.
         if location == nil {
             await locate(quiet: false)
@@ -156,6 +160,7 @@ final class AppModel {
                 let result = try await api.discover(lat: here.lat, lng: here.lng, radiusKm: radiusKm)
                 guard !Task.isCancelled else { return }
                 discover = result
+                ready = true
                 if let code = pendingCountry {
                     pendingCountry = nil
                     if result.countries.contains(where: { $0.code == code }) { select(code) }
@@ -166,6 +171,7 @@ final class AppModel {
                 guard !Task.isCancelled else { return }
                 self.error = error.localizedDescription
                 discover = nil
+                ready = true
             }
             loading = false
         }

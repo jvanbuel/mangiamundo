@@ -37,6 +37,8 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     var discover by mutableStateOf<Discover?>(null); private set
     var loading by mutableStateOf(false); private set
     var error by mutableStateOf<String?>(null); private set
+    /** The first data is in (or failed), so the startup loader can go. Read by MainActivity. */
+    @Volatile var ready = false; private set
 
     /** Code of the country whose places are shown. */
     var selected by mutableStateOf<String?>(null); private set
@@ -78,9 +80,11 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
                 catalog = api.catalog()
             } catch (e: Exception) {
                 error = e.message
+                ready = true
                 return@launch
             }
-            if (location != null) refresh()
+            // Without a location the welcome screen shows right away; refresh() sets it otherwise.
+            if (location != null) refresh() else ready = true
             // Follow the device when there is no location yet or the last one came from GPS.
             if (location?.fromGps != false && DeviceLocation.hasPermission(application)) locate(quiet = true)
         }
@@ -150,6 +154,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
             error = null
             try {
                 discover = api.discover(here.lat, here.lng, radiusKm)
+                ready = true
                 pendingCountry?.let { code ->
                     pendingCountry = null
                     if (discover?.countries?.any { it.code == code } == true) select(code)
@@ -161,6 +166,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
             } catch (e: Exception) {
                 error = e.message
                 discover = null
+                ready = true
             }
             loading = false
         }
