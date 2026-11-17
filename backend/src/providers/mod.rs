@@ -35,7 +35,7 @@ pub trait PlacesProvider: Send + Sync {
     async fn search(&self, area: &Boundary) -> anyhow::Result<Vec<FoundPlace>>;
 }
 
-#[derive(Debug, Clone, Copy, Serialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, Serialize, PartialEq, Eq, utoipa::ToSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum AreaKind {
     /// A city, town or municipality: every postal code in it.
@@ -44,7 +44,7 @@ pub enum AreaKind {
 }
 
 /// A place people pick as their location: a city or a postal code.
-#[derive(Debug, Clone, Serialize, PartialEq)]
+#[derive(Debug, Clone, Serialize, PartialEq, utoipa::ToSchema)]
 pub struct AreaInfo {
     /// Opaque and URL-safe, prefixed with the directory name, e.g. `osm-relation-196311`.
     pub id: String,
@@ -52,6 +52,7 @@ pub struct AreaInfo {
     pub name: String,
     pub kind: AreaKind,
     /// Where it is, to tell same-named areas apart: "Vlaams-Brabant, Belgium".
+    #[schema(required = true)]
     pub detail: Option<String>,
     /// A central point, for the map.
     pub lat: f64,
@@ -66,9 +67,11 @@ pub struct Boundary {
 }
 
 /// The areas a point lies in.
-#[derive(Debug, Clone, Default, Serialize, PartialEq)]
+#[derive(Debug, Clone, Default, Serialize, PartialEq, utoipa::ToSchema)]
 pub struct Located {
+    #[schema(required = true)]
     pub city: Option<AreaInfo>,
+    #[schema(required = true)]
     pub postal_code: Option<AreaInfo>,
 }
 

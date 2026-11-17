@@ -194,23 +194,31 @@ pub async fn lifetime(db: &SqlitePool, user: &str) -> sqlx::Result<Lifetime> {
     Ok(Lifetime { visits: visits as u32, countries: countries as u32 })
 }
 
-#[derive(Debug, Serialize)]
+/// Every `Option` field is sent, as `null` when empty.
+#[derive(Debug, Serialize, utoipa::ToSchema)]
 pub struct PlaceView {
     pub id: String,
     pub name: String,
     pub lat: f64,
     pub lng: f64,
+    #[schema(required = true)]
     pub address: Option<String>,
+    #[schema(required = true)]
     pub url: Option<String>,
+    #[schema(required = true)]
     pub cuisine: Option<String>,
     /// Raw OSM `opening_hours`.
+    #[schema(required = true)]
     pub opening_hours: Option<String>,
     /// `None` when the hours are unknown.
+    #[schema(required = true)]
     pub open_now: Option<bool>,
     /// Short status line, e.g. "Open until 22:00".
+    #[schema(required = true)]
     pub hours_text: Option<String>,
     pub countries: Vec<String>,
     pub distance_m: u32,
+    #[schema(required = true)]
     pub visited_at: Option<i64>,
     pub verified: bool,
 }

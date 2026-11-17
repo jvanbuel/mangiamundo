@@ -1,0 +1,1578 @@
+{
+  "components": {
+    "schemas": {
+      "AreaInfo": {
+        "description": "A place people pick as their location: a city or a postal code.",
+        "properties": {
+          "detail": {
+            "description": "Where it is, to tell same-named areas apart: \"Vlaams-Brabant, Belgium\".",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "id": {
+            "description": "Opaque and URL-safe, prefixed with the directory name, e.g. `osm-relation-196311`.",
+            "type": "string"
+          },
+          "kind": {
+            "$ref": "#/components/schemas/AreaKind"
+          },
+          "lat": {
+            "description": "A central point, for the map.",
+            "format": "double",
+            "type": "number"
+          },
+          "lng": {
+            "format": "double",
+            "type": "number"
+          },
+          "name": {
+            "description": "\"Leuven\", or \"3000 Leuven\" for a postal code.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "kind",
+          "detail",
+          "lat",
+          "lng"
+        ],
+        "type": "object"
+      },
+      "AreaKind": {
+        "enum": [
+          "city",
+          "postal_code"
+        ],
+        "type": "string"
+      },
+      "AreaView": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/AreaInfo"
+          },
+          {
+            "properties": {
+              "fetched_at": {
+                "format": "int64",
+                "type": "integer"
+              }
+            },
+            "required": [
+              "fetched_at"
+            ],
+            "type": "object"
+          }
+        ],
+        "description": "An area as clients see it."
+      },
+      "Badge": {
+        "properties": {
+          "description": {
+            "type": "string"
+          },
+          "earned": {
+            "type": "boolean"
+          },
+          "id": {
+            "type": "string"
+          },
+          "kind": {
+            "$ref": "#/components/schemas/BadgeKind"
+          },
+          "progress": {
+            "format": "int32",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "target": {
+            "format": "int32",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "title": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "kind",
+          "title",
+          "description",
+          "progress",
+          "target",
+          "earned"
+        ],
+        "type": "object"
+      },
+      "BadgeKind": {
+        "description": "What a badge rewards. Clients pick the badge's icon and colour from it.",
+        "enum": [
+          "visits",
+          "countries",
+          "completed",
+          "continent",
+          "world",
+          "everything"
+        ],
+        "type": "string"
+      },
+      "Catalog": {
+        "properties": {
+          "continents": {
+            "items": {
+              "$ref": "#/components/schemas/Continent"
+            },
+            "type": "array"
+          },
+          "countries": {
+            "items": {
+              "$ref": "#/components/schemas/Country"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "countries",
+          "continents"
+        ],
+        "type": "object"
+      },
+      "Celebration": {
+        "description": "One occurrence of a celebration.",
+        "properties": {
+          "approximate": {
+            "description": "True for dates set by moon sighting or astronomy, which can shift by a day.",
+            "type": "boolean"
+          },
+          "countries": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "description": {
+            "type": "string"
+          },
+          "ends": {
+            "description": "Last day, inclusive.",
+            "format": "date",
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "starts": {
+            "format": "date",
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "title",
+          "description",
+          "countries",
+          "starts",
+          "ends",
+          "approximate"
+        ],
+        "type": "object"
+      },
+      "CelebrationView": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/Celebration"
+          },
+          {
+            "properties": {
+              "nearby": {
+                "description": "The celebration's countries that have places in the area.",
+                "items": {
+                  "$ref": "#/components/schemas/NearbyCountry"
+                },
+                "type": "array"
+              },
+              "reminder": {
+                "$ref": "#/components/schemas/Notification",
+                "description": "Notification text for the first day, for apps that schedule reminders themselves."
+              }
+            },
+            "required": [
+              "nearby",
+              "reminder"
+            ],
+            "type": "object"
+          }
+        ]
+      },
+      "CheckIn": {
+        "properties": {
+          "lat": {
+            "description": "Where the user is right now. Optional; used to mark the visit as verified.",
+            "format": "double",
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "lng": {
+            "format": "double",
+            "type": [
+              "number",
+              "null"
+            ]
+          }
+        },
+        "type": "object"
+      },
+      "Continent": {
+        "properties": {
+          "code": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "code",
+          "name"
+        ],
+        "type": "object"
+      },
+      "Country": {
+        "properties": {
+          "code": {
+            "description": "ISO 3166-1 alpha-2.",
+            "type": "string"
+          },
+          "continent": {
+            "type": "string"
+          },
+          "flag": {
+            "type": "string"
+          },
+          "lat": {
+            "format": "double",
+            "type": "number"
+          },
+          "lng": {
+            "format": "double",
+            "type": "number"
+          },
+          "name": {
+            "type": "string"
+          },
+          "numeric": {
+            "description": "ISO 3166-1 numeric, zero padded. Matches the ids in the world-atlas map data.",
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "code",
+          "numeric",
+          "name",
+          "continent",
+          "flag",
+          "lat",
+          "lng"
+        ],
+        "type": "object"
+      },
+      "CountryProgress": {
+        "properties": {
+          "code": {
+            "type": "string"
+          },
+          "continent": {
+            "type": "string"
+          },
+          "places": {
+            "description": "Places of this country in the area.",
+            "format": "int32",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "visited": {
+            "format": "int32",
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "code",
+          "continent",
+          "places",
+          "visited"
+        ],
+        "type": "object"
+      },
+      "Discover": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/Summary"
+          },
+          {
+            "properties": {
+              "area": {
+                "$ref": "#/components/schemas/AreaView"
+              },
+              "events": {
+                "items": {
+                  "$ref": "#/components/schemas/EventProgress"
+                },
+                "type": "array"
+              }
+            },
+            "required": [
+              "area",
+              "events"
+            ],
+            "type": "object"
+          }
+        ]
+      },
+      "ErrorBody": {
+        "description": "Every error response, whatever the status.",
+        "properties": {
+          "code": {
+            "$ref": "#/components/schemas/ErrorCode"
+          },
+          "error": {
+            "description": "For people. It may change, so clients branch on `code` instead.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "error",
+          "code"
+        ],
+        "type": "object"
+      },
+      "ErrorCode": {
+        "description": "What went wrong, for clients that react to a specific case:\n\n- `bad_request` (400, 413, 415, 422): invalid or missing parameters, or a malformed,\n  oversized (over 2 MiB) or non-JSON body.\n- `unauthorized` (401): a missing or unknown session token.\n- `not_found` (404): an unknown place, area or `/api` path.\n- `method_not_allowed` (405): the path exists, but not with this method.\n- `upstream` (502): the places or areas provider failed.\n- `internal` (500): anything else, such as a database error.",
+        "enum": [
+          "bad_request",
+          "unauthorized",
+          "not_found",
+          "method_not_allowed",
+          "upstream",
+          "internal"
+        ],
+        "type": "string"
+      },
+      "Event": {
+        "description": "A time-limited challenge, like \"Japan month\". Earned badges are kept for good.",
+        "properties": {
+          "countries": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "description": {
+            "type": "string"
+          },
+          "ends": {
+            "description": "Last day, inclusive.",
+            "format": "date",
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "starts": {
+            "format": "date",
+            "type": "string"
+          },
+          "target": {
+            "description": "Number of different places to visit during the event.",
+            "format": "int32",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "title": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "title",
+          "description",
+          "countries",
+          "starts",
+          "ends",
+          "target"
+        ],
+        "type": "object"
+      },
+      "EventProgress": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/Event"
+          },
+          {
+            "properties": {
+              "earned": {
+                "type": "boolean"
+              },
+              "places_nearby": {
+                "description": "Places in the area that count towards the event.",
+                "format": "int32",
+                "minimum": 0,
+                "type": "integer"
+              },
+              "progress": {
+                "format": "int32",
+                "minimum": 0,
+                "type": "integer"
+              },
+              "status": {
+                "$ref": "#/components/schemas/EventStatus"
+              }
+            },
+            "required": [
+              "status",
+              "progress",
+              "earned",
+              "places_nearby"
+            ],
+            "type": "object"
+          }
+        ],
+        "description": "A time-limited challenge and how far the user got."
+      },
+      "EventStatus": {
+        "enum": [
+          "upcoming",
+          "active",
+          "ended"
+        ],
+        "type": "string"
+      },
+      "GroupProgress": {
+        "properties": {
+          "available": {
+            "description": "Countries of this group that have at least one place in the area.",
+            "format": "int32",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "code": {
+            "type": "string"
+          },
+          "completed": {
+            "description": "Available countries where every place was visited.",
+            "format": "int32",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "discovered": {
+            "description": "Available countries with at least one visited place.",
+            "format": "int32",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "name": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "code",
+          "name",
+          "available",
+          "discovered",
+          "completed"
+        ],
+        "type": "object"
+      },
+      "Health": {
+        "properties": {
+          "commit": {
+            "description": "The git commit it was built from: `GIT_COMMIT` at compile time (set by the\nDockerfile), `null` in builds without it.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "ok": {
+            "type": "boolean"
+          },
+          "version": {
+            "description": "The server's Cargo version.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "ok",
+          "version",
+          "commit"
+        ],
+        "type": "object"
+      },
+      "Located": {
+        "description": "The areas a point lies in.",
+        "properties": {
+          "city": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/AreaInfo"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "postal_code": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/AreaInfo"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "city",
+          "postal_code"
+        ],
+        "type": "object"
+      },
+      "NearbyCountry": {
+        "properties": {
+          "code": {
+            "type": "string"
+          },
+          "places": {
+            "format": "int32",
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "code",
+          "places"
+        ],
+        "type": "object"
+      },
+      "Notification": {
+        "properties": {
+          "body": {
+            "type": "string"
+          },
+          "tag": {
+            "description": "Collapses repeated notifications of the same thing.",
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "url": {
+            "description": "Where tapping the notification leads, relative to the app.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "title",
+          "body",
+          "url",
+          "tag"
+        ],
+        "type": "object"
+      },
+      "PlaceView": {
+        "description": "Every `Option` field is sent, as `null` when empty.",
+        "properties": {
+          "address": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "countries": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "cuisine": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "distance_m": {
+            "format": "int32",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "hours_text": {
+            "description": "Short status line, e.g. \"Open until 22:00\".",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "id": {
+            "type": "string"
+          },
+          "lat": {
+            "format": "double",
+            "type": "number"
+          },
+          "lng": {
+            "format": "double",
+            "type": "number"
+          },
+          "name": {
+            "type": "string"
+          },
+          "open_now": {
+            "description": "`None` when the hours are unknown.",
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "opening_hours": {
+            "description": "Raw OSM `opening_hours`.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "url": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "verified": {
+            "type": "boolean"
+          },
+          "visited_at": {
+            "format": "int64",
+            "type": [
+              "integer",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "lat",
+          "lng",
+          "address",
+          "url",
+          "cuisine",
+          "opening_hours",
+          "open_now",
+          "hours_text",
+          "countries",
+          "distance_m",
+          "visited_at",
+          "verified"
+        ],
+        "type": "object"
+      },
+      "Profile": {
+        "properties": {
+          "countries": {
+            "format": "int32",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "level": {
+            "format": "int32",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "level_xp": {
+            "description": "XP at which the current level started and at which the next one starts.",
+            "format": "int32",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "next_level_xp": {
+            "format": "int32",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "visits": {
+            "format": "int32",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "xp": {
+            "format": "int32",
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "xp",
+          "level",
+          "level_xp",
+          "next_level_xp",
+          "visits",
+          "countries"
+        ],
+        "type": "object"
+      },
+      "PushKey": {
+        "properties": {
+          "public_key": {
+            "description": "The VAPID public key browsers subscribe with.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "public_key"
+        ],
+        "type": "object"
+      },
+      "Session": {
+        "properties": {
+          "token": {
+            "description": "Send it as `Authorization: Bearer <token>`.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "token"
+        ],
+        "type": "object"
+      },
+      "SubscribeBody": {
+        "description": "A browser's PushSubscription (as from `subscription.toJSON()`), plus the user's area.",
+        "properties": {
+          "area": {
+            "description": "The area to send reminders for.",
+            "type": "string"
+          },
+          "endpoint": {
+            "type": "string"
+          },
+          "keys": {
+            "$ref": "#/components/schemas/SubscribeKeys"
+          },
+          "timezone": {
+            "description": "IANA name. Reminders go out from 10:00 in this zone.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "endpoint",
+          "keys",
+          "area",
+          "timezone"
+        ],
+        "type": "object"
+      },
+      "SubscribeKeys": {
+        "properties": {
+          "auth": {
+            "type": "string"
+          },
+          "p256dh": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "p256dh",
+          "auth"
+        ],
+        "type": "object"
+      },
+      "Summary": {
+        "properties": {
+          "badges": {
+            "items": {
+              "$ref": "#/components/schemas/Badge"
+            },
+            "type": "array"
+          },
+          "continents": {
+            "items": {
+              "$ref": "#/components/schemas/GroupProgress"
+            },
+            "type": "array"
+          },
+          "countries": {
+            "items": {
+              "$ref": "#/components/schemas/CountryProgress"
+            },
+            "type": "array"
+          },
+          "places": {
+            "format": "int32",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "places_visited": {
+            "format": "int32",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "profile": {
+            "$ref": "#/components/schemas/Profile"
+          },
+          "world": {
+            "$ref": "#/components/schemas/GroupProgress"
+          }
+        },
+        "required": [
+          "countries",
+          "continents",
+          "world",
+          "places",
+          "places_visited",
+          "badges",
+          "profile"
+        ],
+        "type": "object"
+      },
+      "UnsubscribeBody": {
+        "properties": {
+          "endpoint": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "endpoint"
+        ],
+        "type": "object"
+      },
+      "VisitResult": {
+        "properties": {
+          "profile": {
+            "$ref": "#/components/schemas/Profile"
+          },
+          "verified": {
+            "type": "boolean"
+          },
+          "visited_at": {
+            "description": "When the visit was first recorded (unix seconds), kept when checking in again.",
+            "format": "int64",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "visited_at",
+          "verified",
+          "profile"
+        ],
+        "type": "object"
+      }
+    },
+    "securitySchemes": {
+      "token": {
+        "scheme": "bearer",
+        "type": "http"
+      }
+    }
+  },
+  "info": {
+    "description": "Find restaurants from around the world near you, and collect the countries you have tasted.",
+    "license": {
+      "name": ""
+    },
+    "title": "Mangiamundo API",
+    "version": "0.1.0"
+  },
+  "openapi": "3.1.0",
+  "paths": {
+    "/api/areas": {
+      "get": {
+        "operationId": "search_areas",
+        "parameters": [
+          {
+            "description": "What someone typed. Fewer than 2 characters returns nothing.",
+            "in": "query",
+            "name": "q",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/AreaInfo"
+                  },
+                  "type": "array"
+                }
+              }
+            }
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "An error"
+          }
+        },
+        "summary": "Cities and postal codes matching what someone typed.",
+        "tags": [
+          "areas"
+        ]
+      }
+    },
+    "/api/areas/locate": {
+      "get": {
+        "operationId": "locate_area",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "lat",
+            "required": true,
+            "schema": {
+              "format": "double",
+              "type": "number"
+            }
+          },
+          {
+            "in": "query",
+            "name": "lng",
+            "required": true,
+            "schema": {
+              "format": "double",
+              "type": "number"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Located"
+                }
+              }
+            }
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "An error"
+          }
+        },
+        "summary": "The city and postal code a point (usually the device's position) lies in.",
+        "tags": [
+          "areas"
+        ]
+      }
+    },
+    "/api/areas/suggest": {
+      "get": {
+        "operationId": "suggest_areas",
+        "parameters": [
+          {
+            "description": "What someone typed so far. Fewer than 2 characters returns nothing.",
+            "in": "query",
+            "name": "q",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Where the user is, to rank nearby areas first.",
+            "in": "query",
+            "name": "lat",
+            "required": false,
+            "schema": {
+              "format": "double",
+              "type": "number"
+            }
+          },
+          {
+            "in": "query",
+            "name": "lng",
+            "required": false,
+            "schema": {
+              "format": "double",
+              "type": "number"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/AreaInfo"
+                  },
+                  "type": "array"
+                }
+              }
+            }
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "An error"
+          }
+        },
+        "summary": "Suggestions while someone types a city or postal code.",
+        "tags": [
+          "areas"
+        ]
+      }
+    },
+    "/api/celebrations": {
+      "get": {
+        "operationId": "celebrations",
+        "parameters": [
+          {
+            "description": "As for `/api/discover`.",
+            "in": "query",
+            "name": "area",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "How many days ahead to look: 0 to 366, 60 when missing.",
+            "in": "query",
+            "name": "days",
+            "required": false,
+            "schema": {
+              "format": "int64",
+              "type": "integer"
+            }
+          },
+          {
+            "description": "As for `/api/discover`.",
+            "in": "query",
+            "name": "tz",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/CelebrationView"
+                  },
+                  "type": "array"
+                }
+              }
+            }
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "An error"
+          }
+        },
+        "summary": "Celebrations coming up for countries whose food can be found in the area, with\nthe reminder text.",
+        "tags": [
+          "calendar"
+        ]
+      }
+    },
+    "/api/countries": {
+      "get": {
+        "operationId": "countries",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Catalog"
+                }
+              }
+            }
+          }
+        },
+        "summary": "Every country and continent the game knows.",
+        "tags": [
+          "meta"
+        ]
+      }
+    },
+    "/api/discover": {
+      "get": {
+        "operationId": "discover",
+        "parameters": [
+          {
+            "description": "An area id from `/api/areas` or `/api/areas/locate`.",
+            "in": "query",
+            "name": "area",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "The user's IANA time zone (e.g. `Asia/Tokyo`), which decides which day \"today\"\nis for event and celebration dates. UTC when missing or unknown.",
+            "in": "query",
+            "name": "tz",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Discover"
+                }
+              }
+            }
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "An error"
+          }
+        },
+        "security": [
+          {},
+          {
+            "token": []
+          }
+        ],
+        "summary": "Countries available in the area, progress, badges, profile and events.",
+        "tags": [
+          "game"
+        ]
+      }
+    },
+    "/api/health": {
+      "get": {
+        "operationId": "health",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Health"
+                }
+              }
+            }
+          }
+        },
+        "summary": "Liveness check, also telling clients which build of the server they talk to.",
+        "tags": [
+          "meta"
+        ]
+      }
+    },
+    "/api/places": {
+      "get": {
+        "operationId": "places",
+        "parameters": [
+          {
+            "description": "As for `/api/discover`.",
+            "in": "query",
+            "name": "area",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Only places serving this country's food (ISO 3166-1 alpha-2).",
+            "in": "query",
+            "name": "country",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Where the user is, for distances. Without it they are measured from the area's centre.",
+            "in": "query",
+            "name": "lat",
+            "required": false,
+            "schema": {
+              "format": "double",
+              "type": "number"
+            }
+          },
+          {
+            "in": "query",
+            "name": "lng",
+            "required": false,
+            "schema": {
+              "format": "double",
+              "type": "number"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/PlaceView"
+                  },
+                  "type": "array"
+                }
+              }
+            }
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "An error"
+          }
+        },
+        "security": [
+          {},
+          {
+            "token": []
+          }
+        ],
+        "summary": "Places in the area: open first, then closed, then unknown hours, alphabetical\nwithin each group.",
+        "tags": [
+          "game"
+        ]
+      }
+    },
+    "/api/places/{place_id}/closed": {
+      "put": {
+        "operationId": "report_closed",
+        "parameters": [
+          {
+            "description": "A place id from `/api/places`.",
+            "in": "path",
+            "name": "place_id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Reported"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "An error"
+          }
+        },
+        "security": [
+          {
+            "token": []
+          }
+        ],
+        "summary": "\"This place has closed\": hides it for the reporter now, and for everyone after more reports.",
+        "tags": [
+          "game"
+        ]
+      }
+    },
+    "/api/push/key": {
+      "get": {
+        "operationId": "push_key",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PushKey"
+                }
+              }
+            }
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "An error"
+          }
+        },
+        "summary": "The key for Web Push. A 404 when the server has push turned off.",
+        "tags": [
+          "push"
+        ]
+      }
+    },
+    "/api/push/subscription": {
+      "delete": {
+        "operationId": "unsubscribe",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UnsubscribeBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": "Unsubscribed"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "An error"
+          }
+        },
+        "security": [
+          {
+            "token": []
+          }
+        ],
+        "summary": "Unsubscribes a browser.",
+        "tags": [
+          "push"
+        ]
+      },
+      "put": {
+        "operationId": "subscribe",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SubscribeBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": "Subscribed"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "An error"
+          }
+        },
+        "security": [
+          {
+            "token": []
+          }
+        ],
+        "summary": "Subscribes a browser to reminders.",
+        "tags": [
+          "push"
+        ]
+      }
+    },
+    "/api/session": {
+      "post": {
+        "operationId": "create_session",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Session"
+                }
+              }
+            }
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "An error"
+          }
+        },
+        "summary": "Creates an anonymous account. A device asks for a token once and keeps it.",
+        "tags": [
+          "account"
+        ]
+      }
+    },
+    "/api/visits/{place_id}": {
+      "delete": {
+        "operationId": "remove_visit",
+        "parameters": [
+          {
+            "description": "A place id from `/api/places`.",
+            "in": "path",
+            "name": "place_id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Removed, or there was no visit"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "An error"
+          }
+        },
+        "security": [
+          {
+            "token": []
+          }
+        ],
+        "summary": "Undoes a check-in.",
+        "tags": [
+          "game"
+        ]
+      },
+      "put": {
+        "operationId": "add_visit",
+        "parameters": [
+          {
+            "description": "A place id from `/api/places`.",
+            "in": "path",
+            "name": "place_id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "As for `/api/discover`: the check-in counts for events by its date in this zone.",
+            "in": "query",
+            "name": "tz",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "oneOf": [
+                  {
+                    "$ref": "#/components/schemas/CheckIn"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              }
+            }
+          },
+          "description": "Optional. Sent with `Content-Type: application/json`, or it is ignored."
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VisitResult"
+                }
+              }
+            }
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "An error"
+          }
+        },
+        "security": [
+          {
+            "token": []
+          }
+        ],
+        "summary": "Checks in at a place. Checking in again keeps the first date.",
+        "tags": [
+          "game"
+        ]
+      }
+    }
+  }
+}

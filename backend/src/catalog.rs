@@ -5,11 +5,12 @@ use std::sync::OnceLock;
 
 use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, utoipa::ToSchema)]
 pub struct Country {
     /// ISO 3166-1 alpha-2.
     pub code: String,
     /// ISO 3166-1 numeric, zero padded. Matches the ids in the world-atlas map data.
+    #[schema(required = true)]
     pub numeric: Option<String>,
     pub name: String,
     pub continent: String,
