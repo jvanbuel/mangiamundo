@@ -536,7 +536,7 @@ private fun BadgeKind.icon(): ImageVector = when (this) {
     BadgeKind.COMPLETED -> Icons.Rounded.Verified
     BadgeKind.CONTINENT -> Icons.Rounded.Map
     BadgeKind.WORLD -> Icons.Rounded.Public
-    BadgeKind.EVERYTHING -> Icons.Rounded.EmojiEvents
+    BadgeKind.EVERYTHING, BadgeKind.UNKNOWN -> Icons.Rounded.EmojiEvents
 }
 
 @Composable
@@ -545,6 +545,7 @@ private fun BadgeKind.color(): Color = with(LocalAppColors.current) {
         BadgeKind.VISITS, BadgeKind.COUNTRIES -> available
         BadgeKind.COMPLETED, BadgeKind.WORLD -> completed
         BadgeKind.CONTINENT, BadgeKind.EVERYTHING -> discovered
+        BadgeKind.UNKNOWN -> muted
     }
 }
 
@@ -705,7 +706,7 @@ private class Tile(val key: String, val title: String, val detail: String, val m
 @Composable
 fun BadgeGrid(badges: List<Badge>, events: List<EventProgress> = emptyList(), today: java.time.LocalDate = java.time.LocalDate.now()) {
     val colors = LocalAppColors.current
-    val running = events.filter { it.status != EventStatus.ENDED && !it.earned }
+    val running = events.filter { (it.status == EventStatus.UPCOMING || it.status == EventStatus.ACTIVE) && !it.earned }
     if (running.isNotEmpty()) LimitedTime(running, today)
     val tiles = events.filter { it.earned }.map { e ->
         Tile(e.id, e.title, "${parseDay(e.starts).format(shortDate)} – ${parseDay(e.ends).format(shortDate)}") { EventMedal(earned = true) }

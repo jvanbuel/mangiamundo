@@ -42,6 +42,12 @@ struct GroupProgress: Decodable, Identifiable {
 /// What a badge rewards. The app picks the badge's icon and colour from it.
 enum BadgeKind: String, Decodable {
     case visits, countries, completed, continent, world, everything
+    /// A kind from a newer server. Shown with a neutral medal.
+    case unknown
+
+    init(from decoder: Decoder) throws {
+        self = BadgeKind(rawValue: try decoder.singleValueContainer().decode(String.self)) ?? .unknown
+    }
 }
 
 struct Badge: Decodable, Identifiable {
@@ -65,6 +71,12 @@ struct Profile: Decodable {
 
 enum EventStatus: String, Decodable {
     case upcoming, active, ended
+    /// A status from a newer server. The event is hidden.
+    case unknown
+
+    init(from decoder: Decoder) throws {
+        self = EventStatus(rawValue: try decoder.singleValueContainer().decode(String.self)) ?? .unknown
+    }
 }
 
 /// A time-limited challenge, like "Japan month", and how far the user got.

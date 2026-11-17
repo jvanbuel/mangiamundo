@@ -66,6 +66,15 @@ final class AreaTests: XCTestCase {
         XCTAssertEqual(newer.kind, .city)
     }
 
+    func testToleratesUnknownBadgeKindsAndEventStatuses() throws {
+        let decoder = JSONDecoder()
+        decoder.keyDecodingStrategy = .convertFromSnakeCase
+        let badge = try decoder.decode(Badge.self, from: Data(#"{"id":"x","kind":"something-new","title":"","description":"","progress":0,"target":1,"earned":false}"#.utf8))
+        XCTAssertEqual(badge.kind, .unknown)
+        let event = try decoder.decode(EventProgress.self, from: Data(#"{"id":"x","title":"","description":"","countries":[],"starts":"2026-11-01","ends":"2026-11-30","target":1,"progress":0,"earned":false,"status":"paused","places_nearby":0}"#.utf8))
+        XCTAssertEqual(event.status, .unknown)
+    }
+
     func testSavedLocationsRoundTrip() throws {
         let leuven = Area(id: "demo-leuven", name: "Leuven", kind: .city, detail: "Belgium", lat: 50.88, lng: 4.70)
         let saved = SavedLocation(area: leuven, lat: 50.88, lng: 4.71, fromGPS: true, options: [leuven])

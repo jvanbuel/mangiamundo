@@ -52,12 +52,16 @@ enum class BadgeKind {
     @SerialName("continent") CONTINENT,
     @SerialName("world") WORLD,
     @SerialName("everything") EVERYTHING,
+
+    /** A kind from a newer server. Shown with a neutral medal. */
+    UNKNOWN,
 }
 
 @Serializable
 data class Badge(
     val id: String,
-    val kind: BadgeKind,
+    /** Unknown kinds from a newer server read as [BadgeKind.UNKNOWN]. */
+    val kind: BadgeKind = BadgeKind.UNKNOWN,
     val title: String,
     val description: String,
     val progress: Int,
@@ -80,6 +84,9 @@ enum class EventStatus {
     @SerialName("upcoming") UPCOMING,
     @SerialName("active") ACTIVE,
     @SerialName("ended") ENDED,
+
+    /** A status from a newer server. The event is hidden. */
+    UNKNOWN,
 }
 
 /** A time-limited challenge, like "Japan month", and how far the user got. */
@@ -95,7 +102,8 @@ data class EventProgress(
     val target: Int,
     val progress: Int,
     val earned: Boolean,
-    val status: EventStatus,
+    /** Unknown statuses from a newer server read as [EventStatus.UNKNOWN]. */
+    val status: EventStatus = EventStatus.UNKNOWN,
     @SerialName("places_nearby") val placesNearby: Int,
 )
 

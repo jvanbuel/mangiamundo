@@ -90,4 +90,17 @@ class CoreTest {
         val newer = json.decodeFromString<Area>("""{"id":"x","name":"Mitte","kind":"district","lat":52.5,"lng":13.4}""")
         assertEquals(AreaKind.CITY, newer.kind)
     }
+
+    @Test
+    fun toleratesUnknownBadgeKindsAndEventStatuses() {
+        val json = ApiClient("http://localhost", object : TokenStore { override var token: String? = null }).json
+        val badge = json.decodeFromString<Badge>(
+            """{"id":"x","kind":"something-new","title":"","description":"","progress":0,"target":1,"earned":false}""",
+        )
+        assertEquals(BadgeKind.UNKNOWN, badge.kind)
+        val event = json.decodeFromString<EventProgress>(
+            """{"id":"x","title":"","description":"","countries":[],"starts":"2026-11-01","ends":"2026-11-30","target":1,"progress":0,"earned":false,"status":"paused","places_nearby":0}""",
+        )
+        assertEquals(EventStatus.UNKNOWN, event.status)
+    }
 }
