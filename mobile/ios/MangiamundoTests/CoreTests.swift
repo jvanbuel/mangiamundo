@@ -50,3 +50,30 @@ final class CoreTests: XCTestCase {
         XCTAssertEqual(camera.zoom, Camera.maxZoom)
     }
 }
+
+final class AreaTests: XCTestCase {
+    func testDecodesAreasAndToleratesUnknownKinds() throws {
+        let decoder = JSONDecoder()
+        decoder.keyDecodingStrategy = .convertFromSnakeCase
+        let json = """
+        {"city":{"id":"osm-relation-196311","name":"Leuven","kind":"city","detail":"Flemish Brabant, Belgium","lat":50.88,"lng":4.70},
+         "postal_code":{"id":"osm-relation-3366463","name":"3000 Leuven","kind":"postal_code","detail":null,"lat":50.878,"lng":4.702}}
+        """
+        let located = try decoder.decode(Located.self, from: Data(json.utf8))
+        XCTAssertEqual(located.options.map(\.id), ["osm-relation-196311", "osm-relation-3366463"])
+        XCTAssertEqual(located.postalCode?.kind, .postalCode)
+        let newer = try decoder.decode(Area.self, from: Data(#"{"id":"x","name":"Mitte","kind":"district","detail":null,"lat":52.5,"lng":13.4}"#.utf8))
+        XCTAssertEqual(newer.kind, .city)
+    }
+
+    func testSavedLocationsRoundTrip() throws {
+        let leuven = Area(id: "demo-leuven", name: "Leuven", kind: .city, detail: "Belgium", lat: 50.88, lng: 4.70)
+        let saved = SavedLocation(area: leuven, lat: 50.88, lng: 4.71, fromGPS: true, options: [leuven])
+        let data = try JSONEncoder().encode(saved)
+        XCTAssertEqual(try JSONDecoder().decode(SavedLocation.self, from: data), saved)
+        // A location from before areas still reads as a legacy one.
+        let old = try JSONDecoder().decode(LegacyLocation.self, from: Data(#"{"lat":50.88,"lng":4.7,"name":"Leuven","fromGPS":false}"#.utf8))
+        XCTAssertEqual(old.lat, 50.88)
+        XCTAssertNil(try? JSONDecoder().decode(SavedLocation.self, from: Data(#"{"lat":50.88,"lng":4.7,"name":"Leuven","fromGPS":false}"#.utf8)))
+    }
+}

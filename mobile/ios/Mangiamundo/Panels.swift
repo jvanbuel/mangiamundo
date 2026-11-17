@@ -373,10 +373,12 @@ struct Header: View {
                     HStack(spacing: 6) {
                         Image(systemName: location.fromGPS ? "location.fill" : "mappin")
                             .font(Theme.font(.footnote))
-                        Text(location.name ?? "Your location")
+                        Text(location.area.name)
                             .font(Theme.font(.body, .bold))
                             .lineLimit(1)
-                        Text("· \(model.radiusKm) km").foregroundStyle(Theme.muted)
+                        if location.area.kind == .postalCode {
+                            Text("· postal code").foregroundStyle(Theme.muted)
+                        }
                         Spacer()
                         Text("Change").font(Theme.font(.footnote)).foregroundStyle(Theme.accent)
                     }
@@ -396,12 +398,30 @@ struct LocationPicker: View {
     let onDone: () -> Void
 
     @State private var query = ""
-    @State private var results: [GeoResult]?
+    @State private var results: [Area]?
     @State private var searching = false
     @State private var failure: String?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
+            // The city and postal code found at the GPS position.
+            if let location = model.location, location.options.count > 1 {
+                Picker("Area around you", selection: Binding(
+                    get: { location.area.id },
+                    set: { id in
+                        if let option = location.options.first(where: { $0.id == id }) {
+                            model.switchArea(option)
+                            onDone()
+                        }
+                    }
+                )) {
+                    ForEach(location.options) { option in
+                        Text(option.kind == .city ? "All of \(option.name)" : "Only \(option.name)").tag(option.id)
+                    }
+                }
+                .pickerStyle(.segmented)
+            }
+
             Button {
                 Task {
                     await model.locate()
@@ -419,7 +439,7 @@ struct LocationPicker: View {
             }
 
             HStack {
-                TextField("Search a city or address", text: $query)
+                TextField("City or postal code", text: $query)
                     .textFieldStyle(.roundedBorder)
                     .submitLabel(.search)
                     .autocorrectionDisabled()
@@ -434,31 +454,26 @@ struct LocationPicker: View {
 
             if let results {
                 if results.isEmpty {
-                    Text("No matches. Try a different spelling.").font(Theme.font(.footnote)).foregroundStyle(Theme.muted)
+                    Text("No city or postal code found. Try a different spelling.").font(Theme.font(.footnote)).foregroundStyle(Theme.muted)
                 }
                 ForEach(results) { result in
                     Button {
                         model.choose(result)
                         onDone()
                     } label: {
-                        Text(result.name)
-                            .multilineTextAlignment(.leading)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                            .padding(.vertical, 8)
-                            .contentShape(Rectangle())
+                        VStack(alignment: .leading, spacing: 1) {
+                            Text(result.name)
+                            Text([result.kind == .city ? "City" : "Postal code", result.detail].compactMap { $0 }.joined(separator: " · "))
+                                .font(Theme.font(.caption))
+                                .foregroundStyle(Theme.muted)
+                        }
+                        .multilineTextAlignment(.leading)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(.vertical, 8)
+                        .contentShape(Rectangle())
                     }
                     .buttonStyle(.plain)
                 }
-            }
-
-            HStack {
-                Text("Search radius").font(Theme.font(.footnote)).foregroundStyle(Theme.muted)
-                Spacer()
-                Picker("Search radius", selection: Binding(get: { model.radiusKm }, set: { model.setRadius($0) })) {
-                    ForEach(AppModel.radii, id: \.self) { Text("\($0) km").tag($0) }
-                }
-                .pickerStyle(.segmented)
-                .frame(width: 210)
             }
         }
     }

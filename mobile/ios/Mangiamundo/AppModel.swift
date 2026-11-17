@@ -10,12 +10,10 @@ struct Toast: Identifiable, Equatable {
 @MainActor
 @Observable
 final class AppModel {
-    static let radii = [5, 10, 25]
 
     private(set) var world: World?
     private(set) var catalog: Catalog?
     private(set) var location: SavedLocation?
-    private(set) var radiusKm = 10
     private(set) var discover: Discover?
     private(set) var loading = false
     private(set) var error: String?
@@ -56,9 +54,7 @@ final class AppModel {
     init() {
         let base = Bundle.main.object(forInfoDictionaryKey: "APIBaseURL") as? String
         api = APIClient(baseURL: base ?? "http://localhost:8080")
-        if defaults.object(forKey: "mangiamundo.radius") != nil {
-            radiusKm = defaults.integer(forKey: "mangiamundo.radius")
-        }
+        defaults.removeObject(forKey: "mangiamundo.radius")
         if let raw = defaults.string(forKey: "mangiamundo.projection"), let kind = ProjectionKind(rawValue: raw) {
             projection = kind
         }
@@ -83,6 +79,7 @@ final class AppModel {
             ready = true
             return
         }
+        if location == nil { await moveLegacyLocation() }
         // Without a location the welcome screen shows right away; refresh() sets it otherwise.
         if location != nil { refresh() } else { ready = true }
         // Follow the device when there is no location yet or the last one came from GPS.
@@ -102,16 +99,36 @@ final class AppModel {
         defaults.set(kind.rawValue, forKey: "mangiamundo.projection")
     }
 
-    func setRadius(_ km: Int) {
-        radiusKm = km
-        defaults.set(km, forKey: "mangiamundo.radius")
-        select(nil)
-        refresh()
+    /// Picks a city or postal code from a search.
+    func choose(_ area: Area) {
+        move(to: SavedLocation(area: area, lat: area.lat, lng: area.lng, fromGPS: false))
     }
 
-    func choose(_ result: GeoResult) {
-        let name = result.name.split(separator: ",").first.map(String.init)
-        move(to: SavedLocation(lat: result.lat, lng: result.lng, name: name, fromGPS: false))
+    /// Switches between the city and the postal code found at the GPS position.
+    func switchArea(_ area: Area) {
+        guard var target = location, target.area.id != area.id else { return }
+        target.area = area
+        move(to: target)
+    }
+
+    /// Moves a location saved before areas existed to the city at that point.
+    private func moveLegacyLocation() async {
+        guard let data = defaults.data(forKey: "mangiamundo.location"),
+              let legacy = try? JSONDecoder().decode(LegacyLocation.self, from: data),
+              let located = try? await api.locateArea(lat: legacy.lat, lng: legacy.lng),
+              let area = located.city ?? located.postalCode else { return }
+        let target = SavedLocation(area: area, lat: legacy.lat, lng: legacy.lng, fromGPS: legacy.fromGPS, options: located.options)
+        location = target
+        if let data = try? JSONEncoder().encode(target) {
+            defaults.set(data, forKey: "mangiamundo.location")
+        }
+    }
+
+    /// Where the user is, when known recently: distances are measured from it.
+    private var userPosition: (lat: Double, lng: Double)? {
+        if let fix = gpsFix, Date().timeIntervalSince(fix.at) < 600 { return (fix.lat, fix.lng) }
+        guard let location, location.fromGPS else { return nil }
+        return (location.lat, location.lng)
     }
 
     private func move(to target: SavedLocation) {
@@ -137,8 +154,16 @@ final class AppModel {
                abs(previous.lat - lat) <= 0.01, abs(previous.lng - lng) <= 0.01 {
                 return
             }
-            let name = try? await api.reverseGeocode(lat: lat, lng: lng)
-            move(to: SavedLocation(lat: lat, lng: lng, name: name, fromGPS: true))
+            let located = try await api.locateArea(lat: lat, lng: lng)
+            // The city by default; someone who narrowed to their postal code before keeps that.
+            let keepPostalCode = location?.fromGPS == true && location?.area.kind == .postalCode
+            guard let area = (keepPostalCode ? located.postalCode : nil) ?? located.city ?? located.postalCode else {
+                if !quiet || location == nil {
+                    locateError = "No city or postal code found here. Search for your city instead."
+                }
+                return
+            }
+            move(to: SavedLocation(area: area, lat: lat, lng: lng, fromGPS: true, options: located.options))
         } catch {
             if !quiet || location == nil {
                 locateError = error.localizedDescription
@@ -146,8 +171,8 @@ final class AppModel {
         }
     }
 
-    func search(_ query: String) async throws -> [GeoResult] {
-        try await api.geocode(query)
+    func search(_ query: String) async throws -> [Area] {
+        try await api.searchAreas(query)
     }
 
     func refresh() {
@@ -157,7 +182,7 @@ final class AppModel {
             loading = true
             error = nil
             do {
-                let result = try await api.discover(lat: here.lat, lng: here.lng, radiusKm: radiusKm)
+                let result = try await api.discover(areaID: here.area.id)
                 guard !Task.isCancelled else { return }
                 discover = result
                 ready = true
@@ -165,7 +190,7 @@ final class AppModel {
                     pendingCountry = nil
                     if result.countries.contains(where: { $0.code == code }) { select(code) }
                 }
-                celebrations = (try? await api.celebrations(lat: here.lat, lng: here.lng, radiusKm: radiusKm)) ?? []
+                celebrations = (try? await api.celebrations(areaID: here.area.id)) ?? []
                 await rescheduleReminders()
             } catch {
                 guard !Task.isCancelled else { return }
@@ -221,7 +246,7 @@ final class AppModel {
         placesTask = Task {
             placesLoading = true
             do {
-                let result = try await api.places(lat: here.lat, lng: here.lng, radiusKm: radiusKm, country: code)
+                let result = try await api.places(areaID: here.area.id, country: code, from: userPosition)
                 guard !Task.isCancelled else { return }
                 places = result
             } catch {
@@ -238,7 +263,7 @@ final class AppModel {
         if discover.countries.contains(where: { $0.code == code }) {
             select(code)
         } else {
-            toast("No places from \(name) within \(radiusKm) km.")
+            toast("No places from \(name) in \(location?.area.name ?? "this area").")
         }
     }
 
@@ -264,7 +289,7 @@ final class AppModel {
             if let index = places.firstIndex(where: { $0.id == place.id }) {
                 places[index] = updated
             }
-            let after = try await api.discover(lat: here.lat, lng: here.lng, radiusKm: radiusKm)
+            let after = try await api.discover(areaID: here.area.id)
             discover = after
             if updated.visited { celebrate(before: before, after: after, place: updated) }
         } catch {

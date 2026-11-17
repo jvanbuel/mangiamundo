@@ -92,7 +92,7 @@ struct ContentView: View {
             }
         } else if let discover = model.discover {
             if discover.world.available == 0 {
-                Text("No restaurants with a national cuisine turned up within \(model.radiusKm) km. Try a larger radius or another location.")
+                Text("No restaurants with a national cuisine turned up in \(model.location?.area.name ?? "this area"). \(model.location?.area.kind == .postalCode ? "Try the whole city or another location." : "Try another location.")")
                     .foregroundStyle(Theme.muted)
             } else {
                 Passport(discover: discover)
@@ -115,7 +115,7 @@ struct ContentView: View {
                 }
             }
         } else {
-            Text("Scouting restaurants around \(model.location?.name ?? "you")…")
+            Text("Scouting restaurants in \(model.location?.area.name ?? "your area")…")
                 .foregroundStyle(Theme.muted)
         }
     }
