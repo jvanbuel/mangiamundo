@@ -120,7 +120,8 @@ Every route, parameter and response is described in the OpenAPI 3.1 document,
 served at `GET /api/openapi.json` and checked in as
 [`contract/openapi.json`](contract/openapi.json). It is generated from the handlers
 with [utoipa](https://github.com/juhaku/utoipa), and an API change shows up in that
-file's diff.
+file's diff. The web app's types (`web/src/lib/api-types.ts`) are generated from it:
+run `npm run api-types` in `web/` after changing the API.
 
 ## Data credits
 

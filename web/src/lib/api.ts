@@ -1,4 +1,4 @@
-import type { Area, Catalog, Celebration, Discover, Health, Located, Place, Profile } from './types';
+import type { Area, Catalog, Celebration, Discover, Health, Located, Place, VisitResult } from './types';
 
 const BASE = import.meta.env.VITE_API_BASE ?? '';
 const TOKEN_KEY = 'mangiamundo.token';
@@ -80,7 +80,7 @@ export const places = (areaId: string, country: string, from: { lat: number; lng
 	);
 
 export const checkIn = (placeId: string, here: { lat: number; lng: number } | null) =>
-	authed<{ visited_at: number; verified: boolean; profile: Profile }>(
+	authed<VisitResult>(
 		'PUT',
 		`/api/visits/${encodeURIComponent(placeId)}?${tz()}`,
 		here ?? {}

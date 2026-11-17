@@ -37,6 +37,11 @@ jobs:
           cache: npm
           cache-dependency-path: web/package-lock.json
       - run: npm ci
+      # src/lib/api-types.ts is generated from contract/openapi.json.
+      - name: API types are up to date
+        run: |
+          npm run api-types
+          test -z "$(git status --porcelain -- src/lib/api-types.ts)" || { echo "Run npm run api-types in web/ and commit src/lib/api-types.ts."; exit 1; }
       - run: npm run check
       - run: npm run build
 
