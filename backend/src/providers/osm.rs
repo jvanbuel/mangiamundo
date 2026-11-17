@@ -64,8 +64,9 @@ fn query(b: Bbox) -> String {
     format!(
         "[out:json][timeout:60];\
          nwr[\"amenity\"~\"^(restaurant|fast_food|cafe|pub|bar)$\"][\"cuisine\"][\"name\"]\
-         ({:.5},{:.5},{:.5},{:.5});\
+         ({},{},{},{});\
          out center tags;",
+        // Full precision: rounding could cut off a place just inside an edge.
         b.south, b.west, b.north, b.east
     )
 }
@@ -254,7 +255,15 @@ impl AreaDirectory for Nominatim {
         let Some(country) = text(&address, "country_code") else { return Ok(Located::default()) };
         let mut located = Located::default();
         if let Some(city) = CITY_TYPES.iter().find_map(|k| text(&address, k)) {
-            located.city = self.containing(&[("city", city), ("countrycodes", country)], lat, lng).await?;
+            // The state narrows common names (Springfield) so the right one is among the
+            // results; without it as a fallback, in case the names don't line up.
+            let by_name = [("city", city), ("countrycodes", country)];
+            if let Some(state) = text(&address, "state") {
+                located.city = self.containing(&[&by_name[..], &[("state", state)]].concat(), lat, lng).await?;
+            }
+            if located.city.is_none() {
+                located.city = self.containing(&by_name, lat, lng).await?;
+            }
         }
         if let Some(code) = text(&address, "postcode") {
             located.postal_code = self.containing(&[("postalcode", code), ("countrycodes", country)], lat, lng).await?;
@@ -329,7 +338,9 @@ mod tests {
     #[test]
     fn queries_the_bounding_box() {
         let b = Bbox { south: 50.82, west: 4.64, north: 50.94, east: 4.77 };
-        assert!(query(b).contains("(50.82000,4.64000,50.94000,4.77000)"));
+        assert!(query(b).contains("(50.82,4.64,50.94,4.77)"));
+        let precise = Bbox { south: 50.8242081, west: 4.000006, north: 50.9440737, east: 4.7704248 };
+        assert!(query(precise).contains("(50.8242081,4.000006,50.9440737,4.7704248)"), "no rounding");
     }
 
     /// Run by hand: `cargo test -- --ignored nominatim`.

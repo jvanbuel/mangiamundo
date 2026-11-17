@@ -116,7 +116,8 @@ final class AppModel {
         guard let data = defaults.data(forKey: "mangiamundo.location"),
               let legacy = try? JSONDecoder().decode(LegacyLocation.self, from: data),
               let located = try? await api.locateArea(lat: legacy.lat, lng: legacy.lng),
-              let area = located.city ?? located.postalCode else { return }
+              let area = located.city ?? located.postalCode,
+              location == nil else { return } // a choice made meanwhile wins
         let target = SavedLocation(area: area, lat: legacy.lat, lng: legacy.lng, fromGPS: legacy.fromGPS, options: located.options)
         location = target
         if let data = try? JSONEncoder().encode(target) {
@@ -150,7 +151,9 @@ final class AppModel {
             let fix = try await locationService.current()
             let lat = fix.coordinate.latitude, lng = fix.coordinate.longitude
             gpsFix = (lat, lng, Date())
-            if let previous = location, previous.fromGPS,
+            // Background refreshes skip small moves; an explicit request always looks the area
+            // up, since a short walk can cross a postal-code boundary.
+            if quiet, let previous = location, previous.fromGPS,
                abs(previous.lat - lat) <= 0.01, abs(previous.lng - lng) <= 0.01 {
                 return
             }

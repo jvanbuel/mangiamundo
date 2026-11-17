@@ -147,10 +147,14 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
                 val previous = location
                 val moved = previous == null || !previous.fromGps ||
                     abs(previous.lat - fix.latitude) > 0.01 || abs(previous.lng - fix.longitude) > 0.01
-                if (moved) {
+                // Background refreshes skip small moves; an explicit request always looks the area
+                // up, since a short walk can cross a postal-code boundary.
+                if (moved || !quiet) {
                     val located = runCatching { api.locateArea(fix.latitude, fix.longitude) }.getOrNull()
-                    // The city by default; someone who narrowed to their postal code before keeps that.
-                    val keepPostalCode = previous?.fromGps == true && previous.area.kind == AreaKind.POSTAL_CODE
+                    // The city by default; someone who narrowed to their postal code keeps that. Read
+                    // the selection now: it may have changed while the lookup ran.
+                    val current = location
+                    val keepPostalCode = current?.fromGps == true && current.area.kind == AreaKind.POSTAL_CODE
                     val area = located?.let { (if (keepPostalCode) it.postalCode else null) ?: it.city ?: it.postalCode }
                     if (located == null || area == null) {
                         if (!quiet || location == null) {

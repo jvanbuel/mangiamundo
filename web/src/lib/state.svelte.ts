@@ -111,7 +111,11 @@ export async function init() {
  * the city at that point. */
 async function storedLocation(): Promise<Location | null> {
 	const stored = load<Partial<Location> & { lat?: number; lng?: number; source?: 'gps' | 'search' }>(LOCATION_KEY);
-	localStorage.removeItem('mangiamundo.radius');
+	try {
+		localStorage.removeItem('mangiamundo.radius');
+	} catch {
+		// Storage unavailable: nothing to clean up.
+	}
 	if (!stored) return null;
 	if (stored.area && Array.isArray(stored.options)) return stored as Location;
 	if (typeof stored.lat !== 'number' || typeof stored.lng !== 'number') return null;
@@ -242,10 +246,14 @@ export async function locate(quiet = false) {
 			previous.source !== 'gps' ||
 			Math.abs(previous.lat - coords.latitude) > 0.01 ||
 			Math.abs(previous.lng - coords.longitude) > 0.01;
-		if (!moved) return;
+		// Background refreshes skip small moves; an explicit request always looks the area up,
+		// since a short walk can cross a postal-code boundary.
+		if (quiet && !moved) return;
 		const located = await api.locateArea(coords.latitude, coords.longitude);
-		// The city by default; someone who narrowed to their postal code before keeps that.
-		const keepPostalCode = previous?.source === 'gps' && previous.area.kind === 'postal_code';
+		// The city by default; someone who narrowed to their postal code keeps that. Read the
+		// selection now: it may have changed while the lookup ran.
+		const current = app.location;
+		const keepPostalCode = current?.source === 'gps' && current.area.kind === 'postal_code';
 		const area = (keepPostalCode && located.postal_code) || located.city || located.postal_code;
 		if (!area) throw new Error('No city or postal code found here. Search for your city instead.');
 		await setLocation({
