@@ -4,7 +4,6 @@ use std::path::PathBuf;
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum ProviderKind {
     Osm,
-    Google,
     Demo,
 }
 
@@ -13,7 +12,6 @@ pub struct Config {
     pub bind: String,
     pub database_url: String,
     pub provider: ProviderKind,
-    pub google_api_key: Option<String>,
     /// Overpass servers, tried in order until one answers.
     pub overpass_urls: Vec<String>,
     pub nominatim_url: String,
@@ -40,20 +38,19 @@ fn var(name: &str) -> Option<String> {
 
 impl Config {
     pub fn from_env() -> anyhow::Result<Self> {
-        let google_api_key = var("GOOGLE_MAPS_API_KEY");
         let provider = match var("PLACES_PROVIDER").as_deref() {
-            Some("osm") => ProviderKind::Osm,
-            Some("google") => ProviderKind::Google,
+            Some("osm") | None => ProviderKind::Osm,
             Some("demo") => ProviderKind::Demo,
-            Some(other) => anyhow::bail!("unknown PLACES_PROVIDER {other:?} (osm, google or demo)"),
-            None if google_api_key.is_some() => ProviderKind::Google,
-            None => ProviderKind::Osm,
+            Some("google") => anyhow::bail!(
+                "PLACES_PROVIDER=google is no longer supported: areas are postal codes and cities, \
+                 and Google has no postal-code boundaries. Use osm or demo."
+            ),
+            Some(other) => anyhow::bail!("unknown PLACES_PROVIDER {other:?} (osm or demo)"),
         };
         Ok(Self {
             bind: var("BIND").unwrap_or_else(|| "0.0.0.0:8080".into()),
             database_url: var("DATABASE_URL").unwrap_or_else(|| "sqlite://mangiamundo.db".into()),
             provider,
-            google_api_key,
             overpass_urls: var("OVERPASS_URLS")
                 .unwrap_or_else(|| DEFAULT_OVERPASS_URLS.into())
                 .split(',')

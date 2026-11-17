@@ -155,16 +155,40 @@ data class Place(
 }
 
 @Serializable
-data class GeoResult(val name: String, val lat: Double, val lng: Double)
+data class Area(
+    /** Opaque, e.g. "osm-relation-196311". */
+    val id: String,
+    /** "Leuven", or "3000 Leuven" for a postal code. */
+    val name: String,
+    /** Unknown kinds from a newer server read as a city. */
+    val kind: AreaKind = AreaKind.CITY,
+    /** Where it is, to tell same-named areas apart: "Flemish Brabant, Belgium". */
+    val detail: String? = null,
+    val lat: Double,
+    val lng: Double,
+)
+
+@Serializable
+enum class AreaKind {
+    /** A city, town or municipality: every postal code in it. */
+    @SerialName("city") CITY,
+    @SerialName("postal_code") POSTAL_CODE,
+}
+
+/** The areas a point lies in. */
+@Serializable
+data class Located(
+    val city: Area? = null,
+    @SerialName("postal_code") val postalCode: Area? = null,
+) {
+    val options: List<Area> get() = listOfNotNull(city, postalCode)
+}
 
 @Serializable
 data class VisitResult(val verified: Boolean, val profile: Profile)
 
 @Serializable
 internal data class Session(val token: String)
-
-@Serializable
-internal data class ReverseResult(val name: String? = null)
 
 @Serializable
 internal data class ErrorBody(val error: String? = null)

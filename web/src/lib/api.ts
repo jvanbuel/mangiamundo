@@ -1,4 +1,4 @@
-import type { Catalog, Celebration, Discover, GeoResult, Place, Profile } from './types';
+import type { Area, Catalog, Celebration, Discover, Located, Place, Profile } from './types';
 
 const BASE = import.meta.env.VITE_API_BASE ?? '';
 const TOKEN_KEY = 'mangiamundo.token';
@@ -61,16 +61,18 @@ async function authed<T>(method: string, path: string, body?: unknown): Promise<
 	}
 }
 
-const area = (lat: number, lng: number, radiusKm: number) =>
-	`lat=${lat}&lng=${lng}&radius_km=${radiusKm}`;
+const area = (id: string) => `area=${encodeURIComponent(id)}`;
 
 export const catalog = () => raw<Catalog>('GET', '/api/countries', null);
 
-export const discover = (lat: number, lng: number, radiusKm: number) =>
-	authed<Discover>('GET', `/api/discover?${area(lat, lng, radiusKm)}`);
+export const discover = (areaId: string) => authed<Discover>('GET', `/api/discover?${area(areaId)}`);
 
-export const places = (lat: number, lng: number, radiusKm: number, country: string) =>
-	authed<Place[]>('GET', `/api/places?${area(lat, lng, radiusKm)}&country=${country}`);
+/** Distances are measured from `from` when given, otherwise from the area's centre. */
+export const places = (areaId: string, country: string, from: { lat: number; lng: number } | null) =>
+	authed<Place[]>(
+		'GET',
+		`/api/places?${area(areaId)}&country=${country}${from ? `&lat=${from.lat}&lng=${from.lng}` : ''}`
+	);
 
 export const checkIn = (placeId: string, here: { lat: number; lng: number } | null) =>
 	authed<{ verified: boolean; profile: Profile }>(
@@ -82,21 +84,21 @@ export const checkIn = (placeId: string, here: { lat: number; lng: number } | nu
 export const undoCheckIn = (placeId: string) =>
 	authed<void>('DELETE', `/api/visits/${encodeURIComponent(placeId)}`);
 
-export const geocode = (query: string) =>
-	raw<GeoResult[]>('GET', `/api/geocode?q=${encodeURIComponent(query)}`, null);
+/** Cities and postal codes matching what someone typed. */
+export const searchAreas = (query: string) => raw<Area[]>('GET', `/api/areas?q=${encodeURIComponent(query)}`, null);
 
-export const reverseGeocode = (lat: number, lng: number) =>
-	raw<{ name: string | null }>('GET', `/api/geocode/reverse?lat=${lat}&lng=${lng}`, null);
+/** The city and postal code a point lies in. */
+export const locateArea = (lat: number, lng: number) =>
+	raw<Located>('GET', `/api/areas/locate?lat=${lat}&lng=${lng}`, null);
 
-export const celebrations = (lat: number, lng: number, radiusKm: number, days = 60) =>
-	raw<Celebration[]>('GET', `/api/celebrations?${area(lat, lng, radiusKm)}&days=${days}`, null);
+export const celebrations = (areaId: string, days = 60) =>
+	raw<Celebration[]>('GET', `/api/celebrations?${area(areaId)}&days=${days}`, null);
 
 export const pushKey = () => raw<{ public_key: string }>('GET', '/api/push/key', null);
 
 export interface PushTarget {
-	lat: number;
-	lng: number;
-	radius_km: number;
+	/** Area id. */
+	area: string;
 	timezone: string;
 }
 

@@ -33,23 +33,33 @@ For a single deployable: `npm run build` in `web/`, then `cargo run --release` i
 
 Tests: `cargo test` in `backend/`, `npm run check` in `web/`.
 
+## Areas: cities and postal codes
+
+A location is a city (every postal code in it, e.g. Leuven covers 3000, 3001, 3010,
+3012 and 3018) or a single postal code. With GPS the app picks the city you're in
+and offers to narrow it to your postal code.
+
+Areas are OpenStreetMap boundaries (`boundary=administrative` at municipality level,
+and `boundary=postal_code`). Nominatim finds them and provides the outline; Overpass
+is asked for the restaurants in the outline's bounding box, and only those inside
+the outline are kept. So restaurants without an `addr:postcode` tag count too.
+Where a country has no postal-code boundaries in OpenStreetMap, only cities are
+offered. Areas larger than 1.5° are refused.
+
 ## Where the restaurants come from
 
 Set `PLACES_PROVIDER` (see `backend/.env.example` for all settings).
 
 | Provider | Key | Coverage |
 | --- | --- | --- |
-| `osm` (default) | none | OpenStreetMap `cuisine=*` tags via Overpass (the main server plus two mirrors, tried in order; override with `OVERPASS_URLS`), geocoding via Nominatim. About 110 national cuisines. Quality depends on local mappers. |
-| `google` | `GOOGLE_MAPS_API_KEY` | Places API (New) Nearby Search plus the Geocoding API. Only the ~50 cuisines Google has a place type for, at most 20 places per cuisine. One request per cuisine per area refresh, billed by Google. |
-| `demo` | none | Deterministic fake data for development and tests. |
+| `osm` (default) | none | OpenStreetMap `cuisine=*` tags via Overpass (the main server plus two mirrors, tried in order; override with `OVERPASS_URLS`), areas via Nominatim (at most one request per second, per its usage policy). About 110 national cuisines. Quality depends on local mappers. |
+| `demo` | none | Made-up restaurants in a few cities, each split into two made-up postal codes. For development and tests. |
 
 The cuisine → country table lives in `backend/src/catalog.rs`. Regional labels
 ("asian", "mediterranean") and globalised dishes (pizza, kebab, burger) are left
 out on purpose.
 
-Results are cached per area: coordinates snap to a ~2 km grid, and an area is
-refreshed after `CACHE_TTL_DAYS`. If you go to production with Google data, check
-the Maps Platform terms on how long place details may be stored.
+Results are cached per area (with its outline) and refreshed after `CACHE_TTL_DAYS`.
 
 ## Celebrations and limited-time badges
 
@@ -73,7 +83,7 @@ HTTPS (or localhost), and iPhones only for apps added to the home screen.
 ## How the game works
 
 - **Tasted**: you checked in at one or more places of a country.
-- **Completed**: you visited every place of that country within your radius.
+- **Completed**: you visited every place of that country in your area.
 - **Continent / world badges**: taste every country that is available in your city.
 - **XP**: 10 per check-in, 50 per new country. Level *n* starts at 100·(n−1)² XP.
 - A check-in made within 250 m of the place is marked as verified.
@@ -87,16 +97,16 @@ sends it as `Authorization: Bearer <token>`.
 | --- | --- | --- |
 | `POST` | `/api/session` | Create an anonymous account, returns `{ token }` |
 | `GET` | `/api/countries` | Country and continent catalog |
-| `GET` | `/api/discover?lat&lng&radius_km` | Countries available here, progress, badges, profile |
-| `GET` | `/api/places?lat&lng&radius_km&country` | Places, nearest first |
+| `GET` | `/api/areas?q` | Search cities and postal codes |
+| `GET` | `/api/areas/locate?lat&lng` | The city and postal code at a position: `{ city, postal_code }` |
+| `GET` | `/api/discover?area` | Countries available in the area, progress, badges, profile |
+| `GET` | `/api/places?area&country[&lat&lng]` | Places: open first, then closed, then unknown hours, alphabetical within each. Distances from `lat`/`lng` when given, else from the area's centre |
 | `PUT` | `/api/visits/{place_id}` | Check in; optional body `{ lat, lng }` to verify |
 | `DELETE` | `/api/visits/{place_id}` | Undo a check-in |
-| `GET` | `/api/celebrations?lat&lng&radius_km&days` | Upcoming celebrations with food nearby |
+| `GET` | `/api/celebrations?area&days` | Upcoming celebrations with food in the area |
 | `GET` | `/api/push/key` | VAPID public key for Web Push |
-| `PUT` | `/api/push/subscription` | Subscribe a browser: PushSubscription JSON plus `lat`, `lng`, `radius_km`, `timezone` |
+| `PUT` | `/api/push/subscription` | Subscribe a browser: PushSubscription JSON plus `area`, `timezone` |
 | `DELETE` | `/api/push/subscription` | Unsubscribe; body `{ endpoint }` |
-| `GET` | `/api/geocode?q` | Search for a location |
-| `GET` | `/api/geocode/reverse?lat&lng` | Name of the place at a position |
 
 ## Data credits
 

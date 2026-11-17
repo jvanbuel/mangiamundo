@@ -17,7 +17,7 @@ use mangiamundo::{api, store, AppState};
 use serde_json::Value;
 use tower::ServiceExt;
 
-const HERE: &str = "lat=50.8798&lng=4.7005";
+const HERE: &str = "area=demo-leuven";
 const START: i64 = 1_794_830_400; // 16 November 2026, 12:00 UTC
 
 #[derive(Default)]
@@ -83,7 +83,7 @@ async fn sends_each_reminder_once_in_the_subscribers_morning() {
     let state = AppState {
         db: db.clone(),
         places: Arc::new(Demo),
-        geocoder: Arc::new(Demo),
+        areas: Arc::new(Demo),
         cache_ttl_secs: 365 * 86_400,
         clock: Arc::new(move || clock.load(Ordering::Relaxed)),
         push_key: Some(pusher.public_key.clone()),
@@ -100,7 +100,7 @@ async fn sends_each_reminder_once_in_the_subscribers_morning() {
 
     let token = call(&app, "POST", "/api/session", None, None).await.1["token"].as_str().unwrap().to_string();
     // The first celebration with food nearby (this also fills the area cache).
-    let (_, list) = call(&app, "GET", &format!("/api/celebrations?{HERE}&radius_km=10&days=366"), None, None).await;
+    let (_, list) = call(&app, "GET", &format!("/api/celebrations?{HERE}&days=366"), None, None).await;
     let first = &list.as_array().unwrap()[0];
     let day: chrono::NaiveDate = first["starts"].as_str().unwrap().parse().unwrap();
     let at = |hour: u32| day.and_hms_opt(hour, 30, 0).unwrap().and_utc().timestamp();
@@ -110,7 +110,7 @@ async fn sends_each_reminder_once_in_the_subscribers_morning() {
         serde_json::json!({
             "endpoint": format!("{push_url}/push/{id}"),
             "keys": { "p256dh": p256dh, "auth": auth },
-            "lat": 50.8798, "lng": 4.7005, "radius_km": 10.0, "timezone": timezone,
+            "area": "demo-leuven", "timezone": timezone,
         })
     };
     let (status, _) = call(&app, "PUT", "/api/push/subscription", Some(&token), Some(subscribe("utc", "UTC"))).await;

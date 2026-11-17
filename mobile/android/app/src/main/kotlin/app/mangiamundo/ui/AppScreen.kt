@@ -44,6 +44,7 @@ import app.mangiamundo.DeviceLocation
 import app.mangiamundo.Notifications
 import android.Manifest
 import android.os.Build
+import app.mangiamundo.core.AreaKind
 import app.mangiamundo.core.ProjectionKind
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -133,18 +134,19 @@ fun AppScreen(vm: AppViewModel = viewModel()) {
                 Modifier.fillMaxWidth().weight(0.58f),
                 contentPadding = PaddingValues(16.dp),
             ) {
-                item { Header(vm.location, vm.radiusKm, onChange = { pickerOpen = true }) }
+                item { Header(vm.location, onChange = { pickerOpen = true }) }
 
                 when {
                     vm.location == null -> item {
                         Welcome { LocationPicker(vm, useGps, onDone = {}) }
                     }
                     vm.error != null -> item { ErrorCard(vm.error.orEmpty(), vm::refresh) }
-                    discover == null -> item { Note("Scouting restaurants around ${vm.location?.name ?: "you"}…") }
+                    discover == null -> item { Note("Scouting restaurants in ${vm.location?.area?.name}…") }
                     discover.world.available == 0 -> item {
+                        val postalCode = vm.location?.area?.kind == AreaKind.POSTAL_CODE
                         Note(
-                            "No restaurants with a national cuisine turned up within ${vm.radiusKm} km. " +
-                                "Try a larger radius or another location.",
+                            "No restaurants with a national cuisine turned up in ${vm.location?.area?.name}. " +
+                                if (postalCode) "Try the whole city or another location." else "Try another location.",
                         )
                     }
                     else -> {

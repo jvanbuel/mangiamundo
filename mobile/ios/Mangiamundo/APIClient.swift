@@ -30,16 +30,18 @@ actor APIClient {
         try decode(await request("GET", "/api/countries"))
     }
 
-    func discover(lat: Double, lng: Double, radiusKm: Int) async throws -> Discover {
-        try decode(await authed("GET", "/api/discover?\(area(lat, lng, radiusKm))"))
+    func discover(areaID: String) async throws -> Discover {
+        try decode(await authed("GET", "/api/discover?\(area(areaID))"))
     }
 
-    func places(lat: Double, lng: Double, radiusKm: Int, country: String) async throws -> [Place] {
-        try decode(await authed("GET", "/api/places?\(area(lat, lng, radiusKm))&country=\(country)"))
+    /// Distances are measured from `from` when given, otherwise from the area's centre.
+    func places(areaID: String, country: String, from: (lat: Double, lng: Double)?) async throws -> [Place] {
+        let position = from.map { "&lat=\($0.lat)&lng=\($0.lng)" } ?? ""
+        return try decode(await authed("GET", "/api/places?\(area(areaID))&country=\(country)\(position)"))
     }
 
-    func celebrations(lat: Double, lng: Double, radiusKm: Int, days: Int = 60) async throws -> [Celebration] {
-        try decode(await request("GET", "/api/celebrations?\(area(lat, lng, radiusKm))&days=\(days)"))
+    func celebrations(areaID: String, days: Int = 60) async throws -> [Celebration] {
+        try decode(await request("GET", "/api/celebrations?\(area(areaID))&days=\(days)"))
     }
 
     /// `here` is the device position, sent so the server can mark the visit as verified.
@@ -56,20 +58,20 @@ actor APIClient {
         _ = try await authed("DELETE", "/api/visits/\(encode(placeID))")
     }
 
-    func geocode(_ query: String) async throws -> [GeoResult] {
-        try decode(await request("GET", "/api/geocode?q=\(encode(query))"))
+    /// Cities and postal codes matching what someone typed.
+    func searchAreas(_ query: String) async throws -> [Area] {
+        try decode(await request("GET", "/api/areas?q=\(encode(query))"))
     }
 
-    func reverseGeocode(lat: Double, lng: Double) async throws -> String? {
-        struct Result: Decodable { let name: String? }
-        let result: Result = try decode(await request("GET", "/api/geocode/reverse?lat=\(lat)&lng=\(lng)"))
-        return result.name
+    /// The city and postal code a point lies in.
+    func locateArea(lat: Double, lng: Double) async throws -> Located {
+        try decode(await request("GET", "/api/areas/locate?lat=\(lat)&lng=\(lng)"))
     }
 
     // MARK: - Plumbing
 
-    private func area(_ lat: Double, _ lng: Double, _ radiusKm: Int) -> String {
-        "lat=\(lat)&lng=\(lng)&radius_km=\(radiusKm)"
+    private func area(_ id: String) -> String {
+        "area=\(encode(id))"
     }
 
     private func encode(_ value: String) -> String {

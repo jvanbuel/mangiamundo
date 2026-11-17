@@ -41,9 +41,9 @@ pub struct Subscription {
     pub endpoint: String,
     pub p256dh: String,
     pub auth: String,
-    pub lat: f64,
-    pub lng: f64,
-    pub radius_km: f64,
+    /// The area reminders are about; `None` for subscriptions from before areas, until
+    /// the app subscribes again.
+    pub area_id: Option<String>,
     pub timezone: String,
 }
 
@@ -232,14 +232,12 @@ pub async fn run_once(state: &AppState, pusher: &Pusher) -> anyhow::Result<usize
             continue;
         }
         // Only look at areas already in the cache: never call a provider from here.
-        let (lat, lng) = store::snap(sub.lat, sub.lng);
-        let radius_m = (sub.radius_km * 1000.0).round() as u32;
-        let key = store::area_key(state.places.name(), lat, lng, radius_m);
-        if store::find_area(&state.db, &key).await?.is_none() {
+        let Some(area_id) = &sub.area_id else { continue };
+        if store::find_area(&state.db, area_id).await?.is_none() {
             continue;
         }
         let mut counts: HashMap<String, u32> = HashMap::new();
-        for row in store::area_rows(&state.db, &key, None).await? {
+        for row in store::area_rows(&state.db, area_id, None).await? {
             *counts.entry(row.country).or_default() += 1;
         }
 
@@ -285,9 +283,7 @@ pub(crate) fn subscription_from_row(row: &sqlx::sqlite::SqliteRow) -> (String, S
             endpoint: row.get("endpoint"),
             p256dh: row.get("p256dh"),
             auth: row.get("auth"),
-            lat: row.get("lat"),
-            lng: row.get("lng"),
-            radius_km: row.get("radius_km"),
+            area_id: row.get("area_id"),
             timezone: row.get("timezone"),
         },
     )

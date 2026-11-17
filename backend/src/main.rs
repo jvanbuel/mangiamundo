@@ -8,13 +8,13 @@ async fn main() -> anyhow::Result<()> {
     tracing_subscriber::fmt::init();
 
     let config = Config::from_env()?;
-    let (places, geocoder) = providers::build(&config)?;
+    let (places, areas) = providers::build(&config)?;
     let db = store::connect(&config.database_url).await?;
     let pusher = push::Pusher::load(&db, config.vapid_private_key.clone(), config.vapid_subject.clone()).await?;
     let state = AppState {
         db,
         places,
-        geocoder,
+        areas,
         cache_ttl_secs: config.cache_ttl_secs,
         clock: Arc::new(store::now),
         push_key: Some(pusher.public_key.clone()),

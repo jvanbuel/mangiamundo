@@ -262,7 +262,7 @@
 		{#if hoverInfo.progress}
 			<span>{hoverInfo.progress.visited} of {hoverInfo.progress.places} {hoverInfo.progress.places === 1 ? 'place' : 'places'} visited</span>
 		{:else}
-			<span>Not found in this city</span>
+			<span>Not found in this area</span>
 		{/if}
 	</div>
 {/if}

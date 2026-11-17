@@ -76,8 +76,29 @@ export interface Celebration {
 	nearby: { code: string; places: number }[];
 }
 
+export type AreaKind = 'city' | 'postal_code';
+
+/** A city (every postal code in it) or a single postal code. */
+export interface Area {
+	/** Opaque, e.g. "osm-relation-196311". */
+	id: string;
+	/** "Leuven", or "3000 Leuven" for a postal code. */
+	name: string;
+	kind: AreaKind;
+	/** Where it is, to tell same-named areas apart: "Flemish Brabant, Belgium". */
+	detail: string | null;
+	lat: number;
+	lng: number;
+}
+
+/** The areas a point lies in. */
+export interface Located {
+	city: Area | null;
+	postal_code: Area | null;
+}
+
 export interface Discover {
-	area: { lat: number; lng: number; radius_m: number; provider: string; fetched_at: number };
+	area: Area & { fetched_at: number };
 	countries: CountryProgress[];
 	continents: GroupProgress[];
 	world: GroupProgress;
@@ -108,17 +129,14 @@ export interface Place {
 	verified: boolean;
 }
 
-export interface GeoResult {
-	name: string;
-	lat: number;
-	lng: number;
-}
-
 export interface Location {
+	area: Area;
+	/** Where the map pin goes: the GPS position, or the area's centre. */
 	lat: number;
 	lng: number;
-	name: string | null;
 	source: 'gps' | 'search';
+	/** The city and postal code found at the GPS position, to switch between. */
+	options: Area[];
 }
 
 export type Status = 'available' | 'discovered' | 'completed';
