@@ -1,0 +1,56 @@
+[
+  {
+    "address": "200 Demo Street",
+    "countries": [
+      "AL"
+    ],
+    "cuisine": "albanian",
+    "distance_m": 1711,
+    "hours_text": "Open",
+    "id": "demo-leuven-AL-1",
+    "lat": 50.89448040522253,
+    "lng": 4.707786056764152,
+    "name": "Little Albania",
+    "open_now": true,
+    "opening_hours": "24/7",
+    "url": null,
+    "verified": true,
+    "visited_at": 1794830400
+  },
+  {
+    "address": "105 Demo Street",
+    "countries": [
+      "AL"
+    ],
+    "cuisine": "albanian",
+    "distance_m": 2746,
+    "hours_text": "Closed · opens 17:00",
+    "id": "demo-leuven-AL-0",
+    "lat": 50.90430815382898,
+    "lng": 4.695738873787995,
+    "name": "Chez Albania",
+    "open_now": false,
+    "opening_hours": "Mo-Sa 17:00-23:00",
+    "url": null,
+    "verified": false,
+    "visited_at": 1794830400
+  },
+  {
+    "address": "199 Demo Street",
+    "countries": [
+      "AL"
+    ],
+    "cuisine": "albanian",
+    "distance_m": 2256,
+    "hours_text": "Closed · opens 17:00",
+    "id": "demo-leuven-AL-2",
+    "lat": 50.89984343764922,
+    "lng": 4.705502008206651,
+    "name": "Golden Albania",
+    "open_now": false,
+    "opening_hours": "Mo-Sa 17:00-23:00",
+    "url": null,
+    "verified": false,
+    "visited_at": null
+  }
+]

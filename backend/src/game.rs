@@ -35,8 +35,9 @@ impl CountryProgress {
     pub fn discovered(&self) -> bool {
         self.visited > 0
     }
+    /// `>=` like the clients. `visited` only counts places in the area, so it never exceeds `places`.
     pub fn completed(&self) -> bool {
-        self.visited == self.places
+        self.visited >= self.places
     }
 }
 

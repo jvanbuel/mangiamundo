@@ -575,3 +575,55 @@ async fn the_second_closed_report_of_an_osm_place_posts_one_osm_note() {
     assert!(notes[0].contains("openstreetmap.org%2Fnode%2F42"), "{}", notes[0]);
 }
 
+
+/// Writes real responses to `contract/`, where the Android and iOS tests decode them.
+/// CI fails when the checked-in files differ, so an API change shows up in the diff.
+#[tokio::test]
+async fn writes_contract_fixtures() {
+    let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../contract");
+    let write = |name: &str, value: &Value| {
+        std::fs::write(dir.join(format!("{name}.json")), serde_json::to_string_pretty(value).unwrap() + "\n").unwrap();
+    };
+    let app = app().await;
+    let token = session(&app).await;
+    let get = |uri: String| {
+        let (app, token) = (&app, &token);
+        async move {
+            let (status, body) = call(app, "GET", &uri, Some(token), None).await;
+            assert_eq!(status, StatusCode::OK, "{uri}");
+            body
+        }
+    };
+
+    // One verified and one unverified check-in, so progress, badges and places show both.
+    // At least 3 places, so the two visits taste the country without completing it.
+    let discover = get(format!("/api/discover?{HERE}")).await;
+    let busy = discover["countries"].as_array().unwrap().iter().find(|c| c["places"].as_u64().unwrap() >= 3).unwrap();
+    let country = busy["code"].as_str().unwrap().to_string();
+    let places = get(format!("/api/places?{HERE}&country={country}")).await;
+    let (first, second) = (&places[0], &places[1]);
+    let here = format!(r#"{{"lat":{},"lng":{}}}"#, first["lat"], first["lng"]);
+    let (status, visit) =
+        call(&app, "PUT", &format!("/api/visits/{}", first["id"].as_str().unwrap()), Some(&token), Some(&here)).await;
+    assert_eq!(status, StatusCode::OK);
+    call(&app, "PUT", &format!("/api/visits/{}", second["id"].as_str().unwrap()), Some(&token), None).await;
+
+    let discover = get(format!("/api/discover?{HERE}")).await;
+    write("countries", &get("/api/countries".into()).await);
+    write("discover", &discover);
+    write("places", &get(format!("/api/places?{HERE}&country={country}")).await);
+    write("celebrations", &get(format!("/api/celebrations?{HERE}&days=90")).await);
+    write("visit", &visit);
+    write("areas", &get("/api/areas?q=leuv".into()).await);
+    write("located", &get("/api/areas/locate?lat=50.8798&lng=4.71".into()).await);
+    let (status, error) = call(&app, "GET", "/api/discover?area=demo-nowhere", None, None).await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+    write("error", &error);
+
+    // What a newer server might send: enum values this app version doesn't know.
+    let mut newer = discover.clone();
+    newer["badges"][0]["kind"] = "something-new".into();
+    newer["events"][0]["status"] = "paused".into();
+    newer["unknown_field"] = true.into();
+    write("discover-newer", &newer);
+}

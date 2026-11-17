@@ -22,4 +22,6 @@ dependencies {
 
 tasks.test {
     useJUnitPlatform()
+    // The API fixtures written by the backend tests, so a change reruns the tests.
+    inputs.dir("../../../contract")
 }

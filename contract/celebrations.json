@@ -1,0 +1,57 @@
+[
+  {
+    "approximate": false,
+    "countries": [
+      "LB"
+    ],
+    "description": "Mezze, kibbeh and knafeh.",
+    "ends": "2026-11-22",
+    "id": "lebanese-independence",
+    "nearby": [
+      {
+        "code": "LB",
+        "places": 2
+      }
+    ],
+    "reminder": {
+      "body": "Mezze, kibbeh and knafeh. Celebrate at one of 2 places serving Lebanese food near you.",
+      "tag": "celebration-lebanese-independence",
+      "title": "Lebanese Independence Day is today",
+      "url": "/?country=LB"
+    },
+    "starts": "2026-11-22",
+    "title": "Lebanese Independence Day"
+  },
+  {
+    "approximate": false,
+    "countries": [
+      "CN",
+      "VN",
+      "KR",
+      "TW",
+      "SG",
+      "MY"
+    ],
+    "description": "Dumplings, spring rolls and long noodles for a long life.",
+    "ends": "2027-02-08",
+    "id": "lunar-new-year",
+    "nearby": [
+      {
+        "code": "VN",
+        "places": 2
+      },
+      {
+        "code": "TW",
+        "places": 4
+      }
+    ],
+    "reminder": {
+      "body": "Dumplings, spring rolls and long noodles for a long life. Celebrate at one of 6 places serving Vietnamese or Taiwanese food near you.",
+      "tag": "celebration-lunar-new-year",
+      "title": "Lunar New Year starts today",
+      "url": "/?country=VN"
+    },
+    "starts": "2027-02-06",
+    "title": "Lunar New Year"
+  }
+]

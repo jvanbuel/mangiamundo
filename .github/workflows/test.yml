@@ -18,6 +18,11 @@ jobs:
         with:
           workspaces: backend
       - run: cargo test --locked
+      # The tests rewrite contract/*.json, which the Android and iOS tests decode.
+      - name: Contract fixtures are up to date
+        run: |
+          git status --porcelain -- ../contract
+          test -z "$(git status --porcelain -- ../contract)" || { echo "Run cargo test in backend/ and commit contract/."; exit 1; }
 
   web:
     runs-on: ubuntu-latest
