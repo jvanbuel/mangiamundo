@@ -175,6 +175,9 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
 
     suspend fun search(query: String): List<Area> = api.searchAreas(query)
 
+    suspend fun suggest(query: String): List<Area> =
+        api.suggestAreas(query, gpsFix?.let { it.first to it.second } ?: location?.let { it.lat to it.lng })
+
     fun refresh() {
         val here = location ?: return
         refreshJob?.cancel()

@@ -54,6 +54,12 @@ class ApiClient(private val baseUrl: String, private val tokens: TokenStore) {
     suspend fun searchAreas(query: String): List<Area> =
         json.decodeFromString(request("GET", "/api/areas?q=${encode(query)}"))
 
+    /** Suggestions while someone types, nearest first when `near` (lat, lng) is known. */
+    suspend fun suggestAreas(query: String, near: Pair<Double, Double>?): List<Area> {
+        val point = near?.let { "&lat=${it.first}&lng=${it.second}" }.orEmpty()
+        return json.decodeFromString(request("GET", "/api/areas/suggest?q=${encode(query)}$point"))
+    }
+
     /** The city and postal code a point lies in. */
     suspend fun locateArea(lat: Double, lng: Double): Located =
         json.decodeFromString(request("GET", "/api/areas/locate?lat=$lat&lng=$lng"))

@@ -52,6 +52,7 @@ import androidx.compose.material3.SingleChoiceSegmentedButtonRow
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -92,6 +93,8 @@ import app.mangiamundo.core.AreaKind
 import app.mangiamundo.core.GroupProgress
 import app.mangiamundo.core.Place
 import app.mangiamundo.core.Status
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
 private val CardShape = RoundedCornerShape(14.dp)
@@ -283,6 +286,25 @@ fun LocationPicker(vm: AppViewModel, onUseGps: () -> Unit, onDone: () -> Unit) {
                 searching = false
             }
         }
+    }
+
+    // Suggestions while typing. Failures are ignored: Search still works.
+    LaunchedEffect(query) {
+        val text = query.trim()
+        if (text.length < 2) {
+            results = null
+            return@LaunchedEffect
+        }
+        delay(250)
+        val found = try {
+            vm.suggest(text)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            emptyList()
+        }
+        // An empty list while typing would show "not found" too early.
+        if (!searching && found.isNotEmpty()) results = found
     }
 
     Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
