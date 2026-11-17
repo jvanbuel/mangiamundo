@@ -48,6 +48,7 @@ extension BadgeKind {
         case .continent: return "map.fill"
         case .world: return "globe.europe.africa.fill"
         case .everything: return "crown.fill"
+        case .unknown: return "star.fill"
         }
     }
 
@@ -56,6 +57,7 @@ extension BadgeKind {
         case .visits, .countries: return Theme.available
         case .completed, .world: return Theme.completed
         case .continent, .everything: return Theme.discovered
+        case .unknown: return Theme.muted
         }
     }
 }
@@ -118,7 +120,7 @@ struct BadgeGrid: View {
     var events: [EventProgress] = []
 
     var body: some View {
-        let running = events.filter { $0.status != .ended && !$0.earned }
+        let running = events.filter { ($0.status == .upcoming || $0.status == .active) && !$0.earned }
         if !running.isEmpty {
             LimitedTime(events: running)
         }
