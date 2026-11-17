@@ -75,14 +75,14 @@ struct StartupLoaderView: View {
         if ready { leave() }
     }
 
-    /// Lets a growing bite finish, skips the ones that have not started, then fades out.
+    /// Waits until all bites are in, then fades out.
     private func leave() {
         guard !leaving else { return }
         leaving = true
         Task { @MainActor in
             let wait = reduceMotion ? 0 : StartupLoader.wait(after: Date().timeIntervalSince(startedAt))
             try? await Task.sleep(for: .seconds(wait))
-            bites?.cancel()
+            bites?.cancel() // only the pulse can be left to stop
             withAnimation(.easeOut(duration: reduceMotion ? 0 : StartupLoader.fade)) { opacity = 0 }
             try? await Task.sleep(for: .seconds(reduceMotion ? 0 : StartupLoader.fade))
             onFinished()

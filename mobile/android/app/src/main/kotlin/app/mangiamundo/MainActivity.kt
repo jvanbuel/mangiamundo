@@ -17,7 +17,7 @@ class MainActivity : ComponentActivity() {
     private val vm: AppViewModel by viewModels()
 
     override fun onCreate(savedInstanceState: Bundle?) {
-        // The startup loader: stays until the first data is in, letting a growing bite finish.
+        // The startup loader: plays all bites once, then stays until the first data is in.
         val splash = installSplashScreen()
         val started = SystemClock.uptimeMillis()
         splash.setKeepOnScreenCondition {

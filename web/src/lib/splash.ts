@@ -4,26 +4,19 @@
 const FADE_MS = 250;
 
 /**
- * Fades the loader out. A bite that is growing gets to finish so it never stops halfway;
- * bites that have not started yet are skipped. Safe to call more than once.
+ * Fades the loader out once all three bites are in, so it always plays once in full
+ * (under a second), however fast the data arrives. Safe to call more than once.
  */
 export async function hideSplash() {
 	const splash = document.getElementById('splash');
 	if (!splash || splash.dataset.state) return;
 	splash.dataset.state = 'leaving';
 
-	const growing: Promise<unknown>[] = [];
-	for (const animation of splash.getAnimations({ subtree: true })) {
-		const name = (animation as CSSAnimation).animationName;
-		if (name !== 'mm-bite' && name !== 'mm-squash') continue;
-		if (Number(animation.currentTime ?? 0) < Number(animation.effect?.getTiming().delay ?? 0)) {
-			// Not started: keep it at its first frame (no bite, no squash) during the fade.
-			animation.pause();
-		} else if (animation.playState === 'running') {
-			growing.push(animation.finished.catch(() => undefined));
-		}
-	}
-	await Promise.all(growing);
+	// No animations with reduced motion, so this resolves right away.
+	const bites = splash
+		.getAnimations({ subtree: true })
+		.filter((a) => ['mm-bite', 'mm-squash'].includes((a as CSSAnimation).animationName));
+	await Promise.all(bites.map((a) => a.finished.catch(() => undefined)));
 
 	splash.dataset.state = 'gone';
 	// No transitionend with reduced motion (transitions are off), so use a timer.

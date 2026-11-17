@@ -17,12 +17,9 @@ object StartupLoader {
     /** Fade-out once loading is done. */
     const val FADE_MS = 250L
 
-    /** Whether a bite is growing [elapsedMs] after the loader started, so it should not be cut off. */
-    fun biting(elapsedMs: Long): Boolean = (0 until BITES).any { i ->
-        val start = START_MS + i * STEP_MS
-        elapsedMs >= start && elapsedMs < start + GROW_MS
-    }
-
-    /** Whether the loader stays: until the first data is in, letting a growing bite finish. */
-    fun keep(ready: Boolean, elapsedMs: Long): Boolean = !ready || biting(elapsedMs)
+    /**
+     * Whether the loader stays: until the first data is in, and always until all bites are in,
+     * so it plays once in full however fast the data arrives.
+     */
+    fun keep(ready: Boolean, elapsedMs: Long): Boolean = !ready || elapsedMs < TOTAL_MS
 }
