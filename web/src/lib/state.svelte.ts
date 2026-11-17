@@ -7,19 +7,18 @@ import {
 	type Celebration,
 	type Catalog,
 	type Country,
+	type Area,
 	type Discover,
+	type Located,
 	type Location,
 	type Place
 } from './types';
 
 const LOCATION_KEY = 'mangiamundo.location';
-const RADIUS_KEY = 'mangiamundo.radius';
 const PROJECTION_KEY = 'mangiamundo.projection';
 const THEME_KEY = 'mangiamundo.theme';
 
 export type Theme = 'system' | 'light' | 'dark';
-
-export const RADII = [5, 10, 25];
 
 /** What a toast shows on its left: a flag (or other text), a badge medal, or nothing. */
 export type ToastIcon = { text: string } | { badge: BadgeKind | 'event' } | null;
@@ -42,7 +41,6 @@ function load<T>(key: string): T | null {
 export const app = $state({
 	catalog: null as Catalog | null,
 	location: null as Location | null,
-	radiusKm: 10,
 	discover: null as Discover | null,
 	loading: false,
 	error: null as string | null,
@@ -84,7 +82,6 @@ function message(error: unknown): string {
 }
 
 export async function init() {
-	app.radiusKm = load<number>(RADIUS_KEY) ?? 10;
 	app.projection = load<'globe' | 'mercator'>(PROJECTION_KEY) ?? 'globe';
 	app.theme = load<Theme>(THEME_KEY) ?? 'system';
 	try {
@@ -95,7 +92,7 @@ export async function init() {
 		return;
 	}
 	void checkReminders();
-	const stored = load<Location>(LOCATION_KEY);
+	const stored = await storedLocation();
 	if (stored) {
 		app.location = stored;
 		await refresh();
@@ -108,6 +105,36 @@ export async function init() {
 		await locate(true);
 	}
 	await followLink();
+}
+
+/** The saved location. One saved before areas existed (a point and a radius) is moved to
+ * the city at that point. */
+async function storedLocation(): Promise<Location | null> {
+	const stored = load<Partial<Location> & { lat?: number; lng?: number; source?: 'gps' | 'search' }>(LOCATION_KEY);
+	localStorage.removeItem('mangiamundo.radius');
+	if (!stored) return null;
+	if (stored.area && Array.isArray(stored.options)) return stored as Location;
+	if (typeof stored.lat !== 'number' || typeof stored.lng !== 'number') return null;
+	try {
+		const located = await api.locateArea(stored.lat, stored.lng);
+		const area = located.city ?? located.postal_code;
+		if (!area) return null;
+		const location: Location = {
+			area,
+			lat: stored.lat,
+			lng: stored.lng,
+			source: stored.source ?? 'search',
+			options: optionsOf(located)
+		};
+		localStorage.setItem(LOCATION_KEY, JSON.stringify(location));
+		return location;
+	} catch {
+		return null;
+	}
+}
+
+function optionsOf(located: Located): Area[] {
+	return [located.city, located.postal_code].filter((a): a is Area => a !== null);
 }
 
 /** Opens what a link (for example from a reminder) points at: ?country=JP or ?tab=badges. */
@@ -127,8 +154,7 @@ async function checkReminders() {
 }
 
 function pushTarget() {
-	const here = app.location!;
-	return { lat: here.lat, lng: here.lng, radius_km: app.radiusKm };
+	return { area: app.location!.area.id };
 }
 
 export async function toggleReminders() {
@@ -171,11 +197,22 @@ export async function setLocation(location: Location) {
 	await refresh();
 }
 
-export async function setRadius(radiusKm: number) {
-	app.radiusKm = radiusKm;
-	localStorage.setItem(RADIUS_KEY, JSON.stringify(radiusKm));
-	app.selected = null;
-	await refresh();
+/** Picks a city or postal code from a search. */
+export async function chooseArea(area: Area) {
+	await setLocation({ area, lat: area.lat, lng: area.lng, source: 'search', options: [] });
+}
+
+/** Switches between the city and the postal code found at the GPS position. */
+export async function switchArea(area: Area) {
+	const current = app.location;
+	if (!current || current.area.id === area.id) return;
+	await setLocation({ ...current, area });
+}
+
+/** Where the user is, when known recently: distances and check-ins are measured from it. */
+function here(): { lat: number; lng: number } | null {
+	if (gpsFix && Date.now() - gpsFix.at < 10 * 60_000) return { lat: gpsFix.lat, lng: gpsFix.lng };
+	return app.location?.source === 'gps' ? { lat: app.location.lat, lng: app.location.lng } : null;
 }
 
 function position(): Promise<GeolocationPosition> {
@@ -206,11 +243,18 @@ export async function locate(quiet = false) {
 			Math.abs(previous.lat - coords.latitude) > 0.01 ||
 			Math.abs(previous.lng - coords.longitude) > 0.01;
 		if (!moved) return;
-		const name = await api
-			.reverseGeocode(coords.latitude, coords.longitude)
-			.then((r) => r.name)
-			.catch(() => null);
-		await setLocation({ lat: coords.latitude, lng: coords.longitude, name, source: 'gps' });
+		const located = await api.locateArea(coords.latitude, coords.longitude);
+		// The city by default; someone who narrowed to their postal code before keeps that.
+		const keepPostalCode = previous?.source === 'gps' && previous.area.kind === 'postal_code';
+		const area = (keepPostalCode && located.postal_code) || located.city || located.postal_code;
+		if (!area) throw new Error('No city or postal code found here. Search for your city instead.');
+		await setLocation({
+			area,
+			lat: coords.latitude,
+			lng: coords.longitude,
+			source: 'gps',
+			options: optionsOf(located)
+		});
 	} catch (error) {
 		if (!quiet || !app.location) app.locateError = message(error);
 	} finally {
@@ -223,7 +267,7 @@ export async function refresh() {
 	if (!location) return;
 	if (app.reminders === 'on') void push.updateReminders(pushTarget()).catch(() => undefined);
 	void api
-		.celebrations(location.lat, location.lng, app.radiusKm)
+		.celebrations(location.area.id)
 		.then((list) => {
 			if (app.location === location) app.celebrations = list;
 		})
@@ -232,7 +276,7 @@ export async function refresh() {
 	app.loading = true;
 	app.error = null;
 	try {
-		const result = await api.discover(location.lat, location.lng, app.radiusKm);
+		const result = await api.discover(location.area.id);
 		if (id === requestId) app.discover = result;
 	} catch (error) {
 		if (id === requestId) {
@@ -251,7 +295,7 @@ export async function select(code: string | null) {
 	if (!code || !location) return;
 	app.placesLoading = true;
 	try {
-		const result = await api.places(location.lat, location.lng, app.radiusKm, code);
+		const result = await api.places(location.area.id, code, here());
 		if (app.selected === code) app.places = result;
 	} catch (error) {
 		toast(null, 'Could not load places', message(error));
@@ -268,7 +312,7 @@ function celebrate(before: Discover, after: Discover, place: Place) {
 		const info = country(code);
 		if (!was || !now || !info) continue;
 		if (statusOf(now) === 'completed' && statusOf(was) !== 'completed') {
-			toast({ text: info.flag }, `${info.name} complete`, 'You visited every place in this city.');
+			toast({ text: info.flag }, `${info.name} complete`, `You visited every place in ${app.location?.area.name ?? 'this area'}.`);
 		} else if (was.visited === 0) {
 			toast({ text: info.flag }, `${info.name} tasted`, `${now.places - now.visited} more to complete it.`);
 		}
@@ -304,7 +348,7 @@ export async function toggleVisit(place: Place) {
 			place.visited_at = null;
 			place.verified = false;
 		}
-		const after = await api.discover(location.lat, location.lng, app.radiusKm);
+		const after = await api.discover(location.area.id);
 		app.discover = after;
 		if (visiting) celebrate(before, after, place);
 	} catch (error) {

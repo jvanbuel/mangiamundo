@@ -16,7 +16,7 @@
 
 	const selected = $derived(app.discover?.countries.find((c) => c.code === app.selected) ?? null);
 	const earned = $derived(app.discover?.badges.filter((b) => b.earned).length ?? 0);
-	const place = $derived(app.location?.name ?? (app.location ? 'your location' : null));
+	const place = $derived(app.location?.area.name ?? null);
 
 	const THEMES: { id: Theme; label: string }[] = [
 		{ id: 'system', label: 'Auto' },
@@ -44,7 +44,7 @@
 			app.tab = 'countries';
 			select(code);
 		} else {
-			toast(null, `No ${name} food here yet`, `No places from ${name} were found within ${app.radiusKm} km.`);
+			toast(null, `No ${name} food here yet`, `No places from ${name} were found in ${place}.`);
 		}
 	}
 </script>
@@ -80,7 +80,7 @@
 			<li><span style:background="var(--available)"></span>To discover</li>
 			<li><span style:background="var(--discovered)"></span>Tasted</li>
 			<li><span style:background="var(--completed)"></span>Completed</li>
-			<li><span style:background="var(--land)"></span>Not in this city</li>
+			<li><span style:background="var(--land)"></span>Not in this area</li>
 		</ul>
 	</div>
 
@@ -92,7 +92,7 @@
 				<button class="where" aria-expanded={pickerOpen} onclick={() => (pickerOpen = !pickerOpen)}>
 					{#if app.location.source === 'gps'}<Navigation size={15} strokeWidth={2.5} aria-hidden="true" />{:else}<MapPin size={15} strokeWidth={2.5} aria-hidden="true" />{/if}
 					<span class="name">{place}</span>
-					<span class="muted">· {app.radiusKm} km</span>
+					{#if app.location.area.kind === 'postal_code'}<span class="muted">· postal code</span>{/if}
 					<span class="change">{pickerOpen ? 'Close' : 'Change'}</span>
 				</button>
 			{/if}
@@ -116,13 +116,13 @@
 				<button class="retry" onclick={refresh}>Try again</button>
 			</div>
 		{:else if !app.discover}
-			<p class="muted pad">Scouting restaurants around {place}…</p>
+			<p class="muted pad">Scouting restaurants in {place}…</p>
 		{:else if app.discover.world.available === 0}
 			<div class="card">
 				<h2>Nothing found here yet</h2>
 				<p class="muted">
-					No restaurants with a national cuisine turned up within {app.radiusKm} km. Try a larger radius or
-					another location.
+					No restaurants with a national cuisine turned up in {place}.
+					{app.location.area.kind === 'postal_code' ? 'Try the whole city or' : 'Try'} another location.
 				</p>
 			</div>
 		{:else}

@@ -1,16 +1,18 @@
 <script lang="ts">
 	import Navigation from '@lucide/svelte/icons/navigation';
 	import * as api from './api';
-	import { app, locate, setLocation, setRadius, RADII } from './state.svelte';
-	import type { GeoResult } from './types';
+	import { app, chooseArea, locate, switchArea } from './state.svelte';
+	import type { Area } from './types';
 
 	let { onclose }: { onclose?: () => void } = $props();
 
 	let query = $state('');
-	let results = $state<GeoResult[]>([]);
+	let results = $state<Area[]>([]);
 	let searching = $state(false);
 	let searched = $state(false);
 	let error = $state<string | null>(null);
+
+	const kindLabel = (area: Area) => (area.kind === 'city' ? 'City' : 'Postal code');
 
 	async function search(event: SubmitEvent) {
 		event.preventDefault();
@@ -18,7 +20,7 @@
 		searching = true;
 		error = null;
 		try {
-			results = await api.geocode(query);
+			results = await api.searchAreas(query);
 			searched = true;
 		} catch (e) {
 			error = e instanceof Error ? e.message : 'Search failed.';
@@ -27,18 +29,37 @@
 		}
 	}
 
-	async function choose(result: GeoResult) {
+	async function choose(area: Area) {
 		onclose?.();
-		await setLocation({ lat: result.lat, lng: result.lng, name: result.name.split(',')[0], source: 'search' });
+		await chooseArea(area);
 	}
 
 	async function useGps() {
 		await locate();
 		if (!app.locateError) onclose?.();
 	}
+
+	async function pick(area: Area) {
+		onclose?.();
+		await switchArea(area);
+	}
 </script>
 
 <div class="picker">
+	{#if app.location && app.location.options.length > 1}
+		<div class="options" role="group" aria-label="Area around you">
+			{#each app.location.options as option (option.id)}
+				<button
+					class:on={app.location.area.id === option.id}
+					aria-pressed={app.location.area.id === option.id}
+					onclick={() => pick(option)}
+				>
+					<span>{option.kind === 'city' ? `All of ${option.name}` : `Only ${option.name}`}</span>
+				</button>
+			{/each}
+		</div>
+	{/if}
+
 	<button class="gps" onclick={useGps} disabled={app.locating}>
 		<Navigation size={16} strokeWidth={2.5} aria-hidden="true" />
 		{app.locating ? 'Finding you…' : 'Use my current location'}
@@ -48,8 +69,8 @@
 	<form onsubmit={search}>
 		<input
 			type="search"
-			placeholder="Search a city or address"
-			aria-label="Search a city or address"
+			placeholder="City or postal code"
+			aria-label="Search a city or postal code"
 			bind:value={query}
 		/>
 		<button type="submit" disabled={searching}>{searching ? '…' : 'Search'}</button>
@@ -58,24 +79,18 @@
 
 	{#if results.length}
 		<ul>
-			{#each results as result (result.name + result.lat)}
-				<li><button onclick={() => choose(result)}>{result.name}</button></li>
+			{#each results as result (result.id)}
+				<li>
+					<button onclick={() => choose(result)}>
+						<span class="name">{result.name}</span>
+						<span class="muted">{kindLabel(result)}{result.detail ? ` · ${result.detail}` : ''}</span>
+					</button>
+				</li>
 			{/each}
 		</ul>
 	{:else if searched && !searching}
-		<p class="muted">No matches. Try a different spelling.</p>
+		<p class="muted">No city or postal code found. Try a different spelling.</p>
 	{/if}
-
-	<div class="radius">
-		<span class="muted">Search radius</span>
-		<div role="group" aria-label="Search radius">
-			{#each RADII as km (km)}
-				<button class:on={app.radiusKm === km} aria-pressed={app.radiusKm === km} onclick={() => setRadius(km)}>
-					{km} km
-				</button>
-			{/each}
-		</div>
-	</div>
 </div>
 
 <style>
@@ -152,26 +167,33 @@
 		color: var(--danger);
 	}
 
-	.radius {
-		display: flex;
-		align-items: center;
-		justify-content: space-between;
-		gap: 10px;
-		font-size: 13px;
+	li button {
+		display: grid;
+		gap: 1px;
 	}
 
-	.radius div {
+	li .muted {
+		font-size: 12px;
+	}
+
+	.options {
 		display: flex;
 		border: 1px solid var(--line);
-		border-radius: 9px;
+		border-radius: 10px;
 		overflow: hidden;
 	}
 
-	.radius button {
-		padding: 5px 10px;
+	.options button {
+		flex: 1;
+		padding: 8px 10px;
+		font-size: 13px;
 	}
 
-	.radius button.on {
+	.options button + button {
+		border-left: 1px solid var(--line);
+	}
+
+	.options button.on {
 		background: var(--panel-raised);
 		color: var(--accent);
 		font-weight: 700;

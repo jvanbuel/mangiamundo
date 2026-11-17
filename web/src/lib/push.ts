@@ -45,7 +45,7 @@ export async function enableReminders(target: Omit<api.PushTarget, 'timezone'>):
 	});
 }
 
-/** Keeps the server's copy in step after the user moves or changes the radius. */
+/** Keeps the server's copy in step after the user moves to another area. */
 export async function updateReminders(target: Omit<api.PushTarget, 'timezone'>): Promise<void> {
 	const subscription = await currentSubscription();
 	if (!subscription || Notification.permission !== 'granted') return;
