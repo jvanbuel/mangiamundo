@@ -24,6 +24,8 @@ pub struct AppState {
     pub clock: Arc<dyn Fn() -> i64 + Send + Sync>,
     /// The VAPID public key browsers subscribe with, when Web Push is enabled.
     pub push_key: Option<String>,
+    /// OSM Notes API endpoint for reporting closed places to OpenStreetMap. Off when unset.
+    pub osm_notes_url: Option<String>,
 }
 
 impl AppState {

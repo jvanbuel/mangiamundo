@@ -87,6 +87,7 @@ async fn sends_each_reminder_once_in_the_subscribers_morning() {
         cache_ttl_secs: 365 * 86_400,
         clock: Arc::new(move || clock.load(Ordering::Relaxed)),
         push_key: Some(pusher.public_key.clone()),
+        osm_notes_url: None,
     };
     let app = api::router(state.clone());
     let (push_url, service) = fake_push_service().await;

@@ -22,6 +22,11 @@ targets:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: app.mangiamundo
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        CODE_SIGN_STYLE: Automatic
+        DEVELOPMENT_TEAM: 3L3LXDY2VY
+        # Real devices use the deployed backend. The simulator shares the Mac's localhost.
+        API_BASE_URL: https://mangiamundo.fly.dev
+        "API_BASE_URL[sdk=iphonesimulator*]": http://localhost:8080
     info:
       path: Mangiamundo/Info.plist
       properties:
@@ -42,8 +47,9 @@ targets:
           - Nunito-ExtraBold.ttf
           - Nunito-Black.ttf
         NSLocationWhenInUseUsageDescription: Mangiamundo uses your location to find restaurants from around the world near you.
-        # Where the app finds the backend. The simulator shares the Mac's localhost.
-        APIBaseURL: http://localhost:8080
+        # Where the app finds the backend: see API_BASE_URL above.
+        APIBaseURL: $(API_BASE_URL)
+        ITSAppUsesNonExemptEncryption: false
         NSAppTransportSecurity:
           NSAllowsLocalNetworking: true
   MangiamundoTests:

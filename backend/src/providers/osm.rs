@@ -4,12 +4,22 @@
 use async_trait::async_trait;
 use serde::Deserialize;
 use serde_json::Value;
+use sqlx::SqlitePool;
 use std::collections::HashMap;
+use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use super::{AreaDirectory, AreaInfo, AreaKind, Boundary, FoundPlace, Located, PlacesProvider};
-use crate::catalog;
 use crate::geo::{Bbox, Shape};
+use crate::{catalog, store};
+
+/// The area kept as a local copy: Belgium plus a margin, so border towns such as
+/// Lille, Maastricht and Aachen are covered too.
+pub const IMPORT_BBOX: Bbox = Bbox { south: 49.4, west: 2.4, north: 51.6, east: 6.5 };
+/// How often the local copy is refreshed, and how soon a failed import is retried.
+const IMPORT_EVERY_SECS: i64 = 7 * 86_400;
+const IMPORT_RETRY: Duration = Duration::from_secs(3600);
+const IMPORTED_AT: &str = "osm_import_at";
 
 pub struct Overpass {
     http: reqwest::Client,
@@ -21,10 +31,11 @@ impl Overpass {
         Self { http, urls }
     }
 
-    async fn fetch(&self, url: &str, query: &str) -> anyhow::Result<Vec<FoundPlace>> {
+    async fn fetch(&self, url: &str, query: &str, timeout: Duration) -> anyhow::Result<Vec<FoundPlace>> {
         let body = self
             .http
             .post(url)
+            .timeout(timeout)
             .form(&[("data", query)])
             .send()
             .await?
@@ -32,6 +43,21 @@ impl Overpass {
             .text()
             .await?;
         parse(&body)
+    }
+
+    /// Asks each server in turn until one answers.
+    async fn fetch_any(&self, query: &str, timeout: Duration) -> anyhow::Result<Vec<FoundPlace>> {
+        let mut last_error = anyhow::anyhow!("no Overpass server configured");
+        for url in &self.urls {
+            match self.fetch(url, query, timeout).await {
+                Ok(places) => return Ok(places),
+                Err(error) => {
+                    tracing::warn!(url, error = format!("{error:#}"), "overpass server failed, trying the next");
+                    last_error = error;
+                }
+            }
+        }
+        Err(last_error)
     }
 }
 
@@ -60,9 +86,9 @@ struct Center {
 
 /// Restaurants in the area's bounding box; [`Overpass::search`] keeps the ones inside the
 /// outline. A box query works for every area, also postal codes Overpass has no area for.
-fn query(b: Bbox) -> String {
+fn query(b: Bbox, timeout_secs: u64) -> String {
     format!(
-        "[out:json][timeout:60];\
+        "[out:json][timeout:{timeout_secs}];\
          nwr[\"amenity\"~\"^(restaurant|fast_food|cafe|pub|bar)$\"][\"cuisine\"][\"name\"]\
          ({},{},{},{});\
          out center tags;",
@@ -71,13 +97,27 @@ fn query(b: Bbox) -> String {
     )
 }
 
+/// OSM sometimes records a closure without removing the place.
+fn is_closed(tags: &HashMap<String, String>, today: &str) -> bool {
+    let hours_closed = tags
+        .get("opening_hours")
+        .is_some_and(|h| matches!(h.trim().to_ascii_lowercase().as_str(), "closed" | "off"));
+    // end_date is "2024", "2024-05" or "2024-05-31": these compare correctly as text.
+    let ended = tags.get("end_date").is_some_and(|d| d.as_str() <= today);
+    hours_closed || ended
+}
+
 fn parse(body: &str) -> anyhow::Result<Vec<FoundPlace>> {
     let response: OverpassResponse = serde_json::from_str(body)?;
+    let today = chrono::Utc::now().format("%Y-%m-%d").to_string();
     let mut places = Vec::new();
     for el in response.elements {
         let (Some(name), Some(cuisine)) = (el.tags.get("name"), el.tags.get("cuisine")) else {
             continue;
         };
+        if is_closed(&el.tags, &today) {
+            continue;
+        }
         let countries = catalog::countries_for_cuisine_tag(cuisine);
         if countries.is_empty() {
             continue;
@@ -125,21 +165,69 @@ impl PlacesProvider for Overpass {
     }
 
     async fn search(&self, area: &Boundary) -> anyhow::Result<Vec<FoundPlace>> {
-        let query = query(area.shape.bbox());
-        let mut last_error = anyhow::anyhow!("no Overpass server configured");
-        for url in &self.urls {
-            match self.fetch(url, &query).await {
-                Ok(mut places) => {
-                    places.retain(|p| area.shape.contains(p.lat, p.lng));
-                    return Ok(places);
-                }
-                Err(error) => {
-                    tracing::warn!(url, error = format!("{error:#}"), "overpass server failed, trying the next");
-                    last_error = error;
-                }
+        let mut places = self.fetch_any(&query(area.shape.bbox(), 60), Duration::from_secs(75)).await?;
+        places.retain(|p| area.shape.contains(p.lat, p.lng));
+        Ok(places)
+    }
+}
+
+/// Downloads every place in [`IMPORT_BBOX`] into the local copy. One large query a
+/// week is kinder to the public servers than one per area, and a failure only delays
+/// the refresh instead of breaking a user's request.
+pub async fn import(db: &SqlitePool, overpass: &Overpass) -> anyhow::Result<usize> {
+    let places = overpass.fetch_any(&query(IMPORT_BBOX, 300), Duration::from_secs(330)).await?;
+    store::replace_imported(db, &places).await?;
+    store::set_setting(db, IMPORTED_AT, &store::now().to_string()).await?;
+    Ok(places.len())
+}
+
+/// Keeps the local copy fresh. Runs for the life of the server.
+pub async fn run_imports(db: SqlitePool, overpass: Overpass) {
+    loop {
+        let last = store::setting(&db, IMPORTED_AT).await.ok().flatten().and_then(|v| v.parse::<i64>().ok());
+        if last.is_none_or(|at| store::now() - at >= IMPORT_EVERY_SECS) {
+            match import(&db, &overpass).await {
+                Ok(count) => tracing::info!(count, "osm import finished"),
+                Err(error) => tracing::warn!(error = format!("{error:#}"), "osm import failed, will retry"),
             }
         }
-        Err(last_error)
+        tokio::time::sleep(IMPORT_RETRY).await;
+    }
+}
+
+/// True when the whole box lies inside the import box.
+fn covered(b: Bbox) -> bool {
+    let i = IMPORT_BBOX;
+    b.south >= i.south && b.north <= i.north && b.west >= i.west && b.east <= i.east
+}
+
+/// Answers from the local copy where it covers the area, and asks Overpass elsewhere.
+pub struct WithImport {
+    db: SqlitePool,
+    live: Arc<dyn PlacesProvider>,
+}
+
+impl WithImport {
+    pub fn new(db: SqlitePool, live: Arc<dyn PlacesProvider>) -> Self {
+        Self { db, live }
+    }
+}
+
+#[async_trait]
+impl PlacesProvider for WithImport {
+    /// Same name as the live provider: the ids match, so cached areas and visits carry over.
+    fn name(&self) -> &'static str {
+        self.live.name()
+    }
+
+    async fn search(&self, area: &Boundary) -> anyhow::Result<Vec<FoundPlace>> {
+        let bbox = area.shape.bbox();
+        if covered(bbox) && store::setting(&self.db, IMPORTED_AT).await?.is_some() {
+            let mut places = store::imported_in(&self.db, bbox).await?;
+            places.retain(|p| area.shape.contains(p.lat, p.lng));
+            return Ok(places);
+        }
+        self.live.search(area).await
     }
 }
 
@@ -338,9 +426,9 @@ mod tests {
     #[test]
     fn queries_the_bounding_box() {
         let b = Bbox { south: 50.82, west: 4.64, north: 50.94, east: 4.77 };
-        assert!(query(b).contains("(50.82,4.64,50.94,4.77)"));
+        assert!(query(b, 60).contains("(50.82,4.64,50.94,4.77)"));
         let precise = Bbox { south: 50.8242081, west: 4.000006, north: 50.9440737, east: 4.7704248 };
-        assert!(query(precise).contains("(50.8242081,4.000006,50.9440737,4.7704248)"), "no rounding");
+        assert!(query(precise, 60).contains("(50.8242081,4.000006,50.9440737,4.7704248)"), "no rounding");
     }
 
     /// Run by hand: `cargo test -- --ignored nominatim`.
@@ -363,5 +451,25 @@ mod tests {
         assert!(boundary.shape.contains(50.8790, 4.7005));
         assert!(!boundary.shape.contains(50.90, 4.73), "Wilsele is 3012, not 3000");
         assert!(nominatim.boundary("osm-relation-52411").await.unwrap().is_none(), "Belgium is not a city");
+    }
+
+    #[test]
+    fn recorded_closures_are_skipped() {
+        let tags = |pairs: &[(&str, &str)]| pairs.iter().map(|(k, v)| (k.to_string(), v.to_string())).collect();
+        let today = "2026-11-16";
+        assert!(is_closed(&tags(&[("opening_hours", "closed")]), today));
+        assert!(is_closed(&tags(&[("end_date", "2025")]), today));
+        assert!(is_closed(&tags(&[("end_date", "2026-11-01")]), today));
+        assert!(!is_closed(&tags(&[("end_date", "2027-01")]), today));
+        assert!(!is_closed(&tags(&[("opening_hours", "Mo-Fr 11:00-22:00")]), today));
+    }
+
+    #[test]
+    fn coverage_needs_the_whole_area_inside_the_box() {
+        let b = |south, west, north, east| Bbox { south, west, north, east };
+        assert!(covered(b(50.84, 4.65, 50.92, 4.76))); // Leuven
+        assert!(covered(b(50.58, 2.97, 50.68, 3.13))); // Lille
+        assert!(!covered(b(49.3, 5.0, 49.6, 5.3))); // crosses the southern edge
+        assert!(!covered(b(48.81, 2.22, 48.90, 2.47))); // Paris
     }
 }

@@ -17,6 +17,13 @@
 
 	let { countries, progress, selected, location, projection, theme, onselect }: Props = $props();
 
+	/** Zoom at which the globe's diameter fills most of the map's shorter side. */
+	function fittingZoom(el: HTMLElement, lat: number, fill = 0.95): number {
+		const diameter = Math.min(el.clientWidth, el.clientHeight) * fill;
+		// MapLibre draws the globe with radius 512 * 2^zoom / (2π cos(lat)).
+		return Math.log2((diameter * Math.PI * Math.cos((lat * Math.PI) / 180)) / 512);
+	}
+
 	const SOURCE = 'countries';
 	let container: HTMLDivElement;
 	let map = $state<MapLibreMap | null>(null);
@@ -106,10 +113,11 @@
 
 			const themed = paint() as any;
 
+			const center: [number, number] = location ? [location.lng, location.lat] : [10, 30];
 			instance = new MapLibre({
 				container,
-				center: location ? [location.lng, location.lat] : [10, 30],
-				zoom: 1.4,
+				center,
+				zoom: fittingZoom(container, center[1]),
 				minZoom: 0.6,
 				maxZoom: 6,
 				attributionControl: { compact: true, customAttribution: 'Borders: Natural Earth' },

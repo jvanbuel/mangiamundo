@@ -9,6 +9,10 @@ primary_region = 'ams'
 [build]
   dockerfile = 'Dockerfile'
 
+[env]
+  # Closed places are reported to OpenStreetMap as notes. Unset locally.
+  OSM_NOTES_URL = 'https://api.openstreetmap.org/api/0.6/notes'
+
 [[mounts]]
   source = 'data'
   destination = '/data'

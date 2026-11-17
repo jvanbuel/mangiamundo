@@ -25,6 +25,9 @@ pub struct Config {
     pub vapid_subject: String,
     /// Seconds between passes over push subscriptions; 0 turns reminders off.
     pub push_interval_secs: u64,
+    /// Where closed places are reported to OpenStreetMap. Unset in development, so
+    /// testing locally never posts real notes.
+    pub osm_notes_url: Option<String>,
 }
 
 /// The main public instance is often overloaded, so community mirrors back it up.
@@ -66,6 +69,7 @@ impl Config {
                 * 86_400,
             vapid_private_key: var("VAPID_PRIVATE_KEY"),
             vapid_subject: var("VAPID_SUBJECT").unwrap_or_else(|| "mailto:hello@mangiamundo.app".into()),
+            osm_notes_url: var("OSM_NOTES_URL"),
             push_interval_secs: var("PUSH_INTERVAL_SECS").map(|v| v.parse()).transpose()?.unwrap_or(600),
             static_dir: Some(PathBuf::from(
                 var("STATIC_DIR").unwrap_or_else(|| "../web/build".into()),
