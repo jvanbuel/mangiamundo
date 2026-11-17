@@ -134,6 +134,9 @@ final class AppModel {
 
     private func move(to target: SavedLocation) {
         location = target
+        // The old area's countries must not show while the new area loads.
+        discover = nil
+        celebrations = []
         if let data = try? JSONEncoder().encode(target) {
             defaults.set(data, forKey: "mangiamundo.location")
         }

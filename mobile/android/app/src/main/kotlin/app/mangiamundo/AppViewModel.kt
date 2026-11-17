@@ -126,6 +126,9 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
 
     private fun moveTo(target: SavedLocation) {
         location = target
+        // The old area's countries must not show while the new area loads.
+        discover = null
+        celebrations = emptyList()
         settings.location = target
         select(null)
         refresh()
