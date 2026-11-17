@@ -3,7 +3,6 @@ use std::sync::Arc;
 use mangiamundo::config::{Config, ProviderKind};
 use mangiamundo::providers::{self, osm};
 use mangiamundo::{api, calendar, push, store, AppState};
-use tower_http::services::{ServeDir, ServeFile};
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
@@ -38,8 +37,7 @@ async fn main() -> anyhow::Result<()> {
     let mut app = api::router(state);
     if let Some(dir) = config.static_dir.filter(|dir| dir.join("index.html").is_file()) {
         tracing::info!(dir = %dir.display(), "serving web app");
-        // The web app is a single-page app: unknown paths fall back to index.html.
-        app = app.fallback_service(ServeDir::new(&dir).fallback(ServeFile::new(dir.join("index.html"))));
+        app = api::with_web_app(app, &dir);
     }
 
     let listener = tokio::net::TcpListener::bind(&config.bind).await?;

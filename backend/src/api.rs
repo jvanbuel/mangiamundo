@@ -1,15 +1,20 @@
 //! HTTP API. Everything lives under `/api` and speaks JSON, so the web app and the
 //! mobile apps share one contract.
 
-use axum::extract::{FromRequestParts, Path, Query, State};
+use std::path::Path as FsPath;
+
+use axum::extract::rejection::{JsonRejection, QueryRejection};
+use axum::extract::{FromRequest, FromRequestParts, OptionalFromRequest, Path, Request, State};
 use axum::http::request::Parts;
 use axum::http::{header, StatusCode};
 use axum::response::{IntoResponse, Response};
-use axum::routing::{get, post, put};
+use axum::routing::{any, get, post, put};
 use axum::{Json, Router};
+use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use tower_http::cors::CorsLayer;
+use tower_http::services::{ServeDir, ServeFile};
 use tower_http::trace::TraceLayer;
 
 use std::collections::HashMap;
@@ -40,15 +45,45 @@ pub fn router(state: AppState) -> Router {
         .route("/api/areas", get(search_areas))
         .route("/api/areas/locate", get(locate_area))
         .route("/api/areas/suggest", get(suggest_areas))
+        // Unknown API paths get a JSON 404 rather than the web app's index.html.
+        .route("/api", any(not_found))
+        .route("/api/{*rest}", any(not_found))
+        .method_not_allowed_fallback(|| async { ApiError::MethodNotAllowed })
         .layer(CorsLayer::permissive())
         .layer(TraceLayer::new_for_http())
         .with_state(state)
+}
+
+/// Serves the web app from `dir` next to the API. It is a single-page app, so unknown
+/// paths outside `/api` fall back to index.html.
+pub fn with_web_app(app: Router, dir: &FsPath) -> Router {
+    app.fallback_service(ServeDir::new(dir).fallback(ServeFile::new(dir.join("index.html"))))
+}
+
+async fn not_found() -> ApiError {
+    ApiError::NotFound("API endpoint")
+}
+
+/// Every error response is `{ "error": "<message for people>", "code": "<one of these>" }`.
+/// Clients branch on `code`; the message may change.
+pub mod code {
+    pub const BAD_REQUEST: &str = "bad_request";
+    pub const UNAUTHORIZED: &str = "unauthorized";
+    pub const NOT_FOUND: &str = "not_found";
+    pub const METHOD_NOT_ALLOWED: &str = "method_not_allowed";
+    pub const UPSTREAM: &str = "upstream";
+    pub const INTERNAL: &str = "internal";
 }
 
 #[derive(Debug, thiserror::Error)]
 pub enum ApiError {
     #[error("{0}")]
     BadRequest(String),
+    /// A query string or body that axum could not parse, with axum's status (400, 415 or 422).
+    #[error("{1}")]
+    Rejected(StatusCode, String),
+    #[error("method not allowed")]
+    MethodNotAllowed,
     #[error("missing or invalid session token")]
     Unauthorized,
     #[error("{0} not found")]
@@ -61,20 +96,68 @@ pub enum ApiError {
 
 impl IntoResponse for ApiError {
     fn into_response(self) -> Response {
-        let status = match &self {
-            ApiError::BadRequest(_) => StatusCode::BAD_REQUEST,
-            ApiError::Unauthorized => StatusCode::UNAUTHORIZED,
-            ApiError::NotFound(_) => StatusCode::NOT_FOUND,
+        let (status, code) = match &self {
+            ApiError::BadRequest(_) => (StatusCode::BAD_REQUEST, code::BAD_REQUEST),
+            ApiError::Rejected(status, _) => (*status, code::BAD_REQUEST),
+            ApiError::MethodNotAllowed => (StatusCode::METHOD_NOT_ALLOWED, code::METHOD_NOT_ALLOWED),
+            ApiError::Unauthorized => (StatusCode::UNAUTHORIZED, code::UNAUTHORIZED),
+            ApiError::NotFound(_) => (StatusCode::NOT_FOUND, code::NOT_FOUND),
             ApiError::Upstream(error) => {
                 tracing::error!(error = format!("{error:#}"), "provider request failed");
-                StatusCode::BAD_GATEWAY
+                (StatusCode::BAD_GATEWAY, code::UPSTREAM)
             }
             ApiError::Database(error) => {
                 tracing::error!(%error, "database error");
-                StatusCode::INTERNAL_SERVER_ERROR
+                (StatusCode::INTERNAL_SERVER_ERROR, code::INTERNAL)
             }
         };
-        (status, Json(json!({ "error": self.to_string() }))).into_response()
+        (status, Json(json!({ "error": self.to_string(), "code": code }))).into_response()
+    }
+}
+
+impl From<QueryRejection> for ApiError {
+    fn from(rejection: QueryRejection) -> Self {
+        ApiError::Rejected(rejection.status(), rejection.body_text())
+    }
+}
+
+impl From<JsonRejection> for ApiError {
+    fn from(rejection: JsonRejection) -> Self {
+        ApiError::Rejected(rejection.status(), rejection.body_text())
+    }
+}
+
+/// axum's `Query`, but a malformed query string is a JSON error like any other.
+struct Query<T>(T);
+
+impl<S: Send + Sync, T: DeserializeOwned> FromRequestParts<S> for Query<T> {
+    type Rejection = ApiError;
+
+    async fn from_request_parts(parts: &mut Parts, state: &S) -> Result<Self, ApiError> {
+        let axum::extract::Query(value) = axum::extract::Query::from_request_parts(parts, state).await?;
+        Ok(Query(value))
+    }
+}
+
+/// axum's `Json` for request bodies, but a bad body is a JSON error like any other.
+struct JsonBody<T>(T);
+
+impl<S: Send + Sync, T: DeserializeOwned> FromRequest<S> for JsonBody<T> {
+    type Rejection = ApiError;
+
+    async fn from_request(request: Request, state: &S) -> Result<Self, ApiError> {
+        let Json(value) = <Json<T> as FromRequest<S>>::from_request(request, state).await?;
+        Ok(JsonBody(value))
+    }
+}
+
+/// No body (or no JSON content type) is `None`; a malformed JSON body is still an error.
+impl<S: Send + Sync, T: DeserializeOwned> OptionalFromRequest<S> for JsonBody<T> {
+    type Rejection = ApiError;
+
+    async fn from_request(request: Request, state: &S) -> Result<Option<Self>, ApiError> {
+        let value = <Json<T> as OptionalFromRequest<S>>::from_request(request, state).await?;
+        Ok(value.map(|Json(value)| JsonBody(value)))
     }
 }
 
@@ -425,12 +508,12 @@ async fn add_visit(
     State(state): State<AppState>,
     User(user): User,
     Path(place_id): Path<String>,
-    body: Option<Json<CheckIn>>,
+    body: Option<JsonBody<CheckIn>>,
 ) -> ApiResult<VisitResult> {
     let (plat, plng) = store::place_location(&state.db, &place_id)
         .await?
         .ok_or(ApiError::NotFound("place"))?;
-    let check_in = body.map(|Json(b)| b).unwrap_or_default();
+    let check_in = body.map(|JsonBody(b)| b).unwrap_or_default();
     let verified = match (check_in.lat, check_in.lng) {
         (Some(lat), Some(lng)) => geo::distance_m(lat, lng, plat, plng) <= VERIFY_DISTANCE_M,
         _ => false,
@@ -512,7 +595,7 @@ struct SubscribeKeys {
 async fn subscribe(
     State(state): State<AppState>,
     User(user): User,
-    Json(body): Json<SubscribeBody>,
+    JsonBody(body): JsonBody<SubscribeBody>,
 ) -> Result<StatusCode, ApiError> {
     if state.push_key.is_none() {
         return Err(ApiError::NotFound("push"));
@@ -542,7 +625,7 @@ struct UnsubscribeBody {
 async fn unsubscribe(
     State(state): State<AppState>,
     User(user): User,
-    Json(body): Json<UnsubscribeBody>,
+    JsonBody(body): JsonBody<UnsubscribeBody>,
 ) -> Result<StatusCode, ApiError> {
     store::remove_user_push_subscription(&state.db, &user, &body.endpoint).await?;
     Ok(StatusCode::NO_CONTENT)
