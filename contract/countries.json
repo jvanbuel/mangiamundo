@@ -1,0 +1,2235 @@
+{
+  "continents": [
+    {
+      "code": "AF",
+      "name": "Africa"
+    },
+    {
+      "code": "AS",
+      "name": "Asia"
+    },
+    {
+      "code": "EU",
+      "name": "Europe"
+    },
+    {
+      "code": "NA",
+      "name": "North America"
+    },
+    {
+      "code": "OC",
+      "name": "Oceania"
+    },
+    {
+      "code": "SA",
+      "name": "South America"
+    }
+  ],
+  "countries": [
+    {
+      "code": "AD",
+      "continent": "EU",
+      "flag": "🇦🇩",
+      "lat": 42.5,
+      "lng": 1.5,
+      "name": "Andorra",
+      "numeric": "020"
+    },
+    {
+      "code": "AE",
+      "continent": "AS",
+      "flag": "🇦🇪",
+      "lat": 24.0,
+      "lng": 54.0,
+      "name": "United Arab Emirates",
+      "numeric": "784"
+    },
+    {
+      "code": "AF",
+      "continent": "AS",
+      "flag": "🇦🇫",
+      "lat": 33.0,
+      "lng": 65.0,
+      "name": "Afghanistan",
+      "numeric": "004"
+    },
+    {
+      "code": "AG",
+      "continent": "NA",
+      "flag": "🇦🇬",
+      "lat": 17.05,
+      "lng": -61.8,
+      "name": "Antigua and Barbuda",
+      "numeric": "028"
+    },
+    {
+      "code": "AI",
+      "continent": "NA",
+      "flag": "🇦🇮",
+      "lat": 18.25,
+      "lng": -63.16666666,
+      "name": "Anguilla",
+      "numeric": "660"
+    },
+    {
+      "code": "AL",
+      "continent": "EU",
+      "flag": "🇦🇱",
+      "lat": 41.0,
+      "lng": 20.0,
+      "name": "Albania",
+      "numeric": "008"
+    },
+    {
+      "code": "AM",
+      "continent": "AS",
+      "flag": "🇦🇲",
+      "lat": 40.0,
+      "lng": 45.0,
+      "name": "Armenia",
+      "numeric": "051"
+    },
+    {
+      "code": "AO",
+      "continent": "AF",
+      "flag": "🇦🇴",
+      "lat": -12.5,
+      "lng": 18.5,
+      "name": "Angola",
+      "numeric": "024"
+    },
+    {
+      "code": "AR",
+      "continent": "SA",
+      "flag": "🇦🇷",
+      "lat": -34.0,
+      "lng": -64.0,
+      "name": "Argentina",
+      "numeric": "032"
+    },
+    {
+      "code": "AS",
+      "continent": "OC",
+      "flag": "🇦🇸",
+      "lat": -14.33333333,
+      "lng": -170.0,
+      "name": "American Samoa",
+      "numeric": "016"
+    },
+    {
+      "code": "AT",
+      "continent": "EU",
+      "flag": "🇦🇹",
+      "lat": 47.33333333,
+      "lng": 13.33333333,
+      "name": "Austria",
+      "numeric": "040"
+    },
+    {
+      "code": "AU",
+      "continent": "OC",
+      "flag": "🇦🇺",
+      "lat": -27.0,
+      "lng": 133.0,
+      "name": "Australia",
+      "numeric": "036"
+    },
+    {
+      "code": "AW",
+      "continent": "NA",
+      "flag": "🇦🇼",
+      "lat": 12.5,
+      "lng": -69.96666666,
+      "name": "Aruba",
+      "numeric": "533"
+    },
+    {
+      "code": "AX",
+      "continent": "EU",
+      "flag": "🇦🇽",
+      "lat": 60.116667,
+      "lng": 19.9,
+      "name": "Åland Islands",
+      "numeric": "248"
+    },
+    {
+      "code": "AZ",
+      "continent": "AS",
+      "flag": "🇦🇿",
+      "lat": 40.5,
+      "lng": 47.5,
+      "name": "Azerbaijan",
+      "numeric": "031"
+    },
+    {
+      "code": "BA",
+      "continent": "EU",
+      "flag": "🇧🇦",
+      "lat": 44.0,
+      "lng": 18.0,
+      "name": "Bosnia and Herzegovina",
+      "numeric": "070"
+    },
+    {
+      "code": "BB",
+      "continent": "NA",
+      "flag": "🇧🇧",
+      "lat": 13.16666666,
+      "lng": -59.53333333,
+      "name": "Barbados",
+      "numeric": "052"
+    },
+    {
+      "code": "BD",
+      "continent": "AS",
+      "flag": "🇧🇩",
+      "lat": 24.0,
+      "lng": 90.0,
+      "name": "Bangladesh",
+      "numeric": "050"
+    },
+    {
+      "code": "BE",
+      "continent": "EU",
+      "flag": "🇧🇪",
+      "lat": 50.83333333,
+      "lng": 4.0,
+      "name": "Belgium",
+      "numeric": "056"
+    },
+    {
+      "code": "BF",
+      "continent": "AF",
+      "flag": "🇧🇫",
+      "lat": 13.0,
+      "lng": -2.0,
+      "name": "Burkina Faso",
+      "numeric": "854"
+    },
+    {
+      "code": "BG",
+      "continent": "EU",
+      "flag": "🇧🇬",
+      "lat": 43.0,
+      "lng": 25.0,
+      "name": "Bulgaria",
+      "numeric": "100"
+    },
+    {
+      "code": "BH",
+      "continent": "AS",
+      "flag": "🇧🇭",
+      "lat": 26.0,
+      "lng": 50.55,
+      "name": "Bahrain",
+      "numeric": "048"
+    },
+    {
+      "code": "BI",
+      "continent": "AF",
+      "flag": "🇧🇮",
+      "lat": -3.5,
+      "lng": 30.0,
+      "name": "Burundi",
+      "numeric": "108"
+    },
+    {
+      "code": "BJ",
+      "continent": "AF",
+      "flag": "🇧🇯",
+      "lat": 9.5,
+      "lng": 2.25,
+      "name": "Benin",
+      "numeric": "204"
+    },
+    {
+      "code": "BL",
+      "continent": "NA",
+      "flag": "🇧🇱",
+      "lat": 18.5,
+      "lng": -63.41666666,
+      "name": "Saint Barthélemy",
+      "numeric": "652"
+    },
+    {
+      "code": "BM",
+      "continent": "NA",
+      "flag": "🇧🇲",
+      "lat": 32.33333333,
+      "lng": -64.75,
+      "name": "Bermuda",
+      "numeric": "060"
+    },
+    {
+      "code": "BN",
+      "continent": "AS",
+      "flag": "🇧🇳",
+      "lat": 4.5,
+      "lng": 114.66666666,
+      "name": "Brunei",
+      "numeric": "096"
+    },
+    {
+      "code": "BO",
+      "continent": "SA",
+      "flag": "🇧🇴",
+      "lat": -17.0,
+      "lng": -65.0,
+      "name": "Bolivia",
+      "numeric": "068"
+    },
+    {
+      "code": "BQ",
+      "continent": "NA",
+      "flag": "",
+      "lat": 12.18,
+      "lng": -68.25,
+      "name": "Caribbean Netherlands",
+      "numeric": "535"
+    },
+    {
+      "code": "BR",
+      "continent": "SA",
+      "flag": "🇧🇷",
+      "lat": -10.0,
+      "lng": -55.0,
+      "name": "Brazil",
+      "numeric": "076"
+    },
+    {
+      "code": "BS",
+      "continent": "NA",
+      "flag": "🇧🇸",
+      "lat": 24.25,
+      "lng": -76.0,
+      "name": "Bahamas",
+      "numeric": "044"
+    },
+    {
+      "code": "BT",
+      "continent": "AS",
+      "flag": "🇧🇹",
+      "lat": 27.5,
+      "lng": 90.5,
+      "name": "Bhutan",
+      "numeric": "064"
+    },
+    {
+      "code": "BW",
+      "continent": "AF",
+      "flag": "🇧🇼",
+      "lat": -22.0,
+      "lng": 24.0,
+      "name": "Botswana",
+      "numeric": "072"
+    },
+    {
+      "code": "BY",
+      "continent": "EU",
+      "flag": "🇧🇾",
+      "lat": 53.0,
+      "lng": 28.0,
+      "name": "Belarus",
+      "numeric": "112"
+    },
+    {
+      "code": "BZ",
+      "continent": "NA",
+      "flag": "🇧🇿",
+      "lat": 17.25,
+      "lng": -88.75,
+      "name": "Belize",
+      "numeric": "084"
+    },
+    {
+      "code": "CA",
+      "continent": "NA",
+      "flag": "🇨🇦",
+      "lat": 60.0,
+      "lng": -95.0,
+      "name": "Canada",
+      "numeric": "124"
+    },
+    {
+      "code": "CC",
+      "continent": "OC",
+      "flag": "🇨🇨",
+      "lat": -12.5,
+      "lng": 96.83333333,
+      "name": "Cocos (Keeling) Islands",
+      "numeric": "166"
+    },
+    {
+      "code": "CD",
+      "continent": "AF",
+      "flag": "🇨🇩",
+      "lat": 0.0,
+      "lng": 25.0,
+      "name": "DR Congo",
+      "numeric": "180"
+    },
+    {
+      "code": "CF",
+      "continent": "AF",
+      "flag": "🇨🇫",
+      "lat": 7.0,
+      "lng": 21.0,
+      "name": "Central African Republic",
+      "numeric": "140"
+    },
+    {
+      "code": "CG",
+      "continent": "AF",
+      "flag": "🇨🇬",
+      "lat": -1.0,
+      "lng": 15.0,
+      "name": "Republic of the Congo",
+      "numeric": "178"
+    },
+    {
+      "code": "CH",
+      "continent": "EU",
+      "flag": "🇨🇭",
+      "lat": 47.0,
+      "lng": 8.0,
+      "name": "Switzerland",
+      "numeric": "756"
+    },
+    {
+      "code": "CI",
+      "continent": "AF",
+      "flag": "🇨🇮",
+      "lat": 8.0,
+      "lng": -5.0,
+      "name": "Ivory Coast",
+      "numeric": "384"
+    },
+    {
+      "code": "CK",
+      "continent": "OC",
+      "flag": "🇨🇰",
+      "lat": -21.23333333,
+      "lng": -159.76666666,
+      "name": "Cook Islands",
+      "numeric": "184"
+    },
+    {
+      "code": "CL",
+      "continent": "SA",
+      "flag": "🇨🇱",
+      "lat": -30.0,
+      "lng": -71.0,
+      "name": "Chile",
+      "numeric": "152"
+    },
+    {
+      "code": "CM",
+      "continent": "AF",
+      "flag": "🇨🇲",
+      "lat": 6.0,
+      "lng": 12.0,
+      "name": "Cameroon",
+      "numeric": "120"
+    },
+    {
+      "code": "CN",
+      "continent": "AS",
+      "flag": "🇨🇳",
+      "lat": 35.0,
+      "lng": 105.0,
+      "name": "China",
+      "numeric": "156"
+    },
+    {
+      "code": "CO",
+      "continent": "SA",
+      "flag": "🇨🇴",
+      "lat": 4.0,
+      "lng": -72.0,
+      "name": "Colombia",
+      "numeric": "170"
+    },
+    {
+      "code": "CR",
+      "continent": "NA",
+      "flag": "🇨🇷",
+      "lat": 10.0,
+      "lng": -84.0,
+      "name": "Costa Rica",
+      "numeric": "188"
+    },
+    {
+      "code": "CU",
+      "continent": "NA",
+      "flag": "🇨🇺",
+      "lat": 21.5,
+      "lng": -80.0,
+      "name": "Cuba",
+      "numeric": "192"
+    },
+    {
+      "code": "CV",
+      "continent": "AF",
+      "flag": "🇨🇻",
+      "lat": 16.0,
+      "lng": -24.0,
+      "name": "Cape Verde",
+      "numeric": "132"
+    },
+    {
+      "code": "CW",
+      "continent": "NA",
+      "flag": "🇨🇼",
+      "lat": 12.116667,
+      "lng": -68.933333,
+      "name": "Curaçao",
+      "numeric": "531"
+    },
+    {
+      "code": "CX",
+      "continent": "OC",
+      "flag": "🇨🇽",
+      "lat": -10.5,
+      "lng": 105.66666666,
+      "name": "Christmas Island",
+      "numeric": "162"
+    },
+    {
+      "code": "CY",
+      "continent": "EU",
+      "flag": "🇨🇾",
+      "lat": 35.0,
+      "lng": 33.0,
+      "name": "Cyprus",
+      "numeric": "196"
+    },
+    {
+      "code": "CZ",
+      "continent": "EU",
+      "flag": "🇨🇿",
+      "lat": 49.75,
+      "lng": 15.5,
+      "name": "Czechia",
+      "numeric": "203"
+    },
+    {
+      "code": "DE",
+      "continent": "EU",
+      "flag": "🇩🇪",
+      "lat": 51.0,
+      "lng": 9.0,
+      "name": "Germany",
+      "numeric": "276"
+    },
+    {
+      "code": "DJ",
+      "continent": "AF",
+      "flag": "🇩🇯",
+      "lat": 11.5,
+      "lng": 43.0,
+      "name": "Djibouti",
+      "numeric": "262"
+    },
+    {
+      "code": "DK",
+      "continent": "EU",
+      "flag": "🇩🇰",
+      "lat": 56.0,
+      "lng": 10.0,
+      "name": "Denmark",
+      "numeric": "208"
+    },
+    {
+      "code": "DM",
+      "continent": "NA",
+      "flag": "🇩🇲",
+      "lat": 15.41666666,
+      "lng": -61.33333333,
+      "name": "Dominica",
+      "numeric": "212"
+    },
+    {
+      "code": "DO",
+      "continent": "NA",
+      "flag": "🇩🇴",
+      "lat": 19.0,
+      "lng": -70.66666666,
+      "name": "Dominican Republic",
+      "numeric": "214"
+    },
+    {
+      "code": "DZ",
+      "continent": "AF",
+      "flag": "🇩🇿",
+      "lat": 28.0,
+      "lng": 3.0,
+      "name": "Algeria",
+      "numeric": "012"
+    },
+    {
+      "code": "EC",
+      "continent": "SA",
+      "flag": "🇪🇨",
+      "lat": -2.0,
+      "lng": -77.5,
+      "name": "Ecuador",
+      "numeric": "218"
+    },
+    {
+      "code": "EE",
+      "continent": "EU",
+      "flag": "🇪🇪",
+      "lat": 59.0,
+      "lng": 26.0,
+      "name": "Estonia",
+      "numeric": "233"
+    },
+    {
+      "code": "EG",
+      "continent": "AF",
+      "flag": "🇪🇬",
+      "lat": 27.0,
+      "lng": 30.0,
+      "name": "Egypt",
+      "numeric": "818"
+    },
+    {
+      "code": "EH",
+      "continent": "AF",
+      "flag": "🇪🇭",
+      "lat": 24.5,
+      "lng": -13.0,
+      "name": "Western Sahara",
+      "numeric": "732"
+    },
+    {
+      "code": "ER",
+      "continent": "AF",
+      "flag": "🇪🇷",
+      "lat": 15.0,
+      "lng": 39.0,
+      "name": "Eritrea",
+      "numeric": "232"
+    },
+    {
+      "code": "ES",
+      "continent": "EU",
+      "flag": "🇪🇸",
+      "lat": 40.0,
+      "lng": -4.0,
+      "name": "Spain",
+      "numeric": "724"
+    },
+    {
+      "code": "ET",
+      "continent": "AF",
+      "flag": "🇪🇹",
+      "lat": 8.0,
+      "lng": 38.0,
+      "name": "Ethiopia",
+      "numeric": "231"
+    },
+    {
+      "code": "FI",
+      "continent": "EU",
+      "flag": "🇫🇮",
+      "lat": 64.0,
+      "lng": 26.0,
+      "name": "Finland",
+      "numeric": "246"
+    },
+    {
+      "code": "FJ",
+      "continent": "OC",
+      "flag": "🇫🇯",
+      "lat": -18.0,
+      "lng": 175.0,
+      "name": "Fiji",
+      "numeric": "242"
+    },
+    {
+      "code": "FK",
+      "continent": "SA",
+      "flag": "🇫🇰",
+      "lat": -51.75,
+      "lng": -59.0,
+      "name": "Falkland Islands",
+      "numeric": "238"
+    },
+    {
+      "code": "FM",
+      "continent": "OC",
+      "flag": "🇫🇲",
+      "lat": 6.91666666,
+      "lng": 158.25,
+      "name": "Micronesia",
+      "numeric": "583"
+    },
+    {
+      "code": "FO",
+      "continent": "EU",
+      "flag": "🇫🇴",
+      "lat": 62.0,
+      "lng": -7.0,
+      "name": "Faroe Islands",
+      "numeric": "234"
+    },
+    {
+      "code": "FR",
+      "continent": "EU",
+      "flag": "🇫🇷",
+      "lat": 46.0,
+      "lng": 2.0,
+      "name": "France",
+      "numeric": "250"
+    },
+    {
+      "code": "GA",
+      "continent": "AF",
+      "flag": "🇬🇦",
+      "lat": -1.0,
+      "lng": 11.75,
+      "name": "Gabon",
+      "numeric": "266"
+    },
+    {
+      "code": "GB",
+      "continent": "EU",
+      "flag": "🇬🇧",
+      "lat": 54.0,
+      "lng": -2.0,
+      "name": "United Kingdom",
+      "numeric": "826"
+    },
+    {
+      "code": "GD",
+      "continent": "NA",
+      "flag": "🇬🇩",
+      "lat": 12.11666666,
+      "lng": -61.66666666,
+      "name": "Grenada",
+      "numeric": "308"
+    },
+    {
+      "code": "GE",
+      "continent": "AS",
+      "flag": "🇬🇪",
+      "lat": 42.0,
+      "lng": 43.5,
+      "name": "Georgia",
+      "numeric": "268"
+    },
+    {
+      "code": "GF",
+      "continent": "SA",
+      "flag": "🇬🇫",
+      "lat": 4.0,
+      "lng": -53.0,
+      "name": "French Guiana",
+      "numeric": "254"
+    },
+    {
+      "code": "GG",
+      "continent": "EU",
+      "flag": "🇬🇬",
+      "lat": 49.46666666,
+      "lng": -2.58333333,
+      "name": "Guernsey",
+      "numeric": "831"
+    },
+    {
+      "code": "GH",
+      "continent": "AF",
+      "flag": "🇬🇭",
+      "lat": 8.0,
+      "lng": -2.0,
+      "name": "Ghana",
+      "numeric": "288"
+    },
+    {
+      "code": "GI",
+      "continent": "EU",
+      "flag": "🇬🇮",
+      "lat": 36.13333333,
+      "lng": -5.35,
+      "name": "Gibraltar",
+      "numeric": "292"
+    },
+    {
+      "code": "GL",
+      "continent": "NA",
+      "flag": "🇬🇱",
+      "lat": 72.0,
+      "lng": -40.0,
+      "name": "Greenland",
+      "numeric": "304"
+    },
+    {
+      "code": "GM",
+      "continent": "AF",
+      "flag": "🇬🇲",
+      "lat": 13.46666666,
+      "lng": -16.56666666,
+      "name": "Gambia",
+      "numeric": "270"
+    },
+    {
+      "code": "GN",
+      "continent": "AF",
+      "flag": "🇬🇳",
+      "lat": 11.0,
+      "lng": -10.0,
+      "name": "Guinea",
+      "numeric": "324"
+    },
+    {
+      "code": "GP",
+      "continent": "NA",
+      "flag": "🇬🇵",
+      "lat": 16.25,
+      "lng": -61.583333,
+      "name": "Guadeloupe",
+      "numeric": "312"
+    },
+    {
+      "code": "GQ",
+      "continent": "AF",
+      "flag": "🇬🇶",
+      "lat": 2.0,
+      "lng": 10.0,
+      "name": "Equatorial Guinea",
+      "numeric": "226"
+    },
+    {
+      "code": "GR",
+      "continent": "EU",
+      "flag": "🇬🇷",
+      "lat": 39.0,
+      "lng": 22.0,
+      "name": "Greece",
+      "numeric": "300"
+    },
+    {
+      "code": "GT",
+      "continent": "NA",
+      "flag": "🇬🇹",
+      "lat": 15.5,
+      "lng": -90.25,
+      "name": "Guatemala",
+      "numeric": "320"
+    },
+    {
+      "code": "GU",
+      "continent": "OC",
+      "flag": "🇬🇺",
+      "lat": 13.46666666,
+      "lng": 144.78333333,
+      "name": "Guam",
+      "numeric": "316"
+    },
+    {
+      "code": "GW",
+      "continent": "AF",
+      "flag": "🇬🇼",
+      "lat": 12.0,
+      "lng": -15.0,
+      "name": "Guinea-Bissau",
+      "numeric": "624"
+    },
+    {
+      "code": "GY",
+      "continent": "SA",
+      "flag": "🇬🇾",
+      "lat": 5.0,
+      "lng": -59.0,
+      "name": "Guyana",
+      "numeric": "328"
+    },
+    {
+      "code": "HK",
+      "continent": "AS",
+      "flag": "🇭🇰",
+      "lat": 22.267,
+      "lng": 114.188,
+      "name": "Hong Kong",
+      "numeric": "344"
+    },
+    {
+      "code": "HN",
+      "continent": "NA",
+      "flag": "🇭🇳",
+      "lat": 15.0,
+      "lng": -86.5,
+      "name": "Honduras",
+      "numeric": "340"
+    },
+    {
+      "code": "HR",
+      "continent": "EU",
+      "flag": "🇭🇷",
+      "lat": 45.16666666,
+      "lng": 15.5,
+      "name": "Croatia",
+      "numeric": "191"
+    },
+    {
+      "code": "HT",
+      "continent": "NA",
+      "flag": "🇭🇹",
+      "lat": 19.0,
+      "lng": -72.41666666,
+      "name": "Haiti",
+      "numeric": "332"
+    },
+    {
+      "code": "HU",
+      "continent": "EU",
+      "flag": "🇭🇺",
+      "lat": 47.0,
+      "lng": 20.0,
+      "name": "Hungary",
+      "numeric": "348"
+    },
+    {
+      "code": "ID",
+      "continent": "AS",
+      "flag": "🇮🇩",
+      "lat": -5.0,
+      "lng": 120.0,
+      "name": "Indonesia",
+      "numeric": "360"
+    },
+    {
+      "code": "IE",
+      "continent": "EU",
+      "flag": "🇮🇪",
+      "lat": 53.0,
+      "lng": -8.0,
+      "name": "Ireland",
+      "numeric": "372"
+    },
+    {
+      "code": "IL",
+      "continent": "AS",
+      "flag": "🇮🇱",
+      "lat": 31.47,
+      "lng": 35.13,
+      "name": "Israel",
+      "numeric": "376"
+    },
+    {
+      "code": "IM",
+      "continent": "EU",
+      "flag": "🇮🇲",
+      "lat": 54.25,
+      "lng": -4.5,
+      "name": "Isle of Man",
+      "numeric": "833"
+    },
+    {
+      "code": "IN",
+      "continent": "AS",
+      "flag": "🇮🇳",
+      "lat": 20.0,
+      "lng": 77.0,
+      "name": "India",
+      "numeric": "356"
+    },
+    {
+      "code": "IO",
+      "continent": "AF",
+      "flag": "🇮🇴",
+      "lat": -6.0,
+      "lng": 71.5,
+      "name": "British Indian Ocean Territory",
+      "numeric": "086"
+    },
+    {
+      "code": "IQ",
+      "continent": "AS",
+      "flag": "🇮🇶",
+      "lat": 33.0,
+      "lng": 44.0,
+      "name": "Iraq",
+      "numeric": "368"
+    },
+    {
+      "code": "IR",
+      "continent": "AS",
+      "flag": "🇮🇷",
+      "lat": 32.0,
+      "lng": 53.0,
+      "name": "Iran",
+      "numeric": "364"
+    },
+    {
+      "code": "IS",
+      "continent": "EU",
+      "flag": "🇮🇸",
+      "lat": 65.0,
+      "lng": -18.0,
+      "name": "Iceland",
+      "numeric": "352"
+    },
+    {
+      "code": "IT",
+      "continent": "EU",
+      "flag": "🇮🇹",
+      "lat": 42.83333333,
+      "lng": 12.83333333,
+      "name": "Italy",
+      "numeric": "380"
+    },
+    {
+      "code": "JE",
+      "continent": "EU",
+      "flag": "🇯🇪",
+      "lat": 49.25,
+      "lng": -2.16666666,
+      "name": "Jersey",
+      "numeric": "832"
+    },
+    {
+      "code": "JM",
+      "continent": "NA",
+      "flag": "🇯🇲",
+      "lat": 18.25,
+      "lng": -77.5,
+      "name": "Jamaica",
+      "numeric": "388"
+    },
+    {
+      "code": "JO",
+      "continent": "AS",
+      "flag": "🇯🇴",
+      "lat": 31.0,
+      "lng": 36.0,
+      "name": "Jordan",
+      "numeric": "400"
+    },
+    {
+      "code": "JP",
+      "continent": "AS",
+      "flag": "🇯🇵",
+      "lat": 36.0,
+      "lng": 138.0,
+      "name": "Japan",
+      "numeric": "392"
+    },
+    {
+      "code": "KE",
+      "continent": "AF",
+      "flag": "🇰🇪",
+      "lat": 1.0,
+      "lng": 38.0,
+      "name": "Kenya",
+      "numeric": "404"
+    },
+    {
+      "code": "KG",
+      "continent": "AS",
+      "flag": "🇰🇬",
+      "lat": 41.0,
+      "lng": 75.0,
+      "name": "Kyrgyzstan",
+      "numeric": "417"
+    },
+    {
+      "code": "KH",
+      "continent": "AS",
+      "flag": "🇰🇭",
+      "lat": 13.0,
+      "lng": 105.0,
+      "name": "Cambodia",
+      "numeric": "116"
+    },
+    {
+      "code": "KI",
+      "continent": "OC",
+      "flag": "🇰🇮",
+      "lat": 1.41666666,
+      "lng": 173.0,
+      "name": "Kiribati",
+      "numeric": "296"
+    },
+    {
+      "code": "KM",
+      "continent": "AF",
+      "flag": "🇰🇲",
+      "lat": -12.16666666,
+      "lng": 44.25,
+      "name": "Comoros",
+      "numeric": "174"
+    },
+    {
+      "code": "KN",
+      "continent": "NA",
+      "flag": "🇰🇳",
+      "lat": 17.33333333,
+      "lng": -62.75,
+      "name": "Saint Kitts and Nevis",
+      "numeric": "659"
+    },
+    {
+      "code": "KP",
+      "continent": "AS",
+      "flag": "🇰🇵",
+      "lat": 40.0,
+      "lng": 127.0,
+      "name": "North Korea",
+      "numeric": "408"
+    },
+    {
+      "code": "KR",
+      "continent": "AS",
+      "flag": "🇰🇷",
+      "lat": 37.0,
+      "lng": 127.5,
+      "name": "South Korea",
+      "numeric": "410"
+    },
+    {
+      "code": "KW",
+      "continent": "AS",
+      "flag": "🇰🇼",
+      "lat": 29.5,
+      "lng": 45.75,
+      "name": "Kuwait",
+      "numeric": "414"
+    },
+    {
+      "code": "KY",
+      "continent": "NA",
+      "flag": "🇰🇾",
+      "lat": 19.5,
+      "lng": -80.5,
+      "name": "Cayman Islands",
+      "numeric": "136"
+    },
+    {
+      "code": "KZ",
+      "continent": "AS",
+      "flag": "🇰🇿",
+      "lat": 48.0,
+      "lng": 68.0,
+      "name": "Kazakhstan",
+      "numeric": "398"
+    },
+    {
+      "code": "LA",
+      "continent": "AS",
+      "flag": "🇱🇦",
+      "lat": 18.0,
+      "lng": 105.0,
+      "name": "Laos",
+      "numeric": "418"
+    },
+    {
+      "code": "LB",
+      "continent": "AS",
+      "flag": "🇱🇧",
+      "lat": 33.83333333,
+      "lng": 35.83333333,
+      "name": "Lebanon",
+      "numeric": "422"
+    },
+    {
+      "code": "LC",
+      "continent": "NA",
+      "flag": "🇱🇨",
+      "lat": 13.88333333,
+      "lng": -60.96666666,
+      "name": "Saint Lucia",
+      "numeric": "662"
+    },
+    {
+      "code": "LI",
+      "continent": "EU",
+      "flag": "🇱🇮",
+      "lat": 47.26666666,
+      "lng": 9.53333333,
+      "name": "Liechtenstein",
+      "numeric": "438"
+    },
+    {
+      "code": "LK",
+      "continent": "AS",
+      "flag": "🇱🇰",
+      "lat": 7.0,
+      "lng": 81.0,
+      "name": "Sri Lanka",
+      "numeric": "144"
+    },
+    {
+      "code": "LR",
+      "continent": "AF",
+      "flag": "🇱🇷",
+      "lat": 6.5,
+      "lng": -9.5,
+      "name": "Liberia",
+      "numeric": "430"
+    },
+    {
+      "code": "LS",
+      "continent": "AF",
+      "flag": "🇱🇸",
+      "lat": -29.5,
+      "lng": 28.5,
+      "name": "Lesotho",
+      "numeric": "426"
+    },
+    {
+      "code": "LT",
+      "continent": "EU",
+      "flag": "🇱🇹",
+      "lat": 56.0,
+      "lng": 24.0,
+      "name": "Lithuania",
+      "numeric": "440"
+    },
+    {
+      "code": "LU",
+      "continent": "EU",
+      "flag": "🇱🇺",
+      "lat": 49.75,
+      "lng": 6.16666666,
+      "name": "Luxembourg",
+      "numeric": "442"
+    },
+    {
+      "code": "LV",
+      "continent": "EU",
+      "flag": "🇱🇻",
+      "lat": 57.0,
+      "lng": 25.0,
+      "name": "Latvia",
+      "numeric": "428"
+    },
+    {
+      "code": "LY",
+      "continent": "AF",
+      "flag": "🇱🇾",
+      "lat": 25.0,
+      "lng": 17.0,
+      "name": "Libya",
+      "numeric": "434"
+    },
+    {
+      "code": "MA",
+      "continent": "AF",
+      "flag": "🇲🇦",
+      "lat": 32.0,
+      "lng": -5.0,
+      "name": "Morocco",
+      "numeric": "504"
+    },
+    {
+      "code": "MC",
+      "continent": "EU",
+      "flag": "🇲🇨",
+      "lat": 43.73333333,
+      "lng": 7.4,
+      "name": "Monaco",
+      "numeric": "492"
+    },
+    {
+      "code": "MD",
+      "continent": "EU",
+      "flag": "🇲🇩",
+      "lat": 47.0,
+      "lng": 29.0,
+      "name": "Moldova",
+      "numeric": "498"
+    },
+    {
+      "code": "ME",
+      "continent": "EU",
+      "flag": "🇲🇪",
+      "lat": 42.5,
+      "lng": 19.3,
+      "name": "Montenegro",
+      "numeric": "499"
+    },
+    {
+      "code": "MF",
+      "continent": "NA",
+      "flag": "🇲🇫",
+      "lat": 18.08333333,
+      "lng": -63.95,
+      "name": "Saint Martin",
+      "numeric": "663"
+    },
+    {
+      "code": "MG",
+      "continent": "AF",
+      "flag": "🇲🇬",
+      "lat": -20.0,
+      "lng": 47.0,
+      "name": "Madagascar",
+      "numeric": "450"
+    },
+    {
+      "code": "MH",
+      "continent": "OC",
+      "flag": "🇲🇭",
+      "lat": 9.0,
+      "lng": 168.0,
+      "name": "Marshall Islands",
+      "numeric": "584"
+    },
+    {
+      "code": "MK",
+      "continent": "EU",
+      "flag": "🇲🇰",
+      "lat": 41.83333333,
+      "lng": 22.0,
+      "name": "North Macedonia",
+      "numeric": "807"
+    },
+    {
+      "code": "ML",
+      "continent": "AF",
+      "flag": "🇲🇱",
+      "lat": 17.0,
+      "lng": -4.0,
+      "name": "Mali",
+      "numeric": "466"
+    },
+    {
+      "code": "MM",
+      "continent": "AS",
+      "flag": "🇲🇲",
+      "lat": 22.0,
+      "lng": 98.0,
+      "name": "Myanmar",
+      "numeric": "104"
+    },
+    {
+      "code": "MN",
+      "continent": "AS",
+      "flag": "🇲🇳",
+      "lat": 46.0,
+      "lng": 105.0,
+      "name": "Mongolia",
+      "numeric": "496"
+    },
+    {
+      "code": "MO",
+      "continent": "AS",
+      "flag": "🇲🇴",
+      "lat": 22.16666666,
+      "lng": 113.55,
+      "name": "Macau",
+      "numeric": "446"
+    },
+    {
+      "code": "MP",
+      "continent": "OC",
+      "flag": "🇲🇵",
+      "lat": 15.2,
+      "lng": 145.75,
+      "name": "Northern Mariana Islands",
+      "numeric": "580"
+    },
+    {
+      "code": "MQ",
+      "continent": "NA",
+      "flag": "🇲🇶",
+      "lat": 14.666667,
+      "lng": -61.0,
+      "name": "Martinique",
+      "numeric": "474"
+    },
+    {
+      "code": "MR",
+      "continent": "AF",
+      "flag": "🇲🇷",
+      "lat": 20.0,
+      "lng": -12.0,
+      "name": "Mauritania",
+      "numeric": "478"
+    },
+    {
+      "code": "MS",
+      "continent": "NA",
+      "flag": "🇲🇸",
+      "lat": 16.75,
+      "lng": -62.2,
+      "name": "Montserrat",
+      "numeric": "500"
+    },
+    {
+      "code": "MT",
+      "continent": "EU",
+      "flag": "🇲🇹",
+      "lat": 35.83333333,
+      "lng": 14.58333333,
+      "name": "Malta",
+      "numeric": "470"
+    },
+    {
+      "code": "MU",
+      "continent": "AF",
+      "flag": "🇲🇺",
+      "lat": -20.28333333,
+      "lng": 57.55,
+      "name": "Mauritius",
+      "numeric": "480"
+    },
+    {
+      "code": "MV",
+      "continent": "AS",
+      "flag": "🇲🇻",
+      "lat": 3.25,
+      "lng": 73.0,
+      "name": "Maldives",
+      "numeric": "462"
+    },
+    {
+      "code": "MW",
+      "continent": "AF",
+      "flag": "🇲🇼",
+      "lat": -13.5,
+      "lng": 34.0,
+      "name": "Malawi",
+      "numeric": "454"
+    },
+    {
+      "code": "MX",
+      "continent": "NA",
+      "flag": "🇲🇽",
+      "lat": 23.0,
+      "lng": -102.0,
+      "name": "Mexico",
+      "numeric": "484"
+    },
+    {
+      "code": "MY",
+      "continent": "AS",
+      "flag": "🇲🇾",
+      "lat": 2.5,
+      "lng": 112.5,
+      "name": "Malaysia",
+      "numeric": "458"
+    },
+    {
+      "code": "MZ",
+      "continent": "AF",
+      "flag": "🇲🇿",
+      "lat": -18.25,
+      "lng": 35.0,
+      "name": "Mozambique",
+      "numeric": "508"
+    },
+    {
+      "code": "NA",
+      "continent": "AF",
+      "flag": "🇳🇦",
+      "lat": -22.0,
+      "lng": 17.0,
+      "name": "Namibia",
+      "numeric": "516"
+    },
+    {
+      "code": "NC",
+      "continent": "OC",
+      "flag": "🇳🇨",
+      "lat": -21.5,
+      "lng": 165.5,
+      "name": "New Caledonia",
+      "numeric": "540"
+    },
+    {
+      "code": "NE",
+      "continent": "AF",
+      "flag": "🇳🇪",
+      "lat": 16.0,
+      "lng": 8.0,
+      "name": "Niger",
+      "numeric": "562"
+    },
+    {
+      "code": "NF",
+      "continent": "OC",
+      "flag": "🇳🇫",
+      "lat": -29.03333333,
+      "lng": 167.95,
+      "name": "Norfolk Island",
+      "numeric": "574"
+    },
+    {
+      "code": "NG",
+      "continent": "AF",
+      "flag": "🇳🇬",
+      "lat": 10.0,
+      "lng": 8.0,
+      "name": "Nigeria",
+      "numeric": "566"
+    },
+    {
+      "code": "NI",
+      "continent": "NA",
+      "flag": "🇳🇮",
+      "lat": 13.0,
+      "lng": -85.0,
+      "name": "Nicaragua",
+      "numeric": "558"
+    },
+    {
+      "code": "NL",
+      "continent": "EU",
+      "flag": "🇳🇱",
+      "lat": 52.5,
+      "lng": 5.75,
+      "name": "Netherlands",
+      "numeric": "528"
+    },
+    {
+      "code": "NO",
+      "continent": "EU",
+      "flag": "🇳🇴",
+      "lat": 62.0,
+      "lng": 10.0,
+      "name": "Norway",
+      "numeric": "578"
+    },
+    {
+      "code": "NP",
+      "continent": "AS",
+      "flag": "🇳🇵",
+      "lat": 28.0,
+      "lng": 84.0,
+      "name": "Nepal",
+      "numeric": "524"
+    },
+    {
+      "code": "NR",
+      "continent": "OC",
+      "flag": "🇳🇷",
+      "lat": -0.53333333,
+      "lng": 166.91666666,
+      "name": "Nauru",
+      "numeric": "520"
+    },
+    {
+      "code": "NU",
+      "continent": "OC",
+      "flag": "🇳🇺",
+      "lat": -19.03333333,
+      "lng": -169.86666666,
+      "name": "Niue",
+      "numeric": "570"
+    },
+    {
+      "code": "NZ",
+      "continent": "OC",
+      "flag": "🇳🇿",
+      "lat": -41.0,
+      "lng": 174.0,
+      "name": "New Zealand",
+      "numeric": "554"
+    },
+    {
+      "code": "OM",
+      "continent": "AS",
+      "flag": "🇴🇲",
+      "lat": 21.0,
+      "lng": 57.0,
+      "name": "Oman",
+      "numeric": "512"
+    },
+    {
+      "code": "PA",
+      "continent": "NA",
+      "flag": "🇵🇦",
+      "lat": 9.0,
+      "lng": -80.0,
+      "name": "Panama",
+      "numeric": "591"
+    },
+    {
+      "code": "PE",
+      "continent": "SA",
+      "flag": "🇵🇪",
+      "lat": -10.0,
+      "lng": -76.0,
+      "name": "Peru",
+      "numeric": "604"
+    },
+    {
+      "code": "PF",
+      "continent": "OC",
+      "flag": "🇵🇫",
+      "lat": -15.0,
+      "lng": -140.0,
+      "name": "French Polynesia",
+      "numeric": "258"
+    },
+    {
+      "code": "PG",
+      "continent": "OC",
+      "flag": "🇵🇬",
+      "lat": -6.0,
+      "lng": 147.0,
+      "name": "Papua New Guinea",
+      "numeric": "598"
+    },
+    {
+      "code": "PH",
+      "continent": "AS",
+      "flag": "🇵🇭",
+      "lat": 13.0,
+      "lng": 122.0,
+      "name": "Philippines",
+      "numeric": "608"
+    },
+    {
+      "code": "PK",
+      "continent": "AS",
+      "flag": "🇵🇰",
+      "lat": 30.0,
+      "lng": 70.0,
+      "name": "Pakistan",
+      "numeric": "586"
+    },
+    {
+      "code": "PL",
+      "continent": "EU",
+      "flag": "🇵🇱",
+      "lat": 52.0,
+      "lng": 20.0,
+      "name": "Poland",
+      "numeric": "616"
+    },
+    {
+      "code": "PM",
+      "continent": "NA",
+      "flag": "🇵🇲",
+      "lat": 46.83333333,
+      "lng": -56.33333333,
+      "name": "Saint Pierre and Miquelon",
+      "numeric": "666"
+    },
+    {
+      "code": "PN",
+      "continent": "OC",
+      "flag": "🇵🇳",
+      "lat": -25.06666666,
+      "lng": -130.1,
+      "name": "Pitcairn Islands",
+      "numeric": "612"
+    },
+    {
+      "code": "PR",
+      "continent": "NA",
+      "flag": "🇵🇷",
+      "lat": 18.25,
+      "lng": -66.5,
+      "name": "Puerto Rico",
+      "numeric": "630"
+    },
+    {
+      "code": "PS",
+      "continent": "AS",
+      "flag": "🇵🇸",
+      "lat": 31.9,
+      "lng": 35.2,
+      "name": "Palestine",
+      "numeric": "275"
+    },
+    {
+      "code": "PT",
+      "continent": "EU",
+      "flag": "🇵🇹",
+      "lat": 39.5,
+      "lng": -8.0,
+      "name": "Portugal",
+      "numeric": "620"
+    },
+    {
+      "code": "PW",
+      "continent": "OC",
+      "flag": "🇵🇼",
+      "lat": 7.5,
+      "lng": 134.5,
+      "name": "Palau",
+      "numeric": "585"
+    },
+    {
+      "code": "PY",
+      "continent": "SA",
+      "flag": "🇵🇾",
+      "lat": -23.0,
+      "lng": -58.0,
+      "name": "Paraguay",
+      "numeric": "600"
+    },
+    {
+      "code": "QA",
+      "continent": "AS",
+      "flag": "🇶🇦",
+      "lat": 25.5,
+      "lng": 51.25,
+      "name": "Qatar",
+      "numeric": "634"
+    },
+    {
+      "code": "RE",
+      "continent": "AF",
+      "flag": "🇷🇪",
+      "lat": -21.15,
+      "lng": 55.5,
+      "name": "Réunion",
+      "numeric": "638"
+    },
+    {
+      "code": "RO",
+      "continent": "EU",
+      "flag": "🇷🇴",
+      "lat": 46.0,
+      "lng": 25.0,
+      "name": "Romania",
+      "numeric": "642"
+    },
+    {
+      "code": "RS",
+      "continent": "EU",
+      "flag": "🇷🇸",
+      "lat": 44.0,
+      "lng": 21.0,
+      "name": "Serbia",
+      "numeric": "688"
+    },
+    {
+      "code": "RU",
+      "continent": "EU",
+      "flag": "🇷🇺",
+      "lat": 60.0,
+      "lng": 100.0,
+      "name": "Russia",
+      "numeric": "643"
+    },
+    {
+      "code": "RW",
+      "continent": "AF",
+      "flag": "🇷🇼",
+      "lat": -2.0,
+      "lng": 30.0,
+      "name": "Rwanda",
+      "numeric": "646"
+    },
+    {
+      "code": "SA",
+      "continent": "AS",
+      "flag": "🇸🇦",
+      "lat": 25.0,
+      "lng": 45.0,
+      "name": "Saudi Arabia",
+      "numeric": "682"
+    },
+    {
+      "code": "SB",
+      "continent": "OC",
+      "flag": "🇸🇧",
+      "lat": -8.0,
+      "lng": 159.0,
+      "name": "Solomon Islands",
+      "numeric": "090"
+    },
+    {
+      "code": "SC",
+      "continent": "AF",
+      "flag": "🇸🇨",
+      "lat": -4.58333333,
+      "lng": 55.66666666,
+      "name": "Seychelles",
+      "numeric": "690"
+    },
+    {
+      "code": "SD",
+      "continent": "AF",
+      "flag": "🇸🇩",
+      "lat": 15.0,
+      "lng": 30.0,
+      "name": "Sudan",
+      "numeric": "729"
+    },
+    {
+      "code": "SE",
+      "continent": "EU",
+      "flag": "🇸🇪",
+      "lat": 62.0,
+      "lng": 15.0,
+      "name": "Sweden",
+      "numeric": "752"
+    },
+    {
+      "code": "SG",
+      "continent": "AS",
+      "flag": "🇸🇬",
+      "lat": 1.36666666,
+      "lng": 103.8,
+      "name": "Singapore",
+      "numeric": "702"
+    },
+    {
+      "code": "SH",
+      "continent": "AF",
+      "flag": "🇸🇭",
+      "lat": -15.95,
+      "lng": -5.72,
+      "name": "Saint Helena, Ascension and Tristan da Cunha",
+      "numeric": "654"
+    },
+    {
+      "code": "SI",
+      "continent": "EU",
+      "flag": "🇸🇮",
+      "lat": 46.11666666,
+      "lng": 14.81666666,
+      "name": "Slovenia",
+      "numeric": "705"
+    },
+    {
+      "code": "SJ",
+      "continent": "EU",
+      "flag": "🇸🇯",
+      "lat": 78.0,
+      "lng": 20.0,
+      "name": "Svalbard and Jan Mayen",
+      "numeric": "744"
+    },
+    {
+      "code": "SK",
+      "continent": "EU",
+      "flag": "🇸🇰",
+      "lat": 48.66666666,
+      "lng": 19.5,
+      "name": "Slovakia",
+      "numeric": "703"
+    },
+    {
+      "code": "SL",
+      "continent": "AF",
+      "flag": "🇸🇱",
+      "lat": 8.5,
+      "lng": -11.5,
+      "name": "Sierra Leone",
+      "numeric": "694"
+    },
+    {
+      "code": "SM",
+      "continent": "EU",
+      "flag": "🇸🇲",
+      "lat": 43.76666666,
+      "lng": 12.41666666,
+      "name": "San Marino",
+      "numeric": "674"
+    },
+    {
+      "code": "SN",
+      "continent": "AF",
+      "flag": "🇸🇳",
+      "lat": 14.0,
+      "lng": -14.0,
+      "name": "Senegal",
+      "numeric": "686"
+    },
+    {
+      "code": "SO",
+      "continent": "AF",
+      "flag": "🇸🇴",
+      "lat": 10.0,
+      "lng": 49.0,
+      "name": "Somalia",
+      "numeric": "706"
+    },
+    {
+      "code": "SR",
+      "continent": "SA",
+      "flag": "🇸🇷",
+      "lat": 4.0,
+      "lng": -56.0,
+      "name": "Suriname",
+      "numeric": "740"
+    },
+    {
+      "code": "SS",
+      "continent": "AF",
+      "flag": "🇸🇸",
+      "lat": 7.0,
+      "lng": 30.0,
+      "name": "South Sudan",
+      "numeric": "728"
+    },
+    {
+      "code": "ST",
+      "continent": "AF",
+      "flag": "🇸🇹",
+      "lat": 1.0,
+      "lng": 7.0,
+      "name": "São Tomé and Príncipe",
+      "numeric": "678"
+    },
+    {
+      "code": "SV",
+      "continent": "NA",
+      "flag": "🇸🇻",
+      "lat": 13.83333333,
+      "lng": -88.91666666,
+      "name": "El Salvador",
+      "numeric": "222"
+    },
+    {
+      "code": "SX",
+      "continent": "NA",
+      "flag": "🇸🇽",
+      "lat": 18.033333,
+      "lng": -63.05,
+      "name": "Sint Maarten",
+      "numeric": "534"
+    },
+    {
+      "code": "SY",
+      "continent": "AS",
+      "flag": "🇸🇾",
+      "lat": 35.0,
+      "lng": 38.0,
+      "name": "Syria",
+      "numeric": "760"
+    },
+    {
+      "code": "SZ",
+      "continent": "AF",
+      "flag": "🇸🇿",
+      "lat": -26.5,
+      "lng": 31.5,
+      "name": "Eswatini",
+      "numeric": "748"
+    },
+    {
+      "code": "TC",
+      "continent": "NA",
+      "flag": "🇹🇨",
+      "lat": 21.75,
+      "lng": -71.58333333,
+      "name": "Turks and Caicos Islands",
+      "numeric": "796"
+    },
+    {
+      "code": "TD",
+      "continent": "AF",
+      "flag": "🇹🇩",
+      "lat": 15.0,
+      "lng": 19.0,
+      "name": "Chad",
+      "numeric": "148"
+    },
+    {
+      "code": "TG",
+      "continent": "AF",
+      "flag": "🇹🇬",
+      "lat": 8.0,
+      "lng": 1.16666666,
+      "name": "Togo",
+      "numeric": "768"
+    },
+    {
+      "code": "TH",
+      "continent": "AS",
+      "flag": "🇹🇭",
+      "lat": 15.0,
+      "lng": 100.0,
+      "name": "Thailand",
+      "numeric": "764"
+    },
+    {
+      "code": "TJ",
+      "continent": "AS",
+      "flag": "🇹🇯",
+      "lat": 39.0,
+      "lng": 71.0,
+      "name": "Tajikistan",
+      "numeric": "762"
+    },
+    {
+      "code": "TK",
+      "continent": "OC",
+      "flag": "🇹🇰",
+      "lat": -9.0,
+      "lng": -172.0,
+      "name": "Tokelau",
+      "numeric": "772"
+    },
+    {
+      "code": "TL",
+      "continent": "AS",
+      "flag": "🇹🇱",
+      "lat": -8.83333333,
+      "lng": 125.91666666,
+      "name": "Timor-Leste",
+      "numeric": "626"
+    },
+    {
+      "code": "TM",
+      "continent": "AS",
+      "flag": "🇹🇲",
+      "lat": 40.0,
+      "lng": 60.0,
+      "name": "Turkmenistan",
+      "numeric": "795"
+    },
+    {
+      "code": "TN",
+      "continent": "AF",
+      "flag": "🇹🇳",
+      "lat": 34.0,
+      "lng": 9.0,
+      "name": "Tunisia",
+      "numeric": "788"
+    },
+    {
+      "code": "TO",
+      "continent": "OC",
+      "flag": "🇹🇴",
+      "lat": -20.0,
+      "lng": -175.0,
+      "name": "Tonga",
+      "numeric": "776"
+    },
+    {
+      "code": "TR",
+      "continent": "AS",
+      "flag": "🇹🇷",
+      "lat": 39.0,
+      "lng": 35.0,
+      "name": "Türkiye",
+      "numeric": "792"
+    },
+    {
+      "code": "TT",
+      "continent": "NA",
+      "flag": "🇹🇹",
+      "lat": 11.0,
+      "lng": -61.0,
+      "name": "Trinidad and Tobago",
+      "numeric": "780"
+    },
+    {
+      "code": "TV",
+      "continent": "OC",
+      "flag": "🇹🇻",
+      "lat": -8.0,
+      "lng": 178.0,
+      "name": "Tuvalu",
+      "numeric": "798"
+    },
+    {
+      "code": "TW",
+      "continent": "AS",
+      "flag": "🇹🇼",
+      "lat": 23.5,
+      "lng": 121.0,
+      "name": "Taiwan",
+      "numeric": "158"
+    },
+    {
+      "code": "TZ",
+      "continent": "AF",
+      "flag": "🇹🇿",
+      "lat": -6.0,
+      "lng": 35.0,
+      "name": "Tanzania",
+      "numeric": "834"
+    },
+    {
+      "code": "UA",
+      "continent": "EU",
+      "flag": "🇺🇦",
+      "lat": 49.0,
+      "lng": 32.0,
+      "name": "Ukraine",
+      "numeric": "804"
+    },
+    {
+      "code": "UG",
+      "continent": "AF",
+      "flag": "🇺🇬",
+      "lat": 1.0,
+      "lng": 32.0,
+      "name": "Uganda",
+      "numeric": "800"
+    },
+    {
+      "code": "UM",
+      "continent": "NA",
+      "flag": "🇺🇲",
+      "lat": 19.3,
+      "lng": 166.633333,
+      "name": "United States Minor Outlying Islands",
+      "numeric": "581"
+    },
+    {
+      "code": "US",
+      "continent": "NA",
+      "flag": "🇺🇸",
+      "lat": 38.0,
+      "lng": -97.0,
+      "name": "United States",
+      "numeric": "840"
+    },
+    {
+      "code": "UY",
+      "continent": "SA",
+      "flag": "🇺🇾",
+      "lat": -33.0,
+      "lng": -56.0,
+      "name": "Uruguay",
+      "numeric": "858"
+    },
+    {
+      "code": "UZ",
+      "continent": "AS",
+      "flag": "🇺🇿",
+      "lat": 41.0,
+      "lng": 64.0,
+      "name": "Uzbekistan",
+      "numeric": "860"
+    },
+    {
+      "code": "VA",
+      "continent": "EU",
+      "flag": "🇻🇦",
+      "lat": 41.9,
+      "lng": 12.45,
+      "name": "Vatican City",
+      "numeric": "336"
+    },
+    {
+      "code": "VC",
+      "continent": "NA",
+      "flag": "🇻🇨",
+      "lat": 13.25,
+      "lng": -61.2,
+      "name": "Saint Vincent and the Grenadines",
+      "numeric": "670"
+    },
+    {
+      "code": "VE",
+      "continent": "SA",
+      "flag": "🇻🇪",
+      "lat": 8.0,
+      "lng": -66.0,
+      "name": "Venezuela",
+      "numeric": "862"
+    },
+    {
+      "code": "VG",
+      "continent": "NA",
+      "flag": "🇻🇬",
+      "lat": 18.431383,
+      "lng": -64.62305,
+      "name": "British Virgin Islands",
+      "numeric": "092"
+    },
+    {
+      "code": "VI",
+      "continent": "NA",
+      "flag": "🇻🇮",
+      "lat": 18.35,
+      "lng": -64.933333,
+      "name": "United States Virgin Islands",
+      "numeric": "850"
+    },
+    {
+      "code": "VN",
+      "continent": "AS",
+      "flag": "🇻🇳",
+      "lat": 16.16666666,
+      "lng": 107.83333333,
+      "name": "Vietnam",
+      "numeric": "704"
+    },
+    {
+      "code": "VU",
+      "continent": "OC",
+      "flag": "🇻🇺",
+      "lat": -16.0,
+      "lng": 167.0,
+      "name": "Vanuatu",
+      "numeric": "548"
+    },
+    {
+      "code": "WF",
+      "continent": "OC",
+      "flag": "🇼🇫",
+      "lat": -13.3,
+      "lng": -176.2,
+      "name": "Wallis and Futuna",
+      "numeric": "876"
+    },
+    {
+      "code": "WS",
+      "continent": "OC",
+      "flag": "🇼🇸",
+      "lat": -13.58333333,
+      "lng": -172.33333333,
+      "name": "Samoa",
+      "numeric": "882"
+    },
+    {
+      "code": "XK",
+      "continent": "EU",
+      "flag": "🇽🇰",
+      "lat": 42.666667,
+      "lng": 21.166667,
+      "name": "Kosovo",
+      "numeric": null
+    },
+    {
+      "code": "YE",
+      "continent": "AS",
+      "flag": "🇾🇪",
+      "lat": 15.0,
+      "lng": 48.0,
+      "name": "Yemen",
+      "numeric": "887"
+    },
+    {
+      "code": "YT",
+      "continent": "AF",
+      "flag": "🇾🇹",
+      "lat": -12.83333333,
+      "lng": 45.16666666,
+      "name": "Mayotte",
+      "numeric": "175"
+    },
+    {
+      "code": "ZA",
+      "continent": "AF",
+      "flag": "🇿🇦",
+      "lat": -29.0,
+      "lng": 24.0,
+      "name": "South Africa",
+      "numeric": "710"
+    },
+    {
+      "code": "ZM",
+      "continent": "AF",
+      "flag": "🇿🇲",
+      "lat": -15.0,
+      "lng": 30.0,
+      "name": "Zambia",
+      "numeric": "894"
+    },
+    {
+      "code": "ZW",
+      "continent": "AF",
+      "flag": "🇿🇼",
+      "lat": -20.0,
+      "lng": 30.0,
+      "name": "Zimbabwe",
+      "numeric": "716"
+    }
+  ]
+}

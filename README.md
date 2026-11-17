@@ -100,7 +100,9 @@ sends it as `Authorization: Bearer <token>`.
 
 ## API
 
-JSON field names are snake_case. Timestamps are Unix seconds, dates are
+JSON field names are snake_case on the wire (the TypeScript types spell them
+raw, Kotlin maps them with `@SerialName`, Swift with `convertFromSnakeCase`).
+Optional fields are always sent, as `null` when empty. Timestamps are Unix seconds, dates are
 `YYYY-MM-DD`. Every error, including unknown `/api` paths, is
 `{ "error": "message", "code": "..." }` with a 4xx or 5xx status. The message is
 for people and may change; clients that react to a specific case check `code`:

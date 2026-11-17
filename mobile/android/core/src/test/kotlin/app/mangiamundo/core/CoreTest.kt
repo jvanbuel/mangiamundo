@@ -61,46 +61,45 @@ class CoreTest {
         assertEquals(Camera.MAX_ZOOM, camera.zoom)
     }
 
+    /** Real responses, written by the backend's `writes_contract_fixtures` test. */
+    private val json = ApiClient("http://localhost", object : TokenStore { override var token: String? = null }).json
+    private fun fixture(name: String) = File("../../../contract/$name.json").readText()
+
     @Test
-    fun decodesApiResponses() {
-        val json = kotlinx.serialization.json.Json { ignoreUnknownKeys = true }
-        val place = json.decodeFromString<Place>(
-            """{"id":"osm-node-1","name":"Lalibela","lat":50.8,"lng":4.7,"address":null,"url":null,
-               "cuisine":"ethiopian","countries":["ET"],"distance_m":420,"visited_at":null,"verified":false}""",
-        )
-        assertFalse(place.visited)
-        assertEquals(420, place.distanceM)
+    fun decodesContractFixtures() {
+        assertTrue(json.decodeFromString<Catalog>(fixture("countries")).countries.size > 200)
+        val discover = json.decodeFromString<Discover>(fixture("discover"))
+        assertEquals(2, discover.placesVisited)
+        assertTrue(discover.events.isNotEmpty())
+        val places = json.decodeFromString<List<Place>>(fixture("places"))
+        assertEquals(2, places.count { it.visited })
+        assertEquals(1, places.count { it.verified })
+        val celebrations = json.decodeFromString<List<Celebration>>(fixture("celebrations"))
+        assertTrue(celebrations.all { it.nearby.isNotEmpty() && it.reminder.title.isNotEmpty() })
+        assertTrue(json.decodeFromString<VisitResult>(fixture("visit")).verified)
+        assertTrue(json.decodeFromString<List<Area>>(fixture("areas")).isNotEmpty())
+        assertEquals(2, json.decodeFromString<Located>(fixture("located")).options.size)
+        assertEquals("area not found", json.decodeFromString<ErrorBody>(fixture("error")).error)
+    }
+
+    @Test
+    fun toleratesWhatANewerServerSends() {
+        val discover = json.decodeFromString<Discover>(fixture("discover-newer"))
+        assertEquals(BadgeKind.UNKNOWN, discover.badges[0].kind)
+        assertEquals(EventStatus.UNKNOWN, discover.events[0].status)
+    }
+
+    @Test
+    fun completionStatus() {
         assertEquals(Status.COMPLETED, CountryProgress("ET", "AF", 2, 2).status)
         assertEquals(Status.DISCOVERED, CountryProgress("ET", "AF", 2, 1).status)
     }
 
     @Test
-    fun decodesAreas() {
-        val json = ApiClient("http://localhost", object : TokenStore { override var token: String? = null }).json
-        val located = json.decodeFromString<Located>(
-            """{"city":{"id":"osm-relation-196311","name":"Leuven","kind":"city","detail":"Flemish Brabant, Belgium",
-               "lat":50.88,"lng":4.70},
-               "postal_code":{"id":"osm-relation-3366463","name":"3000 Leuven","kind":"postal_code","detail":null,
-               "lat":50.878,"lng":4.702}}""",
-        )
-        assertEquals(listOf("osm-relation-196311", "osm-relation-3366463"), located.options.map { it.id })
-        assertEquals(AreaKind.POSTAL_CODE, located.postalCode?.kind)
+    fun decodesMissingAndUnknownAreas() {
         assertEquals(Located(), json.decodeFromString<Located>("""{"city":null,"postal_code":null}"""))
         // A kind this app doesn't know yet doesn't break decoding.
         val newer = json.decodeFromString<Area>("""{"id":"x","name":"Mitte","kind":"district","lat":52.5,"lng":13.4}""")
         assertEquals(AreaKind.CITY, newer.kind)
-    }
-
-    @Test
-    fun toleratesUnknownBadgeKindsAndEventStatuses() {
-        val json = ApiClient("http://localhost", object : TokenStore { override var token: String? = null }).json
-        val badge = json.decodeFromString<Badge>(
-            """{"id":"x","kind":"something-new","title":"","description":"","progress":0,"target":1,"earned":false}""",
-        )
-        assertEquals(BadgeKind.UNKNOWN, badge.kind)
-        val event = json.decodeFromString<EventProgress>(
-            """{"id":"x","title":"","description":"","countries":[],"starts":"2026-11-01","ends":"2026-11-30","target":1,"progress":0,"earned":false,"status":"paused","places_nearby":0}""",
-        )
-        assertEquals(EventStatus.UNKNOWN, event.status)
     }
 }

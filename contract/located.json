@@ -1,0 +1,18 @@
+{
+  "city": {
+    "detail": "Belgium",
+    "id": "demo-leuven",
+    "kind": "city",
+    "lat": 50.8798,
+    "lng": 4.7005,
+    "name": "Leuven"
+  },
+  "postal_code": {
+    "detail": "Belgium",
+    "id": "demo-leuven-3010",
+    "kind": "postal_code",
+    "lat": 50.8798,
+    "lng": 4.724273698414233,
+    "name": "3010 Leuven"
+  }
+}
