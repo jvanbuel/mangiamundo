@@ -33,6 +33,8 @@ final class AppModel {
     private(set) var remindersOn = false
     /// 0 = countries, 1 = badges.
     var tab = 0
+    /// The server's version and commit; nil until it answers, "not reached" after a failure.
+    private(set) var server: String?
 
     private(set) var projection = ProjectionKind.globe
     var camera = Camera()
@@ -72,6 +74,7 @@ final class AppModel {
         reminders.onOpen = { [weak self] country, badges in self?.openFromNotification(country: country, badges: badges) }
         remindersOn = defaults.bool(forKey: "mangiamundo.reminders") ? await reminders.isAllowed() : false
         world = World.bundled()
+        loadServer()
         do {
             catalog = try await api.catalog()
         } catch {
@@ -186,7 +189,20 @@ final class AppModel {
         return try await api.suggestAreas(query, near: near)
     }
 
+    /// Asks for the server's version until it answers once.
+    private func loadServer() {
+        guard server == nil || server == "not reached" else { return }
+        Task {
+            if let health = try? await api.health() {
+                server = [health.version ?? "unknown", health.commit].compactMap { $0 }.joined(separator: " ")
+            } else {
+                server = "not reached"
+            }
+        }
+    }
+
     func refresh() {
+        loadServer()
         guard let here = location else { return }
         refreshTask?.cancel()
         refreshTask = Task {

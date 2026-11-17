@@ -80,6 +80,7 @@ import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import app.mangiamundo.AppViewModel
+import app.mangiamundo.BuildConfig
 import app.mangiamundo.SavedLocation
 import app.mangiamundo.core.Badge
 import app.mangiamundo.core.BadgeKind
@@ -250,6 +251,18 @@ fun Welcome(picker: @Composable () -> Unit) {
 @Composable
 fun Note(text: String) {
     Text(text, color = LocalAppColors.current.muted, modifier = Modifier.padding(vertical = 12.dp))
+}
+
+/** Which builds of the app and the server are running, to tell old builds apart. */
+@Composable
+fun BuildLine(server: String?) {
+    val app = "${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE}, ${BuildConfig.GIT_COMMIT})"
+    Text(
+        "App $app" + server?.let { " · Server $it" }.orEmpty(),
+        color = LocalAppColors.current.muted,
+        style = MaterialTheme.typography.labelSmall,
+        modifier = Modifier.padding(top = 16.dp),
+    )
 }
 
 @Composable

@@ -26,6 +26,8 @@ class ApiClient(private val baseUrl: String, private val tokens: TokenStore) {
     }
     private val tokenLock = Mutex()
 
+    suspend fun health(): Health = json.decodeFromString(request("GET", "/api/health"))
+
     suspend fun catalog(): Catalog = json.decodeFromString(request("GET", "/api/countries"))
 
     suspend fun discover(areaId: String): Discover =

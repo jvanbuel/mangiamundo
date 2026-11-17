@@ -27,10 +27,23 @@ targets:
         # Real devices use the deployed backend. The simulator shares the Mac's localhost.
         API_BASE_URL: https://mangiamundo.fly.dev
         "API_BASE_URL[sdk=iphonesimulator*]": http://localhost:8080
+    # Writes the commit into the built Info.plist, to tell old builds apart in the app.
+    postBuildScripts:
+      - name: Stamp git commit
+        basedOnDependencyAnalysis: false
+        inputFiles:
+          - $(TARGET_BUILD_DIR)/$(INFOPLIST_PATH)
+        script: |
+          commit=$(git -C "$SRCROOT" describe --always --dirty 2>/dev/null || echo unknown)
+          /usr/libexec/PlistBuddy -c "Set :GitCommit $commit" "$TARGET_BUILD_DIR/$INFOPLIST_PATH"
     info:
       path: Mangiamundo/Info.plist
       properties:
         CFBundleDisplayName: Mangiamundo
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
+        # Replaced by the "Stamp git commit" build phase.
+        GitCommit: unknown
         # Whole globe on the theme background; StartupLoaderView then takes the bites.
         UILaunchScreen:
           UIImageName: LaunchGlobe

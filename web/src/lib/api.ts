@@ -1,4 +1,4 @@
-import type { Area, Catalog, Celebration, Discover, Located, Place, Profile } from './types';
+import type { Area, Catalog, Celebration, Discover, Health, Located, Place, Profile } from './types';
 
 const BASE = import.meta.env.VITE_API_BASE ?? '';
 const TOKEN_KEY = 'mangiamundo.token';
@@ -65,6 +65,8 @@ const area = (id: string) => `area=${encodeURIComponent(id)}`;
 
 /** The device's time zone, so event days begin and end at local midnight. */
 const tz = () => `tz=${encodeURIComponent(Intl.DateTimeFormat().resolvedOptions().timeZone ?? '')}`;
+
+export const health = () => raw<Health>('GET', '/api/health', null);
 
 export const catalog = () => raw<Catalog>('GET', '/api/countries', null);
 

@@ -7,6 +7,12 @@ struct Country: Decodable {
     let flag: String
 }
 
+/// From `/api/health`. An older server sends only `ok`.
+struct Health: Decodable {
+    let version: String?
+    let commit: String?
+}
+
 struct Catalog: Decodable {
     let countries: [Country]
 }

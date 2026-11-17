@@ -72,6 +72,16 @@ fn badge<'a>(discover: &'a Value, id: &str) -> &'a Value {
 }
 
 #[tokio::test]
+async fn health_reports_the_server_version() {
+    let app = app().await;
+    let (status, body) = call(&app, "GET", "/api/health", None, None).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(body["ok"], true);
+    assert_eq!(body["version"], env!("CARGO_PKG_VERSION"));
+    assert!(body.get("commit").is_some());
+}
+
+#[tokio::test]
 async fn catalog_lists_countries_and_continents() {
     let app = app().await;
     let (status, body) = call(&app, "GET", "/api/countries", None, None).await;

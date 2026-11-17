@@ -11,6 +11,10 @@ data class Country(
     val flag: String,
 )
 
+/** From `/api/health`. An older server sends only `ok`. */
+@Serializable
+data class Health(val version: String? = null, val commit: String? = null)
+
 @Serializable
 data class Continent(val code: String, val name: String)
 
