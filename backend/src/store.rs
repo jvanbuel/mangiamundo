@@ -295,18 +295,26 @@ pub async fn place_location(db: &SqlitePool, place_id: &str) -> sqlx::Result<Opt
 
 /// Records a visit. A repeated check-in keeps the original date but can upgrade an
 /// unverified visit to a verified one.
-pub async fn add_visit(db: &SqlitePool, user: &str, place_id: &str, verified: bool, at: i64) -> sqlx::Result<()> {
-    sqlx::query(
+/// Records a visit and returns it as stored: checking in again keeps the first date, and the visit
+/// stays verified once any check-in was made on the spot.
+pub async fn add_visit(
+    db: &SqlitePool,
+    user: &str,
+    place_id: &str,
+    verified: bool,
+    at: i64,
+) -> sqlx::Result<(i64, bool)> {
+    sqlx::query_as(
         "INSERT INTO visits (user_id, place_id, visited_at, verified) VALUES (?, ?, ?, ?)
-         ON CONFLICT(user_id, place_id) DO UPDATE SET verified = MAX(verified, excluded.verified)",
+         ON CONFLICT(user_id, place_id) DO UPDATE SET verified = MAX(verified, excluded.verified)
+         RETURNING visited_at, verified",
     )
     .bind(user)
     .bind(place_id)
     .bind(at)
     .bind(verified)
-    .execute(db)
-    .await?;
-    Ok(())
+    .fetch_one(db)
+    .await
 }
 
 pub async fn remove_visit(db: &SqlitePool, user: &str, place_id: &str) -> sqlx::Result<()> {

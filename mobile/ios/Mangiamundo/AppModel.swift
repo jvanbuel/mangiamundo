@@ -290,7 +290,7 @@ final class AppModel {
                     position = (fix.lat, fix.lng)
                 }
                 let result = try await api.checkIn(placeID: place.id, here: position)
-                updated.visitedAt = Int(Date().timeIntervalSince1970)
+                updated.visitedAt = result.visitedAt
                 updated.verified = result.verified
             } else {
                 try await api.undoCheckIn(placeID: place.id)

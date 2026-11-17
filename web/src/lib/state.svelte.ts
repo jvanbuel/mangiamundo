@@ -352,7 +352,7 @@ export async function toggleVisit(place: Place) {
 		if (visiting) {
 			const fresh = gpsFix && Date.now() - gpsFix.at < 10 * 60_000 ? gpsFix : null;
 			const result = await api.checkIn(place.id, fresh && { lat: fresh.lat, lng: fresh.lng });
-			place.visited_at = Math.floor(Date.now() / 1000);
+			place.visited_at = result.visited_at;
 			place.verified = result.verified;
 		} else {
 			await api.undoCheckIn(place.id);

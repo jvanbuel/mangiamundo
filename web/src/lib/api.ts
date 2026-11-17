@@ -75,7 +75,7 @@ export const places = (areaId: string, country: string, from: { lat: number; lng
 	);
 
 export const checkIn = (placeId: string, here: { lat: number; lng: number } | null) =>
-	authed<{ verified: boolean; profile: Profile }>(
+	authed<{ visited_at: number; verified: boolean; profile: Profile }>(
 		'PUT',
 		`/api/visits/${encodeURIComponent(placeId)}`,
 		here ?? {}

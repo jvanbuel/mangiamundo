@@ -193,7 +193,11 @@ data class Located(
 }
 
 @Serializable
-data class VisitResult(val verified: Boolean, val profile: Profile)
+data class VisitResult(
+    @SerialName("visited_at") val visitedAt: Long,
+    val verified: Boolean,
+    val profile: Profile,
+)
 
 @Serializable
 internal data class Session(val token: String)
