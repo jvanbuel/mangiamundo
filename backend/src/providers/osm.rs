@@ -372,6 +372,54 @@ impl AreaDirectory for Nominatim {
             .and_then(|r| Some(Boundary { info: area_info(r)?, shape: Shape::from_geojson(r.get("geojson")?)? }));
         Ok(boundary)
     }
+
+    /// Nominatim's usage policy forbids search-as-you-type, so suggestions come from
+    /// Photon, which is built for it and uses the same OSM ids.
+    async fn suggest(&self, query: &str, near: Option<(f64, f64)>) -> anyhow::Result<Vec<AreaInfo>> {
+        let mut request = self.http.get(PHOTON_URL).query(&[("q", query), ("limit", "15"), ("lang", "en")]);
+        if let Some((lat, lng)) = near {
+            request = request.query(&[("lat", lat), ("lon", lng)]);
+        }
+        let found: Value = request.send().await?.error_for_status()?.json().await?;
+        Ok(photon_areas(&found))
+    }
+}
+
+const PHOTON_URL: &str = "https://photon.komoot.io/api/";
+
+/// The cities and postal codes among Photon's results.
+fn photon_areas(found: &Value) -> Vec<AreaInfo> {
+    let features = found.get("features").and_then(Value::as_array).into_iter().flatten();
+    features
+        .filter_map(|f| {
+            let p = f.get("properties")?;
+            if text(p, "osm_type")? != "R" {
+                return None;
+            }
+            let name = text(p, "name")?;
+            let (kind, name) = match (text(p, "type")?, text(p, "osm_value")) {
+                ("city", _) => (AreaKind::City, name.to_string()),
+                (_, Some("postcode")) => {
+                    (AreaKind::PostalCode, text(p, "city").map_or(name.to_string(), |city| format!("{name} {city}")))
+                }
+                _ => return None,
+            };
+            let detail = [text(p, "state").or(text(p, "county")), text(p, "country")]
+                .into_iter()
+                .flatten()
+                .collect::<Vec<_>>()
+                .join(", ");
+            let point = f.get("geometry")?.get("coordinates")?.as_array()?;
+            Some(AreaInfo {
+                id: format!("osm-relation-{}", p.get("osm_id")?.as_u64()?),
+                name,
+                kind,
+                detail: (!detail.is_empty()).then_some(detail),
+                lat: point.get(1)?.as_f64()?,
+                lng: point.first()?.as_f64()?,
+            })
+        })
+        .collect()
 }
 
 #[cfg(test)]
@@ -397,6 +445,28 @@ mod tests {
         assert_eq!(places[1].countries, vec!["VN", "TH"]);
         assert_eq!((places[1].lat, places[1].lng), (50.87, 4.71));
         assert_eq!(places[1].address, None);
+    }
+
+    #[test]
+    fn reads_photon_cities_and_postal_codes() {
+        let found = serde_json::json!({"features": [
+            {"geometry": {"coordinates": [4.70, 50.88]}, "properties":
+             {"osm_type": "R", "osm_id": 3366463, "osm_value": "postcode", "type": "other", "name": "3000",
+              "city": "Leuven", "state": "Flemish Brabant", "country": "Belgium"}},
+            {"geometry": {"coordinates": [4.70, 50.88]}, "properties":
+             {"osm_type": "N", "osm_id": 1, "osm_value": "sports_centre", "type": "house", "name": "Laser 3000"}},
+            {"geometry": {"coordinates": [4.70, 50.88]}, "properties":
+             {"osm_type": "R", "osm_id": 196311, "osm_value": "city", "type": "city", "name": "Leuven",
+              "state": "Flemish Brabant", "country": "Belgium"}},
+            {"geometry": {"coordinates": [4.69, 50.88]}, "properties":
+             {"osm_type": "R", "osm_id": 3921680, "osm_value": "administrative", "type": "district", "name": "Leuven"}}
+        ]});
+        let areas = photon_areas(&found);
+        assert_eq!(areas.len(), 2);
+        assert_eq!((areas[0].id.as_str(), areas[0].name.as_str(), areas[0].kind), ("osm-relation-3366463", "3000 Leuven", AreaKind::PostalCode));
+        assert_eq!((areas[1].id.as_str(), areas[1].name.as_str(), areas[1].kind), ("osm-relation-196311", "Leuven", AreaKind::City));
+        assert_eq!(areas[1].detail.as_deref(), Some("Flemish Brabant, Belgium"));
+        assert_eq!((areas[1].lat, areas[1].lng), (50.88, 4.70));
     }
 
     #[test]

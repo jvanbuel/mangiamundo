@@ -63,6 +63,12 @@ actor APIClient {
         try decode(await request("GET", "/api/areas?q=\(encode(query))"))
     }
 
+    /// Suggestions while someone types, nearest first when `near` is known.
+    func suggestAreas(_ query: String, near: (lat: Double, lng: Double)?) async throws -> [Area] {
+        let point = near.map { "&lat=\($0.lat)&lng=\($0.lng)" } ?? ""
+        return try decode(await request("GET", "/api/areas/suggest?q=\(encode(query))\(point)"))
+    }
+
     /// The city and postal code a point lies in.
     func locateArea(lat: Double, lng: Double) async throws -> Located {
         try decode(await request("GET", "/api/areas/locate?lat=\(lat)&lng=\(lng)"))

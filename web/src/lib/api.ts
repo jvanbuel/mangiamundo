@@ -87,6 +87,14 @@ export const undoCheckIn = (placeId: string) =>
 /** Cities and postal codes matching what someone typed. */
 export const searchAreas = (query: string) => raw<Area[]>('GET', `/api/areas?q=${encodeURIComponent(query)}`, null);
 
+/** Suggestions while someone types, nearest first when `near` is known. */
+export const suggestAreas = (query: string, near: { lat: number; lng: number } | null) =>
+	raw<Area[]>(
+		'GET',
+		`/api/areas/suggest?q=${encodeURIComponent(query)}${near ? `&lat=${near.lat}&lng=${near.lng}` : ''}`,
+		null
+	);
+
 /** The city and postal code a point lies in. */
 export const locateArea = (lat: number, lng: number) =>
 	raw<Located>('GET', `/api/areas/locate?lat=${lat}&lng=${lng}`, null);

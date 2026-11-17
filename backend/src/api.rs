@@ -39,6 +39,7 @@ pub fn router(state: AppState) -> Router {
         .route("/api/push/subscription", put(subscribe).delete(unsubscribe))
         .route("/api/areas", get(search_areas))
         .route("/api/areas/locate", get(locate_area))
+        .route("/api/areas/suggest", get(suggest_areas))
         .layer(CorsLayer::permissive())
         .layer(TraceLayer::new_for_http())
         .with_state(state)
@@ -559,6 +560,23 @@ async fn search_areas(State(state): State<AppState>, Query(query): Query<SearchQ
         return Ok(Json(Vec::new()));
     }
     state.areas.search(q).await.map(Json).map_err(ApiError::Upstream)
+}
+
+#[derive(Deserialize)]
+struct SuggestQuery {
+    q: String,
+    lat: Option<f64>,
+    lng: Option<f64>,
+}
+
+/// Suggestions while someone types a city or postal code.
+async fn suggest_areas(State(state): State<AppState>, Query(query): Query<SuggestQuery>) -> ApiResult<Vec<AreaInfo>> {
+    let q = query.q.trim();
+    if q.chars().count() < 2 {
+        return Ok(Json(Vec::new()));
+    }
+    let near = query.lat.zip(query.lng);
+    state.areas.suggest(q, near).await.map(Json).map_err(ApiError::Upstream)
 }
 
 #[derive(Deserialize)]
