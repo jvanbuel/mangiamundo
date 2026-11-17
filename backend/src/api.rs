@@ -33,7 +33,7 @@ const VERIFY_DISTANCE_M: f64 = 250.0;
 
 pub fn router(state: AppState) -> Router {
     Router::new()
-        .route("/api/health", get(|| async { Json(json!({ "ok": true })) }))
+        .route("/api/health", get(health))
         .route("/api/session", post(create_session))
         .route("/api/countries", get(countries))
         .route("/api/discover", get(discover))
@@ -54,6 +54,14 @@ pub fn router(state: AppState) -> Router {
         .layer(CorsLayer::permissive())
         .layer(TraceLayer::new_for_http())
         .with_state(state)
+}
+
+/// Liveness check, also telling clients which build of the server they talk to.
+///
+/// `commit` is the `GIT_COMMIT` environment variable at compile time (set by the
+/// Dockerfile), and `null` in builds without it.
+async fn health() -> Json<serde_json::Value> {
+    Json(json!({ "ok": true, "version": env!("CARGO_PKG_VERSION"), "commit": option_env!("GIT_COMMIT") }))
 }
 
 /// Serves the web app from `dir` next to the API. It is a single-page app, so unknown

@@ -26,6 +26,10 @@ actor APIClient {
         decoder.keyDecodingStrategy = .convertFromSnakeCase
     }
 
+    func health() async throws -> Health {
+        try decode(await request("GET", "/api/health"))
+    }
+
     func catalog() async throws -> Catalog {
         try decode(await request("GET", "/api/countries"))
     }

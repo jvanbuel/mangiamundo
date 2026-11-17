@@ -6,6 +6,12 @@ plugins {
     id("app.cash.paparazzi")
 }
 
+/** The commit shown in the app, to tell old builds apart. */
+fun gitCommit(): String = providers.exec {
+    commandLine("git", "describe", "--always", "--dirty")
+    isIgnoreExitValue = true
+}.standardOutput.asText.get().trim().ifEmpty { "unknown" }
+
 android {
     namespace = "app.mangiamundo"
     compileSdk = 35
@@ -16,6 +22,7 @@ android {
         targetSdk = 35
         versionCode = 1
         versionName = "0.1.0"
+        buildConfigField("String", "GIT_COMMIT", "\"${gitCommit()}\"")
         buildConfigField("String", "API_BASE", "\"${providers.gradleProperty("mangiamundo.apiBase").get()}\"")
     }
 

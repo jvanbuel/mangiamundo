@@ -189,6 +189,7 @@ fun AppScreen(vm: AppViewModel = viewModel()) {
                         }
                     }
                 }
+                item(key = "build") { BuildLine(vm.server) }
             }
         }
     }

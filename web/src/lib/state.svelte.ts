@@ -39,6 +39,8 @@ function load<T>(key: string): T | null {
 }
 
 export const app = $state({
+	/** The server's version and commit; null until it answers, 'not reached' after a failure. */
+	server: null as string | null,
 	catalog: null as Catalog | null,
 	location: null as Location | null,
 	discover: null as Discover | null,
@@ -81,7 +83,17 @@ function message(error: unknown): string {
 	return error instanceof Error ? error.message : 'Something went wrong.';
 }
 
+/** Asks for the server's version until it answers once. */
+function loadServer() {
+	if (app.server && app.server !== 'not reached') return;
+	api
+		.health()
+		.then((h) => (app.server = [h.version ?? 'unknown', h.commit].filter(Boolean).join(' ')))
+		.catch(() => (app.server = 'not reached'));
+}
+
 export async function init() {
+	loadServer();
 	app.projection = load<'globe' | 'mercator'>(PROJECTION_KEY) ?? 'globe';
 	app.theme = load<Theme>(THEME_KEY) ?? 'system';
 	try {
@@ -274,6 +286,7 @@ export async function locate(quiet = false) {
 }
 
 export async function refresh() {
+	loadServer();
 	const location = app.location;
 	if (!location) return;
 	if (app.reminders === 'on') void push.updateReminders(pushTarget()).catch(() => undefined);

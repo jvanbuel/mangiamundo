@@ -33,6 +33,10 @@ For a single deployable: `npm run build` in `web/`, then `cargo run --release` i
 
 Tests: `cargo test` in `backend/`, `npm run check` in `web/`.
 
+Deploy: `fly deploy --build-arg GIT_COMMIT=$(git describe --always --dirty)`. The
+commit shows at the bottom of the web and mobile apps, next to the server's, to tell
+old builds apart.
+
 ## Areas: cities and postal codes
 
 A location is a city (every postal code in it, e.g. Leuven covers 3000, 3001, 3010,
@@ -112,6 +116,7 @@ for people and may change; clients that react to a specific case check `code`:
 
 | Method | Path | |
 | --- | --- | --- |
+| `GET` | `/api/health` | `{ ok, version, commit }`: the server's Cargo version and the git commit it was built from (`null` when built without `GIT_COMMIT`) |
 | `POST` | `/api/session` | Create an anonymous account, returns `{ token }` |
 | `GET` | `/api/countries` | Country and continent catalog |
 | `GET` | `/api/areas?q` | Search cities and postal codes |

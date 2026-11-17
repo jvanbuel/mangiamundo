@@ -1,15 +1,19 @@
 # The Rust backend serves the built web app, so one image holds both.
+# .git is not copied in, so pass the commit to show in the apps:
+#   fly deploy --build-arg GIT_COMMIT=$(git describe --always --dirty)
 
 FROM node:24-slim AS web
 WORKDIR /web
 COPY web/package.json web/package-lock.json web/.npmrc ./
 RUN npm ci
 COPY web/ ./
+ARG GIT_COMMIT
 RUN npm run build
 
 FROM rust:1-bookworm AS backend
 WORKDIR /backend
 COPY backend/ ./
+ARG GIT_COMMIT
 RUN cargo build --release --locked
 
 FROM debian:bookworm-slim

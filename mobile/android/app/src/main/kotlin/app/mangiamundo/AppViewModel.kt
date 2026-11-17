@@ -27,6 +27,8 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlin.math.abs
 
+private const val NOT_REACHED = "not reached"
+
 class AppViewModel(application: Application) : AndroidViewModel(application) {
     private val settings = Settings(application)
     private val api = ApiClient(BuildConfig.API_BASE, settings)
@@ -53,6 +55,8 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     var remindersOn by mutableStateOf(settings.remindersOn && Notifications.allowed(application)); private set
     /** 0 = countries, 1 = badges. */
     var tab by mutableStateOf(0)
+    /** The server's version and commit; null until it answers, "not reached" after a failure. */
+    var server by mutableStateOf<String?>(null); private set
 
     var projection by mutableStateOf(settings.projection); private set
     var camera by mutableStateOf(Camera())
@@ -70,6 +74,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
 
     init {
         location?.let { camera = camera.copy(lng = it.lng, lat = it.lat) }
+        loadServer()
         viewModelScope.launch {
             world = withContext(Dispatchers.IO) {
                 World.parse(application.assets.open("world.json").bufferedReader().use { it.readText() })
@@ -178,7 +183,18 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
 
     suspend fun search(query: String): List<Area> = api.searchAreas(query)
 
+    /** Asks for the server's version until it answers once. */
+    private fun loadServer() {
+        if (server != null && server != NOT_REACHED) return
+        viewModelScope.launch {
+            server = runCatching { api.health() }
+                .map { listOfNotNull(it.version ?: "unknown", it.commit).joinToString(" ") }
+                .getOrDefault(NOT_REACHED)
+        }
+    }
+
     fun refresh() {
+        loadServer()
         val here = location ?: return
         refreshJob?.cancel()
         refreshJob = viewModelScope.launch {

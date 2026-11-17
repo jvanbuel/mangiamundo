@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
+	import { version } from '$app/env';
 	import Badges from '#lib/Badges.svelte';
 	import CountryDetail from '#lib/CountryDetail.svelte';
 	import ComingUp from '#lib/ComingUp.svelte';
@@ -150,6 +151,8 @@
 				{/if}
 			{/if}
 		{/if}
+
+		<p class="build">Web {version}{app.server ? ` · Server ${app.server}` : ''}</p>
 	</aside>
 </main>
 
@@ -251,6 +254,13 @@
 	.welcome h2 {
 		font-size: 21px;
 		line-height: 1.25;
+	}
+
+	.build {
+		margin: auto 0 0;
+		padding: 0 4px;
+		font-size: 11px;
+		color: var(--muted);
 	}
 
 	.pad {

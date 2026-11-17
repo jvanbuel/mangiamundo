@@ -34,6 +34,7 @@ struct ContentView: View {
                     LazyVStack(alignment: .leading, spacing: 12) {
                         Header(onChange: { pickerOpen = true })
                         content
+                        BuildLine(server: model.server)
                     }
                     .padding(16)
                 }
@@ -118,5 +119,21 @@ struct ContentView: View {
             Text("Scouting restaurants in \(model.location?.area.name ?? "your area")…")
                 .foregroundStyle(Theme.muted)
         }
+    }
+}
+
+/// Which builds of the app and the server are running, to tell old builds apart.
+struct BuildLine: View {
+    let server: String?
+
+    var body: some View {
+        let info = Bundle.main.infoDictionary ?? [:]
+        let version = info["CFBundleShortVersionString"] as? String ?? "?"
+        let build = info["CFBundleVersion"] as? String ?? "?"
+        let commit = info["GitCommit"] as? String ?? "unknown"
+        Text("App \(version) (\(build), \(commit))" + (server.map { " · Server \($0)" } ?? ""))
+            .font(Theme.font(.caption2))
+            .foregroundStyle(Theme.muted)
+            .padding(.top, 16)
     }
 }

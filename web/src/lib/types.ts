@@ -145,3 +145,10 @@ export function statusOf(c: { places: number; visited: number }): Status {
 	if (c.visited === 0) return 'available';
 	return c.visited >= c.places ? 'completed' : 'discovered';
 }
+
+/** From `/api/health`. An older server sends only `ok`. */
+export interface Health {
+	ok: boolean;
+	version?: string;
+	commit?: string | null;
+}
