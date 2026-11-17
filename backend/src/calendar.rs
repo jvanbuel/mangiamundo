@@ -3,7 +3,7 @@
 use std::collections::HashMap;
 use std::sync::OnceLock;
 
-use chrono::{DateTime, Datelike, Duration, NaiveDate, TimeZone};
+use chrono::{DateTime, Datelike, Duration, NaiveDate};
 use chrono_tz::Tz;
 use serde::{Deserialize, Serialize};
 
@@ -133,16 +133,6 @@ pub fn local_date(now: i64, zone: Tz) -> NaiveDate {
     DateTime::from_timestamp(now, 0).unwrap_or_default().with_timezone(&zone).date_naive()
 }
 
-/// Unix time at which `day` begins in `zone`. Where a DST change skips midnight, the day
-/// begins at the first time that exists.
-pub fn day_start(day: NaiveDate, zone: Tz) -> i64 {
-    (0..24)
-        .filter_map(|hour| zone.from_local_datetime(&day.and_hms_opt(hour, 0, 0)?).earliest())
-        .map(|t| t.timestamp())
-        .next()
-        .unwrap_or_else(|| day.and_hms_opt(0, 0, 0).unwrap_or_default().and_utc().timestamp())
-}
-
 /// Checks the data files for unknown countries and impossible dates.
 pub fn validate() -> Result<(), String> {
     for c in celebrations() {
@@ -205,22 +195,12 @@ mod tests {
     }
 
     #[test]
-    fn days_begin_at_local_midnight() {
+    fn today_is_the_local_date() {
         let tokyo: Tz = "Asia/Tokyo".parse().unwrap();
         // 1 December 2026 00:00 in Tokyo is 30 November 15:00 UTC.
-        assert_eq!(day_start(day("2026-12-01"), tokyo), 1_796_050_800);
         assert_eq!(local_date(1_796_050_800, tokyo), day("2026-12-01"));
         assert_eq!(local_date(1_796_050_799, tokyo), day("2026-11-30"));
-        assert_eq!(day_start(day("2026-12-01"), Tz::UTC), 1_796_083_200);
-    }
-
-    #[test]
-    fn a_day_whose_midnight_is_skipped_begins_at_one() {
-        // Chile moved its clocks from 00:00 to 01:00 on 6 September 2026.
-        let santiago: Tz = "America/Santiago".parse().unwrap();
-        let start = day_start(day("2026-09-06"), santiago);
-        assert_eq!(local_date(start, santiago), day("2026-09-06"));
-        assert_eq!(local_date(start - 1, santiago), day("2026-09-05"));
+        assert_eq!(local_date(1_796_050_800, Tz::UTC), day("2026-11-30"));
     }
 
     #[test]

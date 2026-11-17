@@ -387,36 +387,67 @@ async fn event_days_follow_the_users_time_zone() {
     // 30 November (23:00) in UTC.
     let morning_in_tokyo = 1_796_079_600;
     let db = store::connect("sqlite::memory:").await.unwrap();
-    let (app, _) = app_with(db, None, morning_in_tokyo).await;
+    let (app, clock) = app_with(db, None, morning_in_tokyo).await;
     let token = session(&app).await;
     let (_, places) = call(&app, "GET", "/api/places?area=demo-tokyo&country=JP", Some(&token), None).await;
-    let place = places.as_array().unwrap().first().expect("demo Tokyo has a Japanese place").clone();
-    let (status, _) = call(&app, "PUT", &format!("/api/visits/{}", place["id"].as_str().unwrap()), Some(&token), None).await;
-    assert_eq!(status, StatusCode::OK);
+    let places = places.as_array().unwrap().clone();
+    assert!(places.len() >= 2, "demo Tokyo has Japanese places");
+    let visit = |i: usize, tz: &str| format!("/api/visits/{}{tz}", places[i]["id"].as_str().unwrap());
 
     let japan = |discover: &Value| {
         discover["events"].as_array().unwrap().iter().find(|e| e["id"] == "japan-month-2026-12").unwrap().clone()
     };
-    let (status, local) =
-        call(&app, "GET", "/api/discover?area=demo-tokyo&tz=Asia%2FTokyo", Some(&token), None).await;
-    assert_eq!(status, StatusCode::OK);
-    assert_eq!(japan(&local)["status"], "active");
-    assert_eq!(japan(&local)["progress"], 1, "the check-in counts on the event's first local day");
+    let (_, before) = call(&app, "GET", "/api/discover?area=demo-tokyo&tz=Asia%2FTokyo", Some(&token), None).await;
+    assert_eq!(japan(&before)["status"], "active");
+    let (_, before) = call(&app, "GET", "/api/discover?area=demo-tokyo", Some(&token), None).await;
+    assert_eq!(japan(&before)["status"], "upcoming", "without a zone, today is the UTC date");
 
-    // Without a time zone the server falls back to UTC, where the event hasn't started.
-    let (_, utc) = call(&app, "GET", "/api/discover?area=demo-tokyo", Some(&token), None).await;
-    assert_eq!(japan(&utc)["status"], "upcoming");
-    assert_eq!(japan(&utc)["progress"], 0);
-
-    // Celebrations take the same parameter.
-    let (status, _) = call(&app, "GET", "/api/celebrations?area=demo-tokyo&tz=Asia%2FTokyo", None, None).await;
+    // Checked in on 1 December, Tokyo time: it counts, whatever zone asks later.
+    let (status, _) = call(&app, "PUT", &visit(0, "?tz=Asia%2FTokyo"), Some(&token), None).await;
     assert_eq!(status, StatusCode::OK);
+    for tz in ["Asia%2FTokyo", "UTC", "America%2FLos_Angeles"] {
+        let (_, now) = call(&app, "GET", &format!("/api/discover?area=demo-tokyo&tz={tz}"), Some(&token), None).await;
+        assert_eq!(japan(&now)["progress"], 1, "progress seen from {tz}");
+    }
 
-    // An unknown zone is treated as UTC instead of failing the screen.
-    let (status, unknown) =
-        call(&app, "GET", "/api/discover?area=demo-tokyo&tz=Etc%2FUnknown", Some(&token), None).await;
+    // 31 December 20:00 UTC, without a zone: dated 31 December, so it counts, even though
+    // it was already 1 January in Tokyo (where the event, unearned, is now over).
+    clock.store(1_798_747_200, Ordering::Relaxed);
+    call(&app, "PUT", &visit(1, ""), Some(&token), None).await;
+    let (_, late) =
+        call(&app, "GET", "/api/discover?area=demo-tokyo&tz=America%2FLos_Angeles", Some(&token), None).await;
+    assert_eq!(japan(&late)["progress"], 2);
+
+    // An unknown zone is treated as UTC instead of failing.
+    let (status, _) = call(&app, "GET", "/api/discover?area=demo-tokyo&tz=Etc%2FUnknown", Some(&token), None).await;
     assert_eq!(status, StatusCode::OK);
-    assert_eq!(japan(&unknown)["status"], "upcoming");
+}
+
+#[tokio::test]
+async fn celebrations_start_on_the_users_local_day() {
+    use chrono::{NaiveDate, TimeZone};
+    let tokyo: chrono_tz::Tz = "Asia/Tokyo".parse().unwrap();
+    let app = app().await;
+    // A one-day celebration with food in demo Tokyo, from 2027 so it is ahead of START.
+    let (_, all) = call(&app, "GET", "/api/celebrations?area=demo-tokyo&days=366", None, None).await;
+    let one_day = all
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|c| c["starts"] == c["ends"] && c["starts"].as_str().unwrap() >= "2027")
+        .expect("a one-day celebration in demo Tokyo")
+        .clone();
+    let date: NaiveDate = one_day["starts"].as_str().unwrap().parse().unwrap();
+
+    // 01:00 on that day in Tokyo, still the day before in UTC.
+    let at = tokyo.from_local_datetime(&date.and_hms_opt(1, 0, 0).unwrap()).unwrap().timestamp();
+    let db = store::connect("sqlite::memory:").await.unwrap();
+    let (app, _) = app_with(db, None, at).await;
+    let ids = |list: &Value| list.as_array().unwrap().iter().map(|c| c["id"].clone()).collect::<Vec<_>>();
+    let (_, local) = call(&app, "GET", "/api/celebrations?area=demo-tokyo&days=0&tz=Asia%2FTokyo", None, None).await;
+    assert!(ids(&local).contains(&one_day["id"]), "it is today in Tokyo");
+    let (_, utc) = call(&app, "GET", "/api/celebrations?area=demo-tokyo&days=0", None, None).await;
+    assert!(!ids(&utc).contains(&one_day["id"]), "it is tomorrow in UTC");
 }
 
 #[tokio::test]
@@ -437,17 +468,19 @@ async fn visits_between_counts_distinct_places_inside_the_window() {
     let token = store::create_user(&db).await.unwrap();
     let user = store::user_for_token(&db, &token).await.unwrap().unwrap();
 
-    let (from, until) = (START, START + 30 * DAY);
-    store::add_visit(&db, &user, "sushi", false, from - 1).await.unwrap(); // just before
-    store::add_visit(&db, &user, "ramen", false, from).await.unwrap(); // first second
-    store::add_visit(&db, &user, "fusion", false, until - 1).await.unwrap(); // last second, two countries
-    store::add_visit(&db, &user, "pasta", false, from + DAY).await.unwrap(); // wrong country
+    let day = |s: &str| s.parse::<chrono::NaiveDate>().unwrap();
+    let (first, last) = (day("2026-12-01"), day("2026-12-31"));
+    // The stored local date decides, not the instant.
+    store::add_visit(&db, &user, "sushi", false, START, day("2026-11-30")).await.unwrap(); // the day before
+    store::add_visit(&db, &user, "ramen", false, START, first).await.unwrap(); // first day
+    store::add_visit(&db, &user, "fusion", false, START, last).await.unwrap(); // last day, two countries
+    store::add_visit(&db, &user, "pasta", false, START, day("2026-12-02")).await.unwrap(); // wrong country
 
     let japan = vec!["JP".to_string()];
-    assert_eq!(store::visits_between(&db, &user, &japan, from, until).await.unwrap(), 2);
+    assert_eq!(store::visits_between(&db, &user, &japan, first, last).await.unwrap(), 2);
     let east_asia = vec!["JP".to_string(), "KR".to_string()];
-    assert_eq!(store::visits_between(&db, &user, &east_asia, from, until).await.unwrap(), 2, "a place counts once");
-    assert_eq!(store::visits_between(&db, &user, &[], from, until).await.unwrap(), 0);
+    assert_eq!(store::visits_between(&db, &user, &east_asia, first, last).await.unwrap(), 2, "a place counts once");
+    assert_eq!(store::visits_between(&db, &user, &[], first, last).await.unwrap(), 0);
 }
 
 #[tokio::test]

@@ -51,7 +51,7 @@ actor APIClient {
             body = ["lat": here.lat, "lng": here.lng]
         }
         let data = try JSONSerialization.data(withJSONObject: body)
-        return try decode(await authed("PUT", "/api/visits/\(encode(placeID))", body: data))
+        return try decode(await authed("PUT", "/api/visits/\(encode(placeID))?\(timeZone())", body: data))
     }
 
     func undoCheckIn(placeID: String) async throws {

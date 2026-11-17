@@ -172,7 +172,6 @@ async fn due(
     state: &AppState,
     user: &str,
     day: NaiveDate,
-    zone: chrono_tz::Tz,
     counts: &HashMap<String, u32>,
 ) -> anyhow::Result<Vec<(String, Notification)>> {
     let mut out = Vec::new();
@@ -198,9 +197,7 @@ async fn due(
                 },
             ));
         } else if event.ends - Duration::days(LAST_CHANCE_DAYS - 1) == day {
-            let from = calendar::day_start(event.starts, zone);
-            let until = calendar::day_start(event.ends + Duration::days(1), zone);
-            let done = store::visits_between(&state.db, user, &event.countries, from, until).await?;
+            let done = store::visits_between(&state.db, user, &event.countries, event.starts, event.ends).await?;
             if done < event.target {
                 let left = event.target - done;
                 out.push((
@@ -238,7 +235,7 @@ pub async fn run_once(state: &AppState, pusher: &Pusher) -> anyhow::Result<usize
             *counts.entry(row.country).or_default() += 1;
         }
 
-        for (dedupe, notification) in due(state, &user, local.date_naive(), zone, &counts).await? {
+        for (dedupe, notification) in due(state, &user, local.date_naive(), &counts).await? {
             if !store::mark_push_sent(&state.db, &sub.endpoint, &dedupe, state.now()).await? {
                 continue;
             }

@@ -19,7 +19,7 @@ use tower_http::trace::TraceLayer;
 
 use std::collections::HashMap;
 
-use chrono::{Duration, NaiveDate};
+use chrono::NaiveDate;
 use chrono_tz::Tz;
 
 use crate::calendar::{self, Celebration};
@@ -249,8 +249,8 @@ const MAX_AREA_DEGREES: f64 = 1.5;
 struct AreaQuery {
     /// An area id from `/api/areas` or `/api/areas/locate`.
     area: String,
-    /// The user's IANA time zone (e.g. `Asia/Tokyo`), which decides when event days
-    /// begin and end. UTC when missing or unknown.
+    /// The user's IANA time zone (e.g. `Asia/Tokyo`), which decides which day "today"
+    /// is for event and celebration dates. UTC when missing or unknown.
     tz: Option<String>,
 }
 
@@ -384,9 +384,7 @@ async fn event_progress(
     for event in calendar::relevant_events(today, 30) {
         let progress = match user {
             Some(user) => {
-                let from = calendar::day_start(event.starts, zone);
-                let until = calendar::day_start(event.ends + Duration::days(1), zone);
-                store::visits_between(&state.db, user, &event.countries, from, until).await?
+                store::visits_between(&state.db, user, &event.countries, event.starts, event.ends).await?
             }
             None => 0,
         };
@@ -534,6 +532,12 @@ struct CheckIn {
     lng: Option<f64>,
 }
 
+#[derive(Deserialize)]
+struct VisitQuery {
+    /// As for `/api/discover`: the check-in counts for events by its date in this zone.
+    tz: Option<String>,
+}
+
 #[derive(Serialize)]
 struct VisitResult {
     /// When the visit was first recorded (unix seconds), kept when checking in again.
@@ -546,6 +550,7 @@ async fn add_visit(
     State(state): State<AppState>,
     User(user): User,
     Path(place_id): Path<String>,
+    Query(query): Query<VisitQuery>,
     body: Option<JsonBody<CheckIn>>,
 ) -> ApiResult<VisitResult> {
     let (plat, plng) = store::place_location(&state.db, &place_id)
@@ -556,7 +561,8 @@ async fn add_visit(
         (Some(lat), Some(lng)) => geo::distance_m(lat, lng, plat, plng) <= VERIFY_DISTANCE_M,
         _ => false,
     };
-    let (visited_at, verified) = store::add_visit(&state.db, &user, &place_id, verified, state.now()).await?;
+    let (visited_at, verified) = store::add_visit(&state.db, &user, &place_id, verified, state.now(), state.today(zone(query.tz.as_deref())))
+            .await?;
     let profile = game::profile(store::lifetime(&state.db, &user).await?);
     Ok(Json(VisitResult { visited_at, verified, profile }))
 }

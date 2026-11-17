@@ -69,9 +69,10 @@ Results are cached per area (with its outline) and refreshed after `CACHE_TTL_DA
   `approximate`.
 - `backend/data/events.json`: time-limited challenges ("Japan month"): countries, a
   date range and how many different places to visit. Only check-ins made during the
-  event count; earned event badges stay. Event days run from midnight to midnight in
-  the user's time zone: clients send it as `tz` (IANA name, e.g. `Asia/Tokyo`); a
-  missing or unknown `tz` means UTC.
+  event count; earned event badges stay. Days are the user's local days: clients send
+  their time zone as `tz` (IANA name, e.g. `Asia/Tokyo`) to discover, celebrations and
+  check-ins, and each check-in keeps its local date, so it counts the same wherever
+  the user is later. A missing or unknown `tz` means UTC.
 - `GET /api/celebrations` lists what is coming up for countries that have places in
   the area, including the reminder text.
 
@@ -117,7 +118,7 @@ for people and may change; clients that react to a specific case check `code`:
 | `GET` | `/api/areas/locate?lat&lng` | The city and postal code at a position: `{ city, postal_code }` |
 | `GET` | `/api/discover?area[&tz]` | Countries available in the area, progress, badges, profile |
 | `GET` | `/api/places?area&country[&lat&lng]` | Places: open first, then closed, then unknown hours, alphabetical within each. Distances from `lat`/`lng` when given, else from the area's centre |
-| `PUT` | `/api/visits/{place_id}` | Check in; optional body `{ lat, lng }` to verify. Send it with `Content-Type: application/json`, or it is ignored. Returns `{ visited_at, verified, profile }`: checking in again keeps the first date |
+| `PUT` | `/api/visits/{place_id}[?tz]` | Check in; optional body `{ lat, lng }` to verify. Send it with `Content-Type: application/json`, or it is ignored. Returns `{ visited_at, verified, profile }`: checking in again keeps the first date |
 | `DELETE` | `/api/visits/{place_id}` | Undo a check-in |
 | `GET` | `/api/celebrations?area&days[&tz]` | Upcoming celebrations with food in the area |
 | `GET` | `/api/push/key` | VAPID public key for Web Push |

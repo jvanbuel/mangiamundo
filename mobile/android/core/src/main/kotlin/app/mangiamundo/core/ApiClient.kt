@@ -43,7 +43,7 @@ class ApiClient(private val baseUrl: String, private val tokens: TokenStore) {
     /** `here` is the device position, sent so the server can mark the visit as verified. */
     suspend fun checkIn(placeId: String, here: Pair<Double, Double>?): VisitResult {
         val body = json.encodeToString(CheckInBody.serializer(), CheckInBody(here?.first, here?.second))
-        return json.decodeFromString(authed("PUT", "/api/visits/${encode(placeId)}", body))
+        return json.decodeFromString(authed("PUT", "/api/visits/${encode(placeId)}?${tz()}", body))
     }
 
     suspend fun undoCheckIn(placeId: String) {
