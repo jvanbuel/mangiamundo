@@ -54,5 +54,5 @@ Both apps schedule local notifications for the celebrations and limited-time eve
 the server lists for the user's area (10:00 on the first day, plus a last-days nudge
 for unfinished events). The dates are known in advance, so no push service is
 involved: no Firebase project or Apple push certificate is needed. The plan is
-recomputed whenever progress, location or radius changes.
+recomputed whenever progress or location changes.
 
