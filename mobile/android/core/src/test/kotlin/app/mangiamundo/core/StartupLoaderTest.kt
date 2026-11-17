@@ -18,13 +18,10 @@ class StartupLoaderTest {
     }
 
     @Test
-    fun letTheBiteInProgressFinish() {
-        assertFalse(StartupLoader.keep(ready = true, elapsedMs = 100)) // before the first bite
-        assertTrue(StartupLoader.keep(ready = true, elapsedMs = 200)) // first bite starts
-        assertTrue(StartupLoader.keep(ready = true, elapsedMs = 349))
-        assertFalse(StartupLoader.keep(ready = true, elapsedMs = 350)) // between bites
-        assertTrue(StartupLoader.keep(ready = true, elapsedMs = 500)) // second bite
-        assertTrue(StartupLoader.keep(ready = true, elapsedMs = 800)) // third bite
+    fun alwaysPlayAllBitesOnce() {
+        assertTrue(StartupLoader.keep(ready = true, elapsedMs = 0)) // data already in
+        assertTrue(StartupLoader.keep(ready = true, elapsedMs = 400)) // between bites
+        assertTrue(StartupLoader.keep(ready = true, elapsedMs = 889)) // last bite growing
         assertFalse(StartupLoader.keep(ready = true, elapsedMs = 890)) // all done
     }
 }

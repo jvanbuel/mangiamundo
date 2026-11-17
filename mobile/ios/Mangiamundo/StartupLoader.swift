@@ -18,14 +18,9 @@ enum StartupLoader {
     /// When bite `index` starts growing.
     static func biteStart(_ index: Int) -> TimeInterval { start + Double(index) * step }
 
-    /// The bite growing `elapsed` seconds after the loader started, if any.
-    static func biting(_ elapsed: TimeInterval) -> Int? {
-        (0..<bites).first { elapsed >= biteStart($0) && elapsed < biteStart($0) + grow }
-    }
-
-    /// How long to wait before fading out once the first data is in: let a growing bite finish.
+    /// How long to wait before fading out once the first data is in: until all bites are in,
+    /// so the loader plays once in full however fast the data arrives.
     static func wait(after elapsed: TimeInterval) -> TimeInterval {
-        guard let bite = biting(elapsed) else { return 0 }
-        return biteStart(bite) + grow - elapsed
+        max(0, total - elapsed)
     }
 }

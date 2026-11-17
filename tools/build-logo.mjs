@@ -212,7 +212,7 @@ ${BITES.map((_, i) => target(`bite${i}`, ['scaleX', 'scaleY'].map((prop) => anim
 export function loader() {
 	const [start, grow, step] = [START, GROW, STEP];
 	const end = start + 2 * step + grow;
-	// One nested group per bite, so each squash can be paused with its bite (see splash.ts).
+	// One nested group per bite, so the three squashes don't fight over one transform.
 	const squash = (inner, _bite, i) =>
 		`<g class="squash" style="animation-delay:${start + i * step}ms">${inner}</g>`;
 	const globeSvg = BITES.reduce(squash, globe(256, 262, 176, '#3B8FD9', '#54B96F'));
