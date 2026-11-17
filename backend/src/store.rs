@@ -8,7 +8,8 @@ use sqlx::sqlite::{SqliteConnectOptions, SqlitePoolOptions};
 use sqlx::{Row, SqlitePool};
 
 use crate::game::{Lifetime, PlaceRow};
-use crate::providers::FoundPlace;
+use crate::geo::Shape;
+use crate::providers::{AreaInfo, AreaKind, Boundary, FoundPlace};
 
 pub fn now() -> i64 {
     SystemTime::now().duration_since(UNIX_EPOCH).map(|d| d.as_secs() as i64).unwrap_or(0)
@@ -25,62 +26,79 @@ pub async fn connect(url: &str) -> anyhow::Result<SqlitePool> {
     Ok(pool)
 }
 
-/// A cached provider lookup around a grid-cell centre.
-#[derive(Debug, Clone, Serialize)]
+/// A cached provider lookup for a city or postal code.
+#[derive(Debug, Clone)]
 pub struct Area {
-    #[serde(skip)]
-    pub key: String,
-    pub lat: f64,
-    pub lng: f64,
-    pub radius_m: u32,
+    pub boundary: Boundary,
     pub provider: String,
     pub fetched_at: i64,
 }
 
-/// Nearby requests share one cache entry: coordinates snap to a 0.02° grid (about 2 km).
-const GRID: f64 = 0.02;
-
-pub fn snap(lat: f64, lng: f64) -> (f64, f64) {
-    let snap = |v: f64| ((v / GRID).round() * GRID * 100.0).round() / 100.0;
-    (snap(lat), snap(lng))
+impl Area {
+    pub fn id(&self) -> &str {
+        &self.boundary.info.id
+    }
 }
 
-pub fn area_key(provider: &str, lat: f64, lng: f64, radius_m: u32) -> String {
-    format!("{provider}:{lat:.2}:{lng:.2}:{radius_m}")
+fn kind_name(kind: AreaKind) -> &'static str {
+    match kind {
+        AreaKind::City => "city",
+        AreaKind::PostalCode => "postal_code",
+    }
 }
 
-pub async fn find_area(db: &SqlitePool, key: &str) -> sqlx::Result<Option<Area>> {
-    let row = sqlx::query("SELECT key, lat, lng, radius_m, provider, fetched_at FROM areas WHERE key = ?")
-        .bind(key)
-        .fetch_optional(db)
-        .await?;
-    Ok(row.map(|r| Area {
-        key: r.get("key"),
-        lat: r.get("lat"),
-        lng: r.get("lng"),
-        radius_m: r.get::<i64, _>("radius_m") as u32,
-        provider: r.get("provider"),
-        fetched_at: r.get("fetched_at"),
+pub async fn find_area(db: &SqlitePool, id: &str) -> sqlx::Result<Option<Area>> {
+    let row = sqlx::query("SELECT * FROM areas WHERE id = ?").bind(id).fetch_optional(db).await?;
+    Ok(row.and_then(|r| {
+        let kind = match r.get::<String, _>("kind").as_str() {
+            "city" => AreaKind::City,
+            "postal_code" => AreaKind::PostalCode,
+            _ => return None,
+        };
+        let shape: Shape = serde_json::from_str(r.get("shape")).ok()?;
+        Some(Area {
+            boundary: Boundary {
+                info: AreaInfo {
+                    id: r.get("id"),
+                    name: r.get("name"),
+                    kind,
+                    detail: r.get("detail"),
+                    lat: r.get("lat"),
+                    lng: r.get("lng"),
+                },
+                shape,
+            },
+            provider: r.get("provider"),
+            fetched_at: r.get("fetched_at"),
+        })
     }))
 }
 
 /// Replaces the contents of an area with a fresh provider result. Places that dropped
 /// out of the result stay in `places` so existing visits are never lost.
 pub async fn save_area(db: &SqlitePool, area: &Area, places: &[FoundPlace]) -> sqlx::Result<()> {
+    let info = &area.boundary.info;
+    let shape = serde_json::to_string(&area.boundary.shape).expect("a shape serializes");
     let mut tx = db.begin().await?;
     sqlx::query(
-        "INSERT INTO areas (key, lat, lng, radius_m, provider, fetched_at) VALUES (?, ?, ?, ?, ?, ?)
-         ON CONFLICT(key) DO UPDATE SET fetched_at = excluded.fetched_at",
+        "INSERT INTO areas (id, name, kind, detail, lat, lng, shape, provider, fetched_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+         ON CONFLICT(id) DO UPDATE SET name = excluded.name, kind = excluded.kind,
+             detail = excluded.detail, lat = excluded.lat, lng = excluded.lng,
+             shape = excluded.shape, fetched_at = excluded.fetched_at",
     )
-    .bind(&area.key)
-    .bind(area.lat)
-    .bind(area.lng)
-    .bind(area.radius_m)
+    .bind(&info.id)
+    .bind(&info.name)
+    .bind(kind_name(info.kind))
+    .bind(&info.detail)
+    .bind(info.lat)
+    .bind(info.lng)
+    .bind(shape)
     .bind(&area.provider)
     .bind(area.fetched_at)
     .execute(&mut *tx)
     .await?;
-    sqlx::query("DELETE FROM area_places WHERE area_key = ?").bind(&area.key).execute(&mut *tx).await?;
+    sqlx::query("DELETE FROM area_places WHERE area_id = ?").bind(&info.id).execute(&mut *tx).await?;
 
     for place in places {
         sqlx::query(
@@ -110,8 +128,8 @@ pub async fn save_area(db: &SqlitePool, area: &Area, places: &[FoundPlace]) -> s
                 .execute(&mut *tx)
                 .await?;
         }
-        sqlx::query("INSERT OR IGNORE INTO area_places (area_key, place_id) VALUES (?, ?)")
-            .bind(&area.key)
+        sqlx::query("INSERT OR IGNORE INTO area_places (area_id, place_id) VALUES (?, ?)")
+            .bind(&info.id)
             .bind(&place.id)
             .execute(&mut *tx)
             .await?;
@@ -134,16 +152,16 @@ pub async fn user_for_token(db: &SqlitePool, token: &str) -> sqlx::Result<Option
     sqlx::query_scalar("SELECT id FROM users WHERE token = ?").bind(token).fetch_optional(db).await
 }
 
-pub async fn area_rows(db: &SqlitePool, area_key: &str, user: Option<&str>) -> sqlx::Result<Vec<PlaceRow>> {
+pub async fn area_rows(db: &SqlitePool, area_id: &str, user: Option<&str>) -> sqlx::Result<Vec<PlaceRow>> {
     let rows = sqlx::query(
         "SELECT pc.place_id, pc.country, v.place_id IS NOT NULL AS visited
          FROM area_places ap
          JOIN place_countries pc ON pc.place_id = ap.place_id
          LEFT JOIN visits v ON v.place_id = ap.place_id AND v.user_id = ?
-         WHERE ap.area_key = ?",
+         WHERE ap.area_id = ?",
     )
     .bind(user)
-    .bind(area_key)
+    .bind(area_id)
     .fetch_all(db)
     .await?;
     Ok(rows
@@ -192,7 +210,7 @@ pub struct PlaceView {
 /// and `hours_text` are left empty.
 pub async fn area_places(
     db: &SqlitePool,
-    area_key: &str,
+    area_id: &str,
     country: Option<&str>,
     user: Option<&str>,
 ) -> sqlx::Result<Vec<PlaceView>> {
@@ -203,12 +221,12 @@ pub async fn area_places(
          FROM area_places ap
          JOIN places p ON p.id = ap.place_id
          LEFT JOIN visits v ON v.place_id = p.id AND v.user_id = ?1
-         WHERE ap.area_key = ?2
+         WHERE ap.area_id = ?2
            AND (?3 IS NULL OR EXISTS (
                 SELECT 1 FROM place_countries WHERE place_id = p.id AND country = ?3))",
     )
     .bind(user)
-    .bind(area_key)
+    .bind(area_id)
     .bind(country)
     .fetch_all(db)
     .await?;
@@ -303,22 +321,19 @@ pub async fn set_setting(db: &SqlitePool, key: &str, value: &str) -> sqlx::Resul
     Ok(())
 }
 
-/// Adds a browser subscription, or moves an existing one to a new user, place or time zone.
+/// Adds a browser subscription, or moves an existing one to a new user, area or time zone.
 pub async fn save_push_subscription(db: &SqlitePool, user: &str, sub: &crate::push::Subscription, at: i64) -> sqlx::Result<()> {
     sqlx::query(
-        "INSERT INTO push_subscriptions (endpoint, user_id, p256dh, auth, lat, lng, radius_km, timezone, created_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        "INSERT INTO push_subscriptions (endpoint, user_id, p256dh, auth, area_id, timezone, created_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?)
          ON CONFLICT(endpoint) DO UPDATE SET user_id = excluded.user_id, p256dh = excluded.p256dh,
-             auth = excluded.auth, lat = excluded.lat, lng = excluded.lng,
-             radius_km = excluded.radius_km, timezone = excluded.timezone",
+             auth = excluded.auth, area_id = excluded.area_id, timezone = excluded.timezone",
     )
     .bind(&sub.endpoint)
     .bind(user)
     .bind(&sub.p256dh)
     .bind(&sub.auth)
-    .bind(sub.lat)
-    .bind(sub.lng)
-    .bind(sub.radius_km)
+    .bind(&sub.area_id)
     .bind(&sub.timezone)
     .bind(at)
     .execute(db)
@@ -360,17 +375,4 @@ pub async fn mark_push_sent(db: &SqlitePool, endpoint: &str, key: &str, at: i64)
 pub async fn unmark_push_sent(db: &SqlitePool, endpoint: &str, key: &str) -> sqlx::Result<()> {
     sqlx::query("DELETE FROM push_sent WHERE endpoint = ? AND key = ?").bind(endpoint).bind(key).execute(db).await?;
     Ok(())
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn nearby_points_share_a_cell() {
-        assert_eq!(snap(50.8798, 4.7005), (50.88, 4.7));
-        assert_eq!(snap(50.8840, 4.7090), (50.88, 4.7));
-        assert_ne!(snap(50.8798, 4.7005), snap(50.92, 4.7005));
-        assert_eq!(area_key("osm", 50.88, 4.7, 10_000), "osm:50.88:4.70:10000");
-    }
 }

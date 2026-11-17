@@ -12,7 +12,7 @@ use mangiamundo::{api, store, AppState};
 use serde_json::Value;
 use tower::ServiceExt;
 
-const HERE: &str = "lat=50.8798&lng=4.7005";
+const HERE: &str = "area=demo-leuven";
 
 /// 16 November 2026, 12:00 UTC.
 const START: i64 = 1_794_830_400;
@@ -29,7 +29,7 @@ async fn app_with_clock() -> (Router, Arc<AtomicI64>) {
     let router = api::router(AppState {
         db: store::connect("sqlite::memory:").await.unwrap(),
         places: Arc::new(Demo),
-        geocoder: Arc::new(Demo),
+        areas: Arc::new(Demo),
         cache_ttl_secs: 3600,
         clock: Arc::new(move || clock.load(Ordering::Relaxed)),
         push_key: None,
@@ -82,10 +82,26 @@ async fn discover_works_anonymously_and_is_stable() {
     assert!(first["world"]["available"].as_u64().unwrap() > 10);
     assert_eq!(first["world"]["discovered"], 0);
     assert_eq!(first["profile"]["xp"], 0);
-    // A point a few hundred metres away lands in the same cached area.
-    let (_, second) = call(&app, "GET", "/api/discover?lat=50.8810&lng=4.7030", None, None).await;
+    assert_eq!(first["area"]["id"], "demo-leuven");
+    assert_eq!(first["area"]["name"], "Leuven");
+    assert_eq!(first["area"]["kind"], "city");
+    // The second request is served from the cache.
+    let (_, second) = call(&app, "GET", &format!("/api/discover?{HERE}"), None, None).await;
     assert_eq!(first["countries"], second["countries"]);
     assert_eq!(first["area"]["fetched_at"], second["area"]["fetched_at"]);
+}
+
+#[tokio::test]
+async fn a_postal_code_holds_part_of_its_city() {
+    let app = app().await;
+    let total = |d: &Value| d["countries"].as_array().unwrap().iter().map(|c| c["places"].as_u64().unwrap()).sum::<u64>();
+    let (_, city) = call(&app, "GET", "/api/discover?area=demo-leuven", None, None).await;
+    let (status, west) = call(&app, "GET", "/api/discover?area=demo-leuven-3000", None, None).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(west["area"]["kind"], "postal_code");
+    let (_, east) = call(&app, "GET", "/api/discover?area=demo-leuven-3010", None, None).await;
+    assert!(total(&west) > 0 && total(&east) > 0);
+    assert_eq!(total(&west) + total(&east), total(&city));
 }
 
 #[tokio::test]
@@ -154,9 +170,11 @@ async fn visiting_every_place_completes_a_country() {
 #[tokio::test]
 async fn rejects_bad_input() {
     let app = app().await;
-    let (status, _) = call(&app, "GET", "/api/discover?lat=95&lng=4", None, None).await;
+    let (status, _) = call(&app, "GET", "/api/discover?area=Not%20An%20Id", None, None).await;
     assert_eq!(status, StatusCode::BAD_REQUEST);
-    let (status, _) = call(&app, "GET", &format!("/api/discover?{HERE}&radius_km=500"), None, None).await;
+    let (status, _) = call(&app, "GET", "/api/discover?area=demo-nowhere", None, None).await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+    let (status, _) = call(&app, "GET", "/api/areas/locate?lat=95&lng=4", None, None).await;
     assert_eq!(status, StatusCode::BAD_REQUEST);
     let (status, _) = call(&app, "PUT", "/api/visits/demo-x", None, None).await;
     assert_eq!(status, StatusCode::UNAUTHORIZED);
@@ -168,13 +186,34 @@ async fn rejects_bad_input() {
 }
 
 #[tokio::test]
-async fn geocoding_searches_and_reverses() {
+async fn areas_can_be_searched_and_located() {
     let app = app().await;
-    let (status, found) = call(&app, "GET", "/api/geocode?q=leuv", None, None).await;
+    let (status, found) = call(&app, "GET", "/api/areas?q=leuv", None, None).await;
     assert_eq!(status, StatusCode::OK);
-    assert_eq!(found[0]["name"], "Leuven, Belgium");
-    let (_, name) = call(&app, "GET", &format!("/api/geocode/reverse?{HERE}"), None, None).await;
-    assert_eq!(name["name"], "Leuven");
+    assert_eq!(found[0]["id"], "demo-leuven");
+    assert_eq!(found[0]["kind"], "city");
+    assert_eq!(found[0]["detail"], "Belgium");
+    let (_, codes) = call(&app, "GET", "/api/areas?q=3010", None, None).await;
+    assert_eq!(codes[0]["name"], "3010 Leuven");
+    assert_eq!(codes[0]["kind"], "postal_code");
+    let (_, here) = call(&app, "GET", "/api/areas/locate?lat=50.8798&lng=4.71", None, None).await;
+    assert_eq!(here["city"]["id"], "demo-leuven");
+    assert_eq!(here["postal_code"]["id"], "demo-leuven-3010");
+    let (_, nowhere) = call(&app, "GET", "/api/areas/locate?lat=0&lng=0", None, None).await;
+    assert!(nowhere["city"].is_null());
+}
+
+#[tokio::test]
+async fn distances_are_measured_from_the_user_when_given() {
+    let app = app().await;
+    let (_, discover) = call(&app, "GET", &format!("/api/discover?{HERE}"), None, None).await;
+    let country = discover["countries"][0]["code"].as_str().unwrap().to_string();
+    let (_, places) = call(&app, "GET", &format!("/api/places?{HERE}&country={country}"), None, None).await;
+    let first = &places[0];
+    let uri = format!("/api/places?{HERE}&country={country}&lat={}&lng={}", first["lat"], first["lng"]);
+    let (_, from_there) = call(&app, "GET", &uri, None, None).await;
+    let same = from_there.as_array().unwrap().iter().find(|p| p["id"] == first["id"]).unwrap();
+    assert_eq!(same["distance_m"], 0);
 }
 
 #[tokio::test]
@@ -228,15 +267,18 @@ async fn events_move_from_upcoming_to_active_and_unearned_ones_disappear() {
 
 #[tokio::test]
 async fn visits_between_counts_distinct_places_inside_the_window() {
-    use mangiamundo::providers::FoundPlace;
-    use mangiamundo::store::{area_key, save_area, Area};
+    use mangiamundo::geo::{Bbox, Shape};
+    use mangiamundo::providers::{AreaInfo, AreaKind, Boundary, FoundPlace};
+    use mangiamundo::store::{save_area, Area};
 
     let db = store::connect("sqlite::memory:").await.unwrap();
     let place = |id: &str, countries: Vec<&'static str>| FoundPlace {
         id: id.into(), name: id.into(), lat: 50.0, lng: 4.0, address: None, url: None,
         cuisine: None, opening_hours: None, countries,
     };
-    let area = Area { key: area_key("test", 50.0, 4.0, 1000), lat: 50.0, lng: 4.0, radius_m: 1000, provider: "test".into(), fetched_at: START };
+    let info = AreaInfo { id: "test-area".into(), name: "Test".into(), kind: AreaKind::City, detail: None, lat: 50.0, lng: 4.0 };
+    let shape = Shape::rect(Bbox { south: 49.9, west: 3.9, north: 50.1, east: 4.1 });
+    let area = Area { boundary: Boundary { info, shape }, provider: "test".into(), fetched_at: START };
     save_area(&db, &area, &[place("sushi", vec!["JP"]), place("ramen", vec!["JP"]), place("fusion", vec!["JP", "KR"]), place("pasta", vec!["IT"])]).await.unwrap();
     let token = store::create_user(&db).await.unwrap();
     let user = store::user_for_token(&db, &token).await.unwrap().unwrap();

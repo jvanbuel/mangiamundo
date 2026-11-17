@@ -1,4 +1,4 @@
-//! Sources of restaurant and geocoding data.
+//! Sources of restaurant data and of the areas (cities and postal codes) they are grouped in.
 
 use std::sync::Arc;
 
@@ -6,9 +6,9 @@ use async_trait::async_trait;
 use serde::Serialize;
 
 use crate::config::{Config, ProviderKind};
+use crate::geo;
 
 pub mod demo;
-pub mod google;
 pub mod osm;
 
 /// A restaurant as returned by a provider, before it is stored.
@@ -31,24 +31,58 @@ pub struct FoundPlace {
 #[async_trait]
 pub trait PlacesProvider: Send + Sync {
     fn name(&self) -> &'static str;
-    /// All places serving a national cuisine within `radius_m` of the point.
-    async fn search(&self, lat: f64, lng: f64, radius_m: u32) -> anyhow::Result<Vec<FoundPlace>>;
+    /// All places serving a national cuisine inside the area's outline.
+    async fn search(&self, area: &Boundary) -> anyhow::Result<Vec<FoundPlace>>;
 }
 
+#[derive(Debug, Clone, Copy, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum AreaKind {
+    /// A city, town or municipality: every postal code in it.
+    City,
+    PostalCode,
+}
+
+/// A place people pick as their location: a city or a postal code.
 #[derive(Debug, Clone, Serialize, PartialEq)]
-pub struct GeoResult {
+pub struct AreaInfo {
+    /// Opaque and URL-safe, prefixed with the directory name, e.g. `osm-relation-196311`.
+    pub id: String,
+    /// "Leuven", or "3000 Leuven" for a postal code.
     pub name: String,
+    pub kind: AreaKind,
+    /// Where it is, to tell same-named areas apart: "Vlaams-Brabant, Belgium".
+    pub detail: Option<String>,
+    /// A central point, for the map.
     pub lat: f64,
     pub lng: f64,
 }
 
-#[async_trait]
-pub trait Geocoder: Send + Sync {
-    async fn search(&self, query: &str) -> anyhow::Result<Vec<GeoResult>>;
-    async fn reverse(&self, lat: f64, lng: f64) -> anyhow::Result<Option<String>>;
+/// An area with its outline.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Boundary {
+    pub info: AreaInfo,
+    pub shape: geo::Shape,
 }
 
-pub fn build(config: &Config) -> anyhow::Result<(Arc<dyn PlacesProvider>, Arc<dyn Geocoder>)> {
+/// The areas a point lies in.
+#[derive(Debug, Clone, Default, Serialize, PartialEq)]
+pub struct Located {
+    pub city: Option<AreaInfo>,
+    pub postal_code: Option<AreaInfo>,
+}
+
+#[async_trait]
+pub trait AreaDirectory: Send + Sync {
+    /// Cities and postal codes matching what someone typed.
+    async fn search(&self, query: &str) -> anyhow::Result<Vec<AreaInfo>>;
+    /// The city and postal code a point lies in.
+    async fn locate(&self, lat: f64, lng: f64) -> anyhow::Result<Located>;
+    /// An area's outline, or `None` when the id is not a city or postal code.
+    async fn boundary(&self, id: &str) -> anyhow::Result<Option<Boundary>>;
+}
+
+pub fn build(config: &Config) -> anyhow::Result<(Arc<dyn PlacesProvider>, Arc<dyn AreaDirectory>)> {
     let http = reqwest::Client::builder()
         .user_agent(concat!("mangiamundo/", env!("CARGO_PKG_VERSION")))
         // Fail over quickly from a server that is down, but allow slow Overpass queries.
@@ -62,15 +96,5 @@ pub fn build(config: &Config) -> anyhow::Result<(Arc<dyn PlacesProvider>, Arc<dy
             Arc::new(osm::Overpass::new(http.clone(), config.overpass_urls.clone())),
             Arc::new(osm::Nominatim::new(http, config.nominatim_url.clone())),
         ),
-        ProviderKind::Google => {
-            let key = config
-                .google_api_key
-                .clone()
-                .ok_or_else(|| anyhow::anyhow!("PLACES_PROVIDER=google needs GOOGLE_MAPS_API_KEY"))?;
-            (
-                Arc::new(google::GooglePlaces::new(http.clone(), key.clone())),
-                Arc::new(google::GoogleGeocoder::new(http, key)),
-            )
-        }
     })
 }

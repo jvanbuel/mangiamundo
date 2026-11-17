@@ -18,7 +18,7 @@ use sqlx::SqlitePool;
 pub struct AppState {
     pub db: SqlitePool,
     pub places: Arc<dyn providers::PlacesProvider>,
-    pub geocoder: Arc<dyn providers::Geocoder>,
+    pub areas: Arc<dyn providers::AreaDirectory>,
     pub cache_ttl_secs: i64,
     /// The current Unix time. Replaceable so tests can pin a moment.
     pub clock: Arc<dyn Fn() -> i64 + Send + Sync>,

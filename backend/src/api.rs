@@ -18,7 +18,7 @@ use chrono::{Duration, NaiveDate};
 
 use crate::calendar::{self, Celebration};
 use crate::game::{self, Lifetime, PlaceRow, Summary};
-use crate::providers::GeoResult;
+use crate::providers::{AreaInfo, Located};
 use crate::store::{self, Area, PlaceView};
 use crate::{catalog, geo, hours, AppState};
 
@@ -36,8 +36,8 @@ pub fn router(state: AppState) -> Router {
         .route("/api/visits/{place_id}", put(add_visit).delete(remove_visit))
         .route("/api/push/key", get(push_key))
         .route("/api/push/subscription", put(subscribe).delete(unsubscribe))
-        .route("/api/geocode", get(geocode))
-        .route("/api/geocode/reverse", get(reverse_geocode))
+        .route("/api/areas", get(search_areas))
+        .route("/api/areas/locate", get(locate_area))
         .layer(CorsLayer::permissive())
         .layer(TraceLayer::new_for_http())
         .with_state(state)
@@ -135,46 +135,58 @@ async fn countries() -> Json<Catalog> {
     })
 }
 
+/// The largest area served, in degrees of latitude and longitude: a big city fits, a
+/// region or a country (which would make for a huge Overpass query) doesn't.
+const MAX_AREA_DEGREES: f64 = 1.5;
+
 #[derive(Deserialize)]
 struct AreaQuery {
-    lat: f64,
-    lng: f64,
-    radius_km: Option<f64>,
+    /// An area id from `/api/areas` or `/api/areas/locate`.
+    area: String,
 }
 
-impl AreaQuery {
-    fn validate(&self) -> Result<u32, ApiError> {
-        if !(-90.0..=90.0).contains(&self.lat) || !(-180.0..=180.0).contains(&self.lng) {
-            return Err(ApiError::BadRequest("lat/lng out of range".into()));
-        }
-        let radius_km = self.radius_km.unwrap_or(10.0);
-        if !(1.0..=50.0).contains(&radius_km) {
-            return Err(ApiError::BadRequest("radius_km must be between 1 and 50".into()));
-        }
-        Ok((radius_km * 1000.0).round() as u32)
+fn valid_area_id(id: &str) -> bool {
+    !id.is_empty() && id.len() <= 100 && id.bytes().all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'-')
+}
+
+/// Returns the cached area, asking the provider when the cache is missing or stale. A
+/// stale cache is still used when the provider is down.
+async fn resolve_area(state: &AppState, id: &str) -> Result<Area, ApiError> {
+    if !valid_area_id(id) {
+        return Err(ApiError::BadRequest("invalid area".into()));
     }
-}
-
-/// Returns the cached area for a location, asking the provider when the cache is
-/// missing or stale. A stale cache is still used when the provider is down.
-async fn resolve_area(state: &AppState, query: &AreaQuery) -> Result<Area, ApiError> {
-    let radius_m = query.validate()?;
-    let (lat, lng) = store::snap(query.lat, query.lng);
-    let provider = state.places.name();
-    let key = store::area_key(provider, lat, lng, radius_m);
-
-    let cached = store::find_area(&state.db, &key).await?;
+    let cached = store::find_area(&state.db, id).await?;
     if let Some(area) = &cached {
         if state.now() - area.fetched_at < state.cache_ttl_secs {
             return Ok(area.clone());
         }
     }
 
-    match state.places.search(lat, lng, radius_m).await {
+    let boundary = match &cached {
+        // The outline rarely changes; keep it for refreshes.
+        Some(area) => area.boundary.clone(),
+        None => {
+            let boundary = state
+                .areas
+                .boundary(id)
+                .await
+                .map_err(ApiError::Upstream)?
+                .ok_or(ApiError::NotFound("area"))?;
+            let b = boundary.shape.bbox();
+            if b.north - b.south > MAX_AREA_DEGREES || b.east - b.west > MAX_AREA_DEGREES {
+                return Err(ApiError::BadRequest(format!(
+                    "{} is too large; pick a postal code or a smaller town",
+                    boundary.info.name
+                )));
+            }
+            boundary
+        }
+    };
+    match state.places.search(&boundary).await {
         Ok(found) => {
-            let area = Area { key, lat, lng, radius_m, provider: provider.into(), fetched_at: state.now() };
+            let area = Area { boundary, provider: state.places.name().into(), fetched_at: state.now() };
             store::save_area(&state.db, &area, &found).await?;
-            tracing::info!(key = area.key, places = found.len(), "area refreshed");
+            tracing::info!(area = area.id(), places = found.len(), "area refreshed");
             Ok(area)
         }
         Err(error) => match cached {
@@ -187,9 +199,23 @@ async fn resolve_area(state: &AppState, query: &AreaQuery) -> Result<Area, ApiEr
     }
 }
 
+/// An area as clients see it.
+#[derive(Serialize)]
+struct AreaView {
+    #[serde(flatten)]
+    info: AreaInfo,
+    fetched_at: i64,
+}
+
+impl From<&Area> for AreaView {
+    fn from(area: &Area) -> Self {
+        AreaView { info: area.boundary.info.clone(), fetched_at: area.fetched_at }
+    }
+}
+
 #[derive(Serialize)]
 struct Discover {
-    area: Area,
+    area: AreaView,
     #[serde(flatten)]
     summary: Summary,
     events: Vec<EventProgress>,
@@ -273,21 +299,19 @@ async fn discover(
     MaybeUser(user): MaybeUser,
     Query(query): Query<AreaQuery>,
 ) -> ApiResult<Discover> {
-    let area = resolve_area(&state, &query).await?;
-    let rows = store::area_rows(&state.db, &area.key, user.as_deref()).await?;
+    let area = resolve_area(&state, &query.area).await?;
+    let rows = store::area_rows(&state.db, area.id(), user.as_deref()).await?;
     let lifetime = match &user {
         Some(user) => store::lifetime(&state.db, user).await?,
         None => Lifetime::default(),
     };
     let events = event_progress(&state, user.as_deref(), &rows).await?;
-    Ok(Json(Discover { summary: game::summarize(&rows, lifetime), area, events }))
+    Ok(Json(Discover { summary: game::summarize(&rows, lifetime), area: (&area).into(), events }))
 }
 
 #[derive(Deserialize)]
 struct CelebrationsQuery {
-    lat: f64,
-    lng: f64,
-    radius_km: Option<f64>,
+    area: String,
     /// How far ahead to look.
     days: Option<i64>,
 }
@@ -313,9 +337,8 @@ async fn celebrations(
     State(state): State<AppState>,
     Query(query): Query<CelebrationsQuery>,
 ) -> ApiResult<Vec<CelebrationView>> {
-    let area_query = AreaQuery { lat: query.lat, lng: query.lng, radius_km: query.radius_km };
-    let area = resolve_area(&state, &area_query).await?;
-    let rows = store::area_rows(&state.db, &area.key, None).await?;
+    let area = resolve_area(&state, &query.area).await?;
+    let rows = store::area_rows(&state.db, area.id(), None).await?;
     let counts = places_per_country(&rows);
     let days = query.days.unwrap_or(60).clamp(0, 366);
     Ok(Json(nearby_celebrations(state.today(), days, &counts)))
@@ -339,10 +362,11 @@ fn nearby_celebrations(today: NaiveDate, days: i64, counts: &HashMap<&str, u32>)
 
 #[derive(Deserialize)]
 struct PlacesQuery {
-    lat: f64,
-    lng: f64,
-    radius_km: Option<f64>,
+    area: String,
     country: Option<String>,
+    /// Where the user is, for distances. Without it they are measured from the area's centre.
+    lat: Option<f64>,
+    lng: Option<f64>,
 }
 
 async fn places(
@@ -350,13 +374,17 @@ async fn places(
     MaybeUser(user): MaybeUser,
     Query(query): Query<PlacesQuery>,
 ) -> ApiResult<Vec<PlaceView>> {
-    let area_query = AreaQuery { lat: query.lat, lng: query.lng, radius_km: query.radius_km };
-    let area = resolve_area(&state, &area_query).await?;
+    let area = resolve_area(&state, &query.area).await?;
     let country = query.country.map(|c| c.to_uppercase());
-    let mut places = store::area_places(&state.db, &area.key, country.as_deref(), user.as_deref()).await?;
+    let mut places = store::area_places(&state.db, area.id(), country.as_deref(), user.as_deref()).await?;
+    let info = &area.boundary.info;
+    let (from_lat, from_lng) = match (query.lat, query.lng) {
+        (Some(lat), Some(lng)) => (lat, lng),
+        _ => (info.lat, info.lng),
+    };
     let now = state.now();
     for place in &mut places {
-        place.distance_m = geo::distance_m(query.lat, query.lng, place.lat, place.lng).round() as u32;
+        place.distance_m = geo::distance_m(from_lat, from_lng, place.lat, place.lng).round() as u32;
         if let Some((open, text)) =
             place.opening_hours.as_deref().and_then(|raw| hours::status(raw, place.lat, place.lng, now))
         {
@@ -424,14 +452,12 @@ async fn push_key(State(state): State<AppState>) -> ApiResult<serde_json::Value>
     Ok(Json(json!({ "public_key": key })))
 }
 
-/// A browser's PushSubscription (as from `subscription.toJSON()`), plus where the user is.
+/// A browser's PushSubscription (as from `subscription.toJSON()`), plus the user's area.
 #[derive(Deserialize)]
 struct SubscribeBody {
     endpoint: String,
     keys: SubscribeKeys,
-    lat: f64,
-    lng: f64,
-    radius_km: f64,
+    area: String,
     timezone: String,
 }
 
@@ -452,7 +478,6 @@ async fn subscribe(
     if !body.endpoint.starts_with("https://") && !body.endpoint.starts_with("http://127.0.0.1") {
         return Err(ApiError::BadRequest("endpoint must be an https URL".into()));
     }
-    AreaQuery { lat: body.lat, lng: body.lng, radius_km: Some(body.radius_km) }.validate()?;
     if body.timezone.parse::<chrono_tz::Tz>().is_err() {
         return Err(ApiError::BadRequest("unknown time zone".into()));
     }
@@ -460,9 +485,7 @@ async fn subscribe(
         endpoint: body.endpoint,
         p256dh: body.keys.p256dh,
         auth: body.keys.auth,
-        lat: body.lat,
-        lng: body.lng,
-        radius_km: body.radius_km,
+        area_id: Some(resolve_area(&state, &body.area).await?.id().to_string()),
         timezone: body.timezone,
     };
     store::save_push_subscription(&state.db, &user, &subscription, state.now()).await?;
@@ -484,28 +507,29 @@ async fn unsubscribe(
 }
 
 #[derive(Deserialize)]
-struct GeocodeQuery {
+struct SearchQuery {
     q: String,
 }
 
-async fn geocode(State(state): State<AppState>, Query(query): Query<GeocodeQuery>) -> ApiResult<Vec<GeoResult>> {
+/// Cities and postal codes matching what someone typed.
+async fn search_areas(State(state): State<AppState>, Query(query): Query<SearchQuery>) -> ApiResult<Vec<AreaInfo>> {
     let q = query.q.trim();
-    if q.len() < 2 {
+    if q.chars().count() < 2 {
         return Ok(Json(Vec::new()));
     }
-    state.geocoder.search(q).await.map(Json).map_err(ApiError::Upstream)
+    state.areas.search(q).await.map(Json).map_err(ApiError::Upstream)
 }
 
 #[derive(Deserialize)]
-struct ReverseQuery {
+struct LocateQuery {
     lat: f64,
     lng: f64,
 }
 
-async fn reverse_geocode(
-    State(state): State<AppState>,
-    Query(query): Query<ReverseQuery>,
-) -> ApiResult<serde_json::Value> {
-    let name = state.geocoder.reverse(query.lat, query.lng).await.map_err(ApiError::Upstream)?;
-    Ok(Json(json!({ "name": name })))
+/// The city and postal code a point (usually the device's position) lies in.
+async fn locate_area(State(state): State<AppState>, Query(query): Query<LocateQuery>) -> ApiResult<Located> {
+    if !(-90.0..=90.0).contains(&query.lat) || !(-180.0..=180.0).contains(&query.lng) {
+        return Err(ApiError::BadRequest("lat/lng out of range".into()));
+    }
+    state.areas.locate(query.lat, query.lng).await.map(Json).map_err(ApiError::Upstream)
 }
