@@ -4,11 +4,12 @@ use std::str::FromStr;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use serde::Serialize;
-use sqlx::sqlite::{SqliteConnectOptions, SqlitePoolOptions};
+use sqlx::sqlite::{SqliteConnectOptions, SqliteJournalMode, SqlitePoolOptions};
 use sqlx::{Row, SqlitePool};
 
+use crate::catalog;
 use crate::game::{Lifetime, PlaceRow};
-use crate::geo::Shape;
+use crate::geo::{Bbox, Shape};
 use crate::providers::{AreaInfo, AreaKind, Boundary, FoundPlace};
 
 pub fn now() -> i64 {
@@ -18,7 +19,8 @@ pub fn now() -> i64 {
 pub async fn connect(url: &str) -> anyhow::Result<SqlitePool> {
     let options = SqliteConnectOptions::from_str(url)?
         .create_if_missing(true)
-        .foreign_keys(true);
+        .foreign_keys(true)
+        .journal_mode(SqliteJournalMode::Wal);
     // An in-memory database exists per connection, so it must never get a second one.
     let max = if url.contains(":memory:") { 1 } else { 5 };
     let pool = SqlitePoolOptions::new().max_connections(max).connect_with(options).await?;
@@ -152,14 +154,20 @@ pub async fn user_for_token(db: &SqlitePool, token: &str) -> sqlx::Result<Option
     sqlx::query_scalar("SELECT id FROM users WHERE token = ?").bind(token).fetch_optional(db).await
 }
 
+/// Hides places the user reported closed, and places two or more users reported closed.
+const NOT_REPORTED_CLOSED: &str = "NOT EXISTS (SELECT 1 FROM closed_reports WHERE place_id = p.id AND user_id = ?1)
+           AND (SELECT COUNT(*) FROM closed_reports WHERE place_id = p.id) < 2";
+
 pub async fn area_rows(db: &SqlitePool, area_id: &str, user: Option<&str>) -> sqlx::Result<Vec<PlaceRow>> {
-    let rows = sqlx::query(
+    let sql = format!(
         "SELECT pc.place_id, pc.country, v.place_id IS NOT NULL AS visited
          FROM area_places ap
-         JOIN place_countries pc ON pc.place_id = ap.place_id
-         LEFT JOIN visits v ON v.place_id = ap.place_id AND v.user_id = ?
-         WHERE ap.area_id = ?",
-    )
+         JOIN places p ON p.id = ap.place_id
+         JOIN place_countries pc ON pc.place_id = p.id
+         LEFT JOIN visits v ON v.place_id = p.id AND v.user_id = ?1
+         WHERE ap.area_id = ?2 AND {NOT_REPORTED_CLOSED}"
+    );
+    let rows = sqlx::query(&sql)
     .bind(user)
     .bind(area_id)
     .fetch_all(db)
@@ -214,7 +222,7 @@ pub async fn area_places(
     country: Option<&str>,
     user: Option<&str>,
 ) -> sqlx::Result<Vec<PlaceView>> {
-    let rows = sqlx::query(
+    let sql = format!(
         "SELECT p.id, p.name, p.lat, p.lng, p.address, p.url, p.cuisine, p.opening_hours,
                 (SELECT group_concat(country) FROM place_countries WHERE place_id = p.id) AS countries,
                 v.visited_at, COALESCE(v.verified, 0) AS verified
@@ -223,8 +231,10 @@ pub async fn area_places(
          LEFT JOIN visits v ON v.place_id = p.id AND v.user_id = ?1
          WHERE ap.area_id = ?2
            AND (?3 IS NULL OR EXISTS (
-                SELECT 1 FROM place_countries WHERE place_id = p.id AND country = ?3))",
-    )
+                SELECT 1 FROM place_countries WHERE place_id = p.id AND country = ?3))
+           AND {NOT_REPORTED_CLOSED}"
+    );
+    let rows = sqlx::query(&sql)
     .bind(user)
     .bind(area_id)
     .bind(country)
@@ -375,4 +385,115 @@ pub async fn mark_push_sent(db: &SqlitePool, endpoint: &str, key: &str, at: i64)
 pub async fn unmark_push_sent(db: &SqlitePool, endpoint: &str, key: &str) -> sqlx::Result<()> {
     sqlx::query("DELETE FROM push_sent WHERE endpoint = ? AND key = ?").bind(endpoint).bind(key).execute(db).await?;
     Ok(())
+}
+
+/// Records that `user` says a place has closed. `None` when they had already said so,
+/// otherwise how many users have now reported it.
+pub async fn report_closed(db: &SqlitePool, user: &str, place_id: &str, at: i64) -> sqlx::Result<Option<i64>> {
+    let done = sqlx::query("INSERT OR IGNORE INTO closed_reports (place_id, user_id, reported_at) VALUES (?, ?, ?)")
+        .bind(place_id)
+        .bind(user)
+        .bind(at)
+        .execute(db)
+        .await?;
+    if done.rows_affected() == 0 {
+        return Ok(None);
+    }
+    let count = sqlx::query_scalar("SELECT COUNT(*) FROM closed_reports WHERE place_id = ?")
+        .bind(place_id)
+        .fetch_one(db)
+        .await?;
+    Ok(Some(count))
+}
+
+/// Name and location of a place.
+pub async fn place_summary(db: &SqlitePool, id: &str) -> sqlx::Result<Option<(String, f64, f64)>> {
+    let row = sqlx::query("SELECT name, lat, lng FROM places WHERE id = ?").bind(id).fetch_optional(db).await?;
+    Ok(row.map(|r| (r.get("name"), r.get("lat"), r.get("lng"))))
+}
+
+/// Replaces the imported OpenStreetMap places.
+pub async fn replace_imported(db: &SqlitePool, places: &[FoundPlace]) -> sqlx::Result<()> {
+    let mut tx = db.begin().await?;
+    sqlx::query("DELETE FROM osm_places").execute(&mut *tx).await?;
+    for place in places {
+        let Some(cuisine) = &place.cuisine else { continue };
+        sqlx::query(
+            "INSERT OR REPLACE INTO osm_places (id, name, lat, lng, address, url, cuisine, opening_hours)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+        )
+        .bind(&place.id)
+        .bind(&place.name)
+        .bind(place.lat)
+        .bind(place.lng)
+        .bind(&place.address)
+        .bind(&place.url)
+        .bind(cuisine)
+        .bind(&place.opening_hours)
+        .execute(&mut *tx)
+        .await?;
+    }
+    tx.commit().await
+}
+
+/// Imported places inside a box.
+pub async fn imported_in(db: &SqlitePool, b: Bbox) -> sqlx::Result<Vec<FoundPlace>> {
+    let rows = sqlx::query(
+        "SELECT * FROM osm_places WHERE lat BETWEEN ? AND ? AND lng BETWEEN ? AND ?",
+    )
+    .bind(b.south)
+    .bind(b.north)
+    .bind(b.west)
+    .bind(b.east)
+    .fetch_all(db)
+    .await?;
+    Ok(rows
+        .into_iter()
+        .filter_map(|r| {
+            let cuisine: String = r.get("cuisine");
+            let countries = catalog::countries_for_cuisine_tag(&cuisine);
+            (!countries.is_empty()).then(|| FoundPlace {
+                id: r.get("id"),
+                name: r.get("name"),
+                lat: r.get("lat"),
+                lng: r.get("lng"),
+                address: r.get("address"),
+                url: r.get("url"),
+                cuisine: Some(cuisine),
+                opening_hours: r.get("opening_hours"),
+                countries,
+            })
+        })
+        .collect())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn place(id: &str, lat: f64, lng: f64, cuisine: &str) -> FoundPlace {
+        FoundPlace {
+            id: id.into(),
+            name: id.into(),
+            lat,
+            lng,
+            address: None,
+            url: None,
+            cuisine: Some(cuisine.into()),
+            opening_hours: None,
+            countries: vec![],
+        }
+    }
+
+    #[tokio::test]
+    async fn imported_places_are_found_inside_a_box() {
+        let db = connect("sqlite::memory:").await.unwrap();
+        replace_imported(&db, &[place("in", 50.88, 4.70, "greek"), place("out", 51.2, 4.4, "greek"), place("odd", 50.88, 4.70, "burger")])
+            .await
+            .unwrap();
+        let found = imported_in(&db, Bbox { south: 50.8, west: 4.6, north: 50.9, east: 4.8 }).await.unwrap();
+        assert_eq!(found.len(), 1);
+        assert_eq!(found[0].id, "in");
+        assert_eq!(found[0].countries, vec!["GR"]);
+    }
 }

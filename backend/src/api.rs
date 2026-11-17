@@ -33,6 +33,7 @@ pub fn router(state: AppState) -> Router {
         .route("/api/discover", get(discover))
         .route("/api/places", get(places))
         .route("/api/celebrations", get(celebrations))
+        .route("/api/places/{place_id}/closed", put(report_closed))
         .route("/api/visits/{place_id}", put(add_visit).delete(remove_visit))
         .route("/api/push/key", get(push_key))
         .route("/api/push/subscription", put(subscribe).delete(unsubscribe))
@@ -445,6 +446,46 @@ async fn remove_visit(
 ) -> Result<StatusCode, ApiError> {
     store::remove_visit(&state.db, &user, &place_id).await?;
     Ok(StatusCode::NO_CONTENT)
+}
+
+/// "This place has closed": hides it for the reporter now, and for everyone after more reports.
+async fn report_closed(
+    State(state): State<AppState>,
+    User(user): User,
+    Path(place_id): Path<String>,
+) -> Result<StatusCode, ApiError> {
+    let (name, lat, lng) = store::place_summary(&state.db, &place_id).await?.ok_or(ApiError::NotFound("place"))?;
+    let reports = store::report_closed(&state.db, &user, &place_id, state.now()).await?;
+    // Tell OSM once, when the place gets hidden for everyone, so one person cannot spam mappers.
+    if let (Some(2), Some(url), Some(osm)) = (reports, &state.osm_notes_url, osm_link(&place_id)) {
+        let text = format!(
+            "Two Mangiamundo users reported that \"{name}\" ({osm}) has closed. \
+             Could someone check and update or remove it?"
+        );
+        tokio::spawn(post_osm_note(url.clone(), lat, lng, text));
+    }
+    Ok(StatusCode::NO_CONTENT)
+}
+
+/// The openstreetmap.org page of an OSM place, from an id like `osm-node-123`.
+fn osm_link(place_id: &str) -> Option<String> {
+    let (kind, id) = place_id.strip_prefix("osm-")?.split_once('-')?;
+    Some(format!("https://www.openstreetmap.org/{kind}/{id}"))
+}
+
+/// Posts an anonymous OSM note. Best effort: a failure is logged, not retried.
+async fn post_osm_note(url: String, lat: f64, lng: f64, text: String) {
+    let result = reqwest::Client::new()
+        .post(&url)
+        .header(header::USER_AGENT, concat!("mangiamundo/", env!("CARGO_PKG_VERSION")))
+        .form(&[("lat", lat.to_string()), ("lon", lng.to_string()), ("text", text)])
+        .send()
+        .await
+        .and_then(|r| r.error_for_status());
+    match result {
+        Ok(_) => tracing::info!(lat, lng, "posted osm note"),
+        Err(error) => tracing::warn!(%error, "osm note failed"),
+    }
 }
 
 async fn push_key(State(state): State<AppState>) -> ApiResult<serde_json::Value> {

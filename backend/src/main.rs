@@ -1,6 +1,8 @@
 use std::sync::Arc;
 
-use mangiamundo::{api, calendar, config::Config, providers, push, store, AppState};
+use mangiamundo::config::{Config, ProviderKind};
+use mangiamundo::providers::{self, osm};
+use mangiamundo::{api, calendar, push, store, AppState};
 use tower_http::services::{ServeDir, ServeFile};
 
 #[tokio::main]
@@ -8,8 +10,14 @@ async fn main() -> anyhow::Result<()> {
     tracing_subscriber::fmt::init();
 
     let config = Config::from_env()?;
-    let (places, areas) = providers::build(&config)?;
+    let (mut places, areas) = providers::build(&config)?;
     let db = store::connect(&config.database_url).await?;
+    if config.provider == ProviderKind::Osm {
+        // Belgium comes from a weekly import, so searches there skip the slow live query.
+        let http = reqwest::Client::builder().user_agent(concat!("mangiamundo/", env!("CARGO_PKG_VERSION"))).build()?;
+        tokio::spawn(osm::run_imports(db.clone(), osm::Overpass::new(http, config.overpass_urls.clone())));
+        places = Arc::new(osm::WithImport::new(db.clone(), places));
+    }
     let pusher = push::Pusher::load(&db, config.vapid_private_key.clone(), config.vapid_subject.clone()).await?;
     let state = AppState {
         db,
@@ -18,6 +26,7 @@ async fn main() -> anyhow::Result<()> {
         cache_ttl_secs: config.cache_ttl_secs,
         clock: Arc::new(store::now),
         push_key: Some(pusher.public_key.clone()),
+        osm_notes_url: config.osm_notes_url.clone(),
     };
     calendar::validate().map_err(anyhow::Error::msg)?;
     tracing::info!(provider = state.places.name(), "places provider ready");

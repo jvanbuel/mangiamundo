@@ -24,15 +24,21 @@ async fn app() -> Router {
 
 /// An app with its own clock, starting at START, that the test can move.
 async fn app_with_clock() -> (Router, Arc<AtomicI64>) {
-    let now = Arc::new(AtomicI64::new(START));
+    let db = store::connect("sqlite::memory:").await.unwrap();
+    app_with(db, None, START).await
+}
+
+async fn app_with(db: sqlx::SqlitePool, osm_notes_url: Option<String>, start: i64) -> (Router, Arc<AtomicI64>) {
+    let now = Arc::new(AtomicI64::new(start));
     let clock = now.clone();
     let router = api::router(AppState {
-        db: store::connect("sqlite::memory:").await.unwrap(),
+        db,
         places: Arc::new(Demo),
         areas: Arc::new(Demo),
         cache_ttl_secs: 3600,
         clock: Arc::new(move || clock.load(Ordering::Relaxed)),
         push_key: None,
+        osm_notes_url,
     });
     (router, now)
 }
@@ -294,4 +300,86 @@ async fn visits_between_counts_distinct_places_inside_the_window() {
     let east_asia = vec!["JP".to_string(), "KR".to_string()];
     assert_eq!(store::visits_between(&db, &user, &east_asia, from, until).await.unwrap(), 2, "a place counts once");
     assert_eq!(store::visits_between(&db, &user, &[], from, until).await.unwrap(), 0);
+}
+
+#[tokio::test]
+async fn closed_reports_hide_a_place_from_the_reporter_then_from_everyone() {
+    let app = app().await;
+    let (alice, bob) = (session(&app).await, session(&app).await);
+    let ids = |places: &Value| -> Vec<String> {
+        places.as_array().unwrap().iter().map(|p| p["id"].as_str().unwrap().to_string()).collect()
+    };
+    let list = |token: Option<String>| {
+        let app = app.clone();
+        async move { ids(&call(&app, "GET", &format!("/api/places?{HERE}"), token.as_deref(), None).await.1) }
+    };
+    let place = list(None).await[0].clone();
+    let report = format!("/api/places/{place}/closed");
+
+    assert_eq!(call(&app, "PUT", &report, None, None).await.0, StatusCode::UNAUTHORIZED);
+    assert_eq!(call(&app, "PUT", "/api/places/nope/closed", Some(&alice), None).await.0, StatusCode::NOT_FOUND);
+
+    assert_eq!(call(&app, "PUT", &report, Some(&alice), None).await.0, StatusCode::NO_CONTENT);
+    // Reporting twice counts once.
+    assert_eq!(call(&app, "PUT", &report, Some(&alice), None).await.0, StatusCode::NO_CONTENT);
+    assert!(!list(Some(alice.clone())).await.contains(&place));
+    assert!(list(Some(bob.clone())).await.contains(&place));
+    assert!(list(None).await.contains(&place));
+
+    call(&app, "PUT", &report, Some(&bob), None).await;
+    assert!(!list(None).await.contains(&place));
+}
+
+#[tokio::test]
+async fn the_second_closed_report_of_an_osm_place_posts_one_osm_note() {
+    use axum::routing::post;
+    use std::sync::Mutex;
+    let notes: Arc<Mutex<Vec<String>>> = Arc::default();
+    let seen = notes.clone();
+    let fake = Router::new().route(
+        "/notes",
+        post(move |body: String| async move {
+            seen.lock().unwrap().push(body);
+            StatusCode::OK
+        }),
+    );
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let url = format!("http://{}/notes", listener.local_addr().unwrap());
+    tokio::spawn(async move { axum::serve(listener, fake).await.unwrap() });
+
+    // An OSM place already saved, so the demo provider is not asked.
+    let db = store::connect("sqlite::memory:").await.unwrap();
+    let place = mangiamundo::providers::FoundPlace {
+        id: "osm-node-42".into(),
+        name: "Lalibela".into(),
+        lat: 50.8798,
+        lng: 4.7005,
+        address: None,
+        url: None,
+        cuisine: Some("ethiopian".into()),
+        opening_hours: None,
+        countries: vec!["ET"],
+    };
+    use mangiamundo::geo::{Bbox, Shape};
+    use mangiamundo::providers::{AreaInfo, AreaKind, Boundary};
+    let area = store::Area {
+        boundary: Boundary {
+            info: AreaInfo { id: "demo-leuven".into(), name: "Leuven".into(), kind: AreaKind::City, detail: None, lat: 50.88, lng: 4.7 },
+            shape: Shape::rect(Bbox { south: 50.8, west: 4.6, north: 50.95, east: 4.8 }),
+        },
+        provider: "demo".into(),
+        fetched_at: START,
+    };
+    store::save_area(&db, &area, &[place]).await.unwrap();
+    let (app, _) = app_with(db, Some(url), START).await;
+
+    let users = [session(&app).await, session(&app).await, session(&app).await];
+    for user in &users {
+        assert_eq!(call(&app, "PUT", "/api/places/osm-node-42/closed", Some(user), None).await.0, StatusCode::NO_CONTENT);
+    }
+    tokio::time::sleep(std::time::Duration::from_millis(200)).await;
+    let notes = notes.lock().unwrap();
+    assert_eq!(notes.len(), 1, "{notes:?}");
+    assert!(notes[0].contains("lat=50.8798") && notes[0].contains("lon=4.7005"), "{}", notes[0]);
+    assert!(notes[0].contains("openstreetmap.org%2Fnode%2F42"), "{}", notes[0]);
 }
