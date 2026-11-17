@@ -20,6 +20,7 @@ use tower_http::trace::TraceLayer;
 use std::collections::HashMap;
 
 use chrono::{Duration, NaiveDate};
+use chrono_tz::Tz;
 
 use crate::calendar::{self, Celebration};
 use crate::game::{self, Lifetime, PlaceRow, Summary};
@@ -248,6 +249,21 @@ const MAX_AREA_DEGREES: f64 = 1.5;
 struct AreaQuery {
     /// An area id from `/api/areas` or `/api/areas/locate`.
     area: String,
+    /// The user's IANA time zone (e.g. `Asia/Tokyo`), which decides when event days
+    /// begin and end. UTC when missing or unknown.
+    tz: Option<String>,
+}
+
+/// Parses the optional `tz` parameter. An unknown zone (a browser can report one the
+/// tz database here lacks) falls back to UTC rather than failing the whole screen.
+fn zone(tz: Option<&str>) -> Tz {
+    match tz {
+        None | Some("") => Tz::UTC,
+        Some(name) => name.parse().unwrap_or_else(|_| {
+            tracing::warn!(tz = name, "unknown time zone, using UTC");
+            Tz::UTC
+        }),
+    }
 }
 
 fn valid_area_id(id: &str) -> bool {
@@ -355,25 +371,22 @@ fn places_per_country(rows: &[PlaceRow]) -> HashMap<&str, u32> {
     counts
 }
 
-/// Unix time at the start of a UTC day.
-fn day_start(day: NaiveDate) -> i64 {
-    day.and_hms_opt(0, 0, 0).map(|t| t.and_utc().timestamp()).unwrap_or(0)
-}
-
 /// Events to show: upcoming within a month, running, or finished and earned.
 async fn event_progress(
     state: &AppState,
     user: Option<&str>,
     rows: &[PlaceRow],
+    zone: Tz,
 ) -> Result<Vec<EventProgress>, ApiError> {
-    let today = state.today();
+    let today = state.today(zone);
     let counts = places_per_country(rows);
     let mut out = Vec::new();
     for event in calendar::relevant_events(today, 30) {
         let progress = match user {
             Some(user) => {
-                let until = day_start(event.ends + Duration::days(1));
-                store::visits_between(&state.db, user, &event.countries, day_start(event.starts), until).await?
+                let from = calendar::day_start(event.starts, zone);
+                let until = calendar::day_start(event.ends + Duration::days(1), zone);
+                store::visits_between(&state.db, user, &event.countries, from, until).await?
             }
             None => 0,
         };
@@ -404,13 +417,14 @@ async fn discover(
     MaybeUser(user): MaybeUser,
     Query(query): Query<AreaQuery>,
 ) -> ApiResult<Discover> {
+    let zone = zone(query.tz.as_deref());
     let area = resolve_area(&state, &query.area).await?;
     let rows = store::area_rows(&state.db, area.id(), user.as_deref()).await?;
     let lifetime = match &user {
         Some(user) => store::lifetime(&state.db, user).await?,
         None => Lifetime::default(),
     };
-    let events = event_progress(&state, user.as_deref(), &rows).await?;
+    let events = event_progress(&state, user.as_deref(), &rows, zone).await?;
     Ok(Json(Discover { summary: game::summarize(&rows, lifetime), area: (&area).into(), events }))
 }
 
@@ -419,6 +433,8 @@ struct CelebrationsQuery {
     area: String,
     /// How far ahead to look.
     days: Option<i64>,
+    /// As for `/api/discover`.
+    tz: Option<String>,
 }
 
 #[derive(Serialize)]
@@ -442,11 +458,12 @@ async fn celebrations(
     State(state): State<AppState>,
     Query(query): Query<CelebrationsQuery>,
 ) -> ApiResult<Vec<CelebrationView>> {
+    let zone = zone(query.tz.as_deref());
     let area = resolve_area(&state, &query.area).await?;
     let rows = store::area_rows(&state.db, area.id(), None).await?;
     let counts = places_per_country(&rows);
     let days = query.days.unwrap_or(60).clamp(0, 366);
-    Ok(Json(nearby_celebrations(state.today(), days, &counts)))
+    Ok(Json(nearby_celebrations(state.today(zone), days, &counts)))
 }
 
 fn nearby_celebrations(today: NaiveDate, days: i64, counts: &HashMap<&str, u32>) -> Vec<CelebrationView> {

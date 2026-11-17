@@ -382,6 +382,44 @@ async fn events_move_from_upcoming_to_active_and_unearned_ones_disappear() {
 }
 
 #[tokio::test]
+async fn event_days_follow_the_users_time_zone() {
+    // 1 December 2026, 08:00 in Tokyo: Japan month has begun there, but it is still
+    // 30 November (23:00) in UTC.
+    let morning_in_tokyo = 1_796_079_600;
+    let db = store::connect("sqlite::memory:").await.unwrap();
+    let (app, _) = app_with(db, None, morning_in_tokyo).await;
+    let token = session(&app).await;
+    let (_, places) = call(&app, "GET", "/api/places?area=demo-tokyo&country=JP", Some(&token), None).await;
+    let place = places.as_array().unwrap().first().expect("demo Tokyo has a Japanese place").clone();
+    let (status, _) = call(&app, "PUT", &format!("/api/visits/{}", place["id"].as_str().unwrap()), Some(&token), None).await;
+    assert_eq!(status, StatusCode::OK);
+
+    let japan = |discover: &Value| {
+        discover["events"].as_array().unwrap().iter().find(|e| e["id"] == "japan-month-2026-12").unwrap().clone()
+    };
+    let (status, local) =
+        call(&app, "GET", "/api/discover?area=demo-tokyo&tz=Asia%2FTokyo", Some(&token), None).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(japan(&local)["status"], "active");
+    assert_eq!(japan(&local)["progress"], 1, "the check-in counts on the event's first local day");
+
+    // Without a time zone the server falls back to UTC, where the event hasn't started.
+    let (_, utc) = call(&app, "GET", "/api/discover?area=demo-tokyo", Some(&token), None).await;
+    assert_eq!(japan(&utc)["status"], "upcoming");
+    assert_eq!(japan(&utc)["progress"], 0);
+
+    // Celebrations take the same parameter.
+    let (status, _) = call(&app, "GET", "/api/celebrations?area=demo-tokyo&tz=Asia%2FTokyo", None, None).await;
+    assert_eq!(status, StatusCode::OK);
+
+    // An unknown zone is treated as UTC instead of failing the screen.
+    let (status, unknown) =
+        call(&app, "GET", "/api/discover?area=demo-tokyo&tz=Etc%2FUnknown", Some(&token), None).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(japan(&unknown)["status"], "upcoming");
+}
+
+#[tokio::test]
 async fn visits_between_counts_distinct_places_inside_the_window() {
     use mangiamundo::geo::{Bbox, Shape};
     use mangiamundo::providers::{AreaInfo, AreaKind, Boundary, FoundPlace};
