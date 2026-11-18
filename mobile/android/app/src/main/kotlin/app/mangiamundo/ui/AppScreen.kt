@@ -16,6 +16,8 @@ import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Scaffold
@@ -162,7 +164,7 @@ fun AppScreen(vm: AppViewModel = viewModel()) {
                             for ((openNow, group) in vm.places.groupBy { it.openNow }) {
                                 if (showGroups) item(key = "group-$openNow") { PlaceGroupHeader(openNow) }
                                 items(group, key = { it.id }) { place ->
-                                    PlaceRow(place, busy = vm.busyPlace == place.id) { vm.toggleVisit(place) }
+                                    PlaceRow(place, busy = vm.busyPlace == place.id, onOpen = { vm.openPlace(place) }) { vm.toggleVisit(place) }
                                 }
                             }
                         } else {
@@ -190,6 +192,14 @@ fun AppScreen(vm: AppViewModel = viewModel()) {
                     }
                 }
                 item(key = "build") { BuildLine(vm.server) }
+            }
+        }
+    }
+
+    vm.detail?.let { place ->
+        ModalBottomSheet(onDismissRequest = vm::closePlace, containerColor = colors.panel) {
+            Column(Modifier.verticalScroll(rememberScrollState())) {
+                PlaceDetail(place, vm::country, busy = vm.busyPlace == place.id) { vm.toggleVisit(place) }
             }
         }
     }

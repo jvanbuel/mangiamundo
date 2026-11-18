@@ -18,6 +18,7 @@ import app.mangiamundo.core.Place
 import app.mangiamundo.core.ProjectionKind
 import app.mangiamundo.core.ReminderPlan
 import app.mangiamundo.core.Status
+import app.mangiamundo.core.Visit
 import app.mangiamundo.core.World
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -47,6 +48,9 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     var places by mutableStateOf<List<Place>>(emptyList()); private set
     var placesLoading by mutableStateOf(false); private set
     var busyPlace by mutableStateOf<String?>(null); private set
+    /** The place whose details are open: its card's data until the full place has loaded. */
+    var detail by mutableStateOf<Place?>(null); private set
+    private var detailJob: Job? = null
 
     var locating by mutableStateOf(false); private set
     var locateError by mutableStateOf<String?>(null); private set
@@ -135,6 +139,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         discover = null
         celebrations = emptyList()
         settings.location = target
+        closePlace()
         select(null)
         refresh()
     }
@@ -272,6 +277,29 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    /** Opens a place's details, with all of the user's visits. */
+    fun openPlace(place: Place) {
+        detail = place
+        detailJob?.cancel()
+        // Measured from the user when known, otherwise from the map pin.
+        val from = userPosition() ?: location?.let { it.lat to it.lng }
+        detailJob = viewModelScope.launch {
+            try {
+                val full = api.place(place.id, from)
+                if (detail?.id == place.id) detail = full
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                messageChannel.trySend("Could not load this place: ${e.message}")
+            }
+        }
+    }
+
+    fun closePlace() {
+        detailJob?.cancel()
+        detail = null
+    }
+
     /** A tap on the map: open the country if it is available here, otherwise say so. */
     fun tapCountry(code: String, name: String) {
         if (discover?.countries?.any { it.code == code } == true) {
@@ -290,19 +318,23 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
             try {
                 // Visited today: undo that visit. Otherwise check in, also when there are older visits.
                 val undoing = place.visitedToday()
-                val updated = if (!undoing) {
+                val update: (List<Visit>) -> List<Visit> = if (!undoing) {
                     val fix = gpsFix?.takeIf { System.currentTimeMillis() - it.third < 10 * 60_000 }
-                    val result = api.checkIn(place.id, fix?.let { it.first to it.second })
-                    place.copy(visits = listOf(result.visit))
+                    val visit = api.checkIn(place.id, fix?.let { it.first to it.second }).visit
+                    // Checking in twice on one day returns that day's visit.
+                    { old -> listOf(visit) + old.filter { it.id != visit.id } }
                 } else {
                     // The place stays visited if there are older visits.
                     api.removeVisit(place.visits.first().id)
-                    place.copy(visits = api.place(place.id, null).visits.take(1))
+                    val rest = api.place(place.id, null).visits
+                    { _ -> rest }
                 }
-                places = places.map { if (it.id == place.id) updated else it }
+                // Cards show only the latest visit, the details all of them.
+                places = places.map { if (it.id == place.id) it.copy(visits = update(it.visits).take(1)) else it }
+                detail = detail?.let { if (it.id == place.id) it.copy(visits = update(it.visits)) else it }
                 val after = api.discover(here.area.id)
                 discover = after
-                if (!undoing) celebrate(before, after, updated)
+                if (!undoing) celebrate(before, after, place)
             } catch (e: Exception) {
                 messageChannel.trySend("That did not work: ${e.message}")
             }

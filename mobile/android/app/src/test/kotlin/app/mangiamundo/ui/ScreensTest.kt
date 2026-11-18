@@ -30,6 +30,9 @@ import app.mangiamundo.core.GroupProgress
 import app.mangiamundo.core.Place
 import app.mangiamundo.core.Profile
 import app.mangiamundo.core.Visit
+import app.mangiamundo.core.Day
+import app.mangiamundo.core.Hours
+import app.mangiamundo.core.HoursStatus
 import app.mangiamundo.core.ProjectionKind
 import app.mangiamundo.core.World
 import com.android.resources.NightMode
@@ -128,10 +131,28 @@ class ScreensTest {
         val colors = LocalAppColors.current
         Column(Modifier.fillMaxSize().background(colors.panel).padding(16.dp)) {
             CountryHeader(progress.first { it.code == "JP" }, countries.first { it.code == "JP" }) {}
-            PlaceRow(Place("a", "Sushi Kaito", 50.88, 4.70, address = "Naamsestraat 12, Leuven", url = "https://example.org", countries = listOf("JP"), distanceM = 420, visits = listOf(Visit(1, 1, verified = true))), busy = false) {}
-            PlaceRow(Place("b", "Ramen Bar Ichi", 50.87, 4.71, address = "Bondgenotenlaan 40", countries = listOf("JP"), distanceM = 1250, visits = listOf(Visit(2, 1))), busy = false) {}
-            PlaceRow(Place("c", "Izakaya Kumo", 50.86, 4.69, countries = listOf("JP"), distanceM = 3400), busy = false) {}
+            PlaceRow(Place("a", "Sushi Kaito", 50.88, 4.70, address = "Naamsestraat 12, Leuven", url = "https://example.org", countries = listOf("JP"), distanceM = 420, visits = listOf(Visit(1, 1, verified = true))), busy = false, onOpen = {}) {}
+            PlaceRow(Place("b", "Ramen Bar Ichi", 50.87, 4.71, address = "Bondgenotenlaan 40", countries = listOf("JP"), distanceM = 1250, visits = listOf(Visit(2, 1))), busy = false, onOpen = {}) {}
+            PlaceRow(Place("c", "Izakaya Kumo", 50.86, 4.69, countries = listOf("JP"), distanceM = 3400), busy = false, onOpen = {}) {}
             BadgeGrid(discover.badges)
+        }
+    }
+
+    @Test
+    fun placeDetailDark() = snapshot(dark = true) {
+        val colors = LocalAppColors.current
+        val open = listOf("11:30-14:00", "18:00-22:00")
+        val week = listOf("Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday")
+            .mapIndexed { i, name -> Day(name, today = i == 2, open = if (i == 0) emptyList() else if (i == 5) listOf("18:00-02:00") else open) }
+        val place = Place(
+            "osm-node-1", "Sushi Kaito", 50.88, 4.70, address = "Naamsestraat 12, Leuven", url = "https://example.org",
+            cuisine = "japanese;sushi", hours = Hours("Tu-Su 11:30-14:00,18:00-22:00", HoursStatus(true, "Open until 14:00"), week),
+            countries = listOf("JP"), distanceM = 420,
+            visits = listOf(Visit(2, 1_794_830_400, verified = true), Visit(1, 1_790_000_000)),
+            osmUrl = "https://www.openstreetmap.org/node/1",
+        )
+        Column(Modifier.fillMaxSize().background(colors.panel).padding(top = 16.dp)) {
+            PlaceDetail(place, { code -> countries.firstOrNull { it.code == code } }, busy = false) {}
         }
     }
 
