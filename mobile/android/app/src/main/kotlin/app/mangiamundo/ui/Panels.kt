@@ -8,6 +8,7 @@ import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -38,9 +39,11 @@ import androidx.compose.material.icons.rounded.NearMe
 import androidx.compose.material.icons.rounded.Place
 import androidx.compose.material.icons.rounded.Public
 import androidx.compose.material.icons.rounded.Restaurant
+import androidx.compose.material.icons.rounded.Settings
 import androidx.compose.material.icons.rounded.Verified
 import androidx.compose.material3.Button
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ButtonDefaults
@@ -194,11 +197,18 @@ fun Legend(modifier: Modifier = Modifier) {
 }
 
 @Composable
-fun Header(location: SavedLocation?, onChange: () -> Unit) {
+fun Header(location: SavedLocation?, onChange: () -> Unit, onSettings: () -> Unit) {
     val colors = LocalAppColors.current
     Column(Modifier.padding(bottom = 6.dp)) {
-        Text("Mangiamundo", style = MaterialTheme.typography.titleLarge, color = colors.text)
-        Text("Eat the world, start with your city", style = MaterialTheme.typography.titleSmall, color = colors.muted)
+        Row(verticalAlignment = Alignment.Top) {
+            Column(Modifier.weight(1f)) {
+                Text("Mangiamundo", style = MaterialTheme.typography.titleLarge, color = colors.text)
+                Text("Eat the world, start with your city", style = MaterialTheme.typography.titleSmall, color = colors.muted)
+            }
+            IconButton(onClick = onSettings) {
+                Icon(Icons.Rounded.Settings, contentDescription = "Settings", tint = colors.muted)
+            }
+        }
         if (location != null) {
             Row(
                 Modifier
@@ -256,16 +266,35 @@ fun Note(text: String) {
     Text(text, color = LocalAppColors.current.muted, modifier = Modifier.padding(vertical = 12.dp))
 }
 
+/** Rarely needed things, kept off the main screen. */
+@Composable
+fun SettingsPanel(server: String?) {
+    val colors = LocalAppColors.current
+    val context = LocalContext.current
+    Column {
+        Text("Settings", style = MaterialTheme.typography.titleLarge, color = colors.text)
+        Text(
+            "Map data © OpenStreetMap contributors",
+            color = colors.accent,
+            fontWeight = FontWeight.Bold,
+            modifier = Modifier.padding(top = 16.dp).clickable { context.open("https://www.openstreetmap.org/copyright") },
+        )
+        BuildLine(server)
+    }
+}
+
 /** Which builds of the app and the server are running, to tell old builds apart. */
 @Composable
-fun BuildLine(server: String?) {
+private fun BuildLine(server: String?) {
     val app = "${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE}, ${BuildConfig.GIT_COMMIT})"
-    Text(
-        "App $app" + server?.let { " · Server $it" }.orEmpty(),
-        color = LocalAppColors.current.muted,
-        style = MaterialTheme.typography.labelSmall,
-        modifier = Modifier.padding(top = 16.dp),
-    )
+    SelectionContainer {
+        Text(
+            "App $app" + server?.let { " · Server $it" }.orEmpty(),
+            color = LocalAppColors.current.muted,
+            style = MaterialTheme.typography.labelSmall,
+            modifier = Modifier.padding(top = 16.dp),
+        )
+    }
 }
 
 @Composable

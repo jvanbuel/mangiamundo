@@ -360,15 +360,24 @@ struct ToastStack: View {
 struct Header: View {
     @Environment(AppModel.self) private var model
     let onChange: () -> Void
+    let onSettings: () -> Void
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
-            VStack(alignment: .leading, spacing: 2) {
-                Text("Mangiamundo")
-                    .font(Theme.font(.title2, .black))
-                Text("Eat the world, start with your city")
-                    .font(Theme.font(.subheadline, .bold))
-                    .foregroundStyle(Theme.muted)
+            HStack(alignment: .top) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Mangiamundo")
+                        .font(Theme.font(.title2, .black))
+                    Text("Eat the world, start with your city")
+                        .font(Theme.font(.subheadline, .bold))
+                        .foregroundStyle(Theme.muted)
+                }
+                Spacer()
+                Button(action: onSettings) {
+                    Image(systemName: "gearshape").font(Theme.font(.title3)).foregroundStyle(Theme.muted)
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Settings")
             }
             if let location = model.location {
                 Button(action: onChange) {
@@ -690,7 +699,7 @@ struct PlaceLinks: View {
                     Button(app.name) { directions(app) }
                 }
             } message: {
-                Text("To skip this question, pick an app under \"Directions with\" at the bottom of the screen.")
+                Text("To skip this question, pick an app under \"Directions with\" in Settings (the gear at the top).")
             }
             if let link = place.url, let url = URL(string: link) {
                 Button("Website") { openURL(url) }

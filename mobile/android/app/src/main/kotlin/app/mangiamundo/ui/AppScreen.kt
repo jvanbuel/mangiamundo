@@ -56,6 +56,7 @@ fun AppScreen(vm: AppViewModel = viewModel()) {
     val context = LocalContext.current
     val snackbar = remember { SnackbarHostState() }
     var pickerOpen by rememberSaveable { mutableStateOf(false) }
+    var settingsOpen by rememberSaveable { mutableStateOf(false) }
 
     LaunchedEffect(Unit) {
         vm.messages.collect { snackbar.showSnackbar(it) }
@@ -137,7 +138,7 @@ fun AppScreen(vm: AppViewModel = viewModel()) {
                 Modifier.fillMaxWidth().weight(0.58f),
                 contentPadding = PaddingValues(16.dp),
             ) {
-                item { Header(vm.location, onChange = { pickerOpen = true }) }
+                item { Header(vm.location, onChange = { pickerOpen = true }, onSettings = { settingsOpen = true }) }
 
                 when {
                     vm.location == null -> item {
@@ -192,7 +193,6 @@ fun AppScreen(vm: AppViewModel = viewModel()) {
                         }
                     }
                 }
-                item(key = "build") { BuildLine(vm.server) }
             }
         }
     }
@@ -216,6 +216,12 @@ fun AppScreen(vm: AppViewModel = viewModel()) {
             Row(Modifier.padding(start = 16.dp, end = 16.dp, bottom = 24.dp)) {
                 LocationPicker(vm, useGps, onDone = { pickerOpen = false })
             }
+        }
+    }
+
+    if (settingsOpen) {
+        ModalBottomSheet(onDismissRequest = { settingsOpen = false }, containerColor = colors.panel) {
+            Box(Modifier.padding(start = 16.dp, end = 16.dp, bottom = 24.dp)) { SettingsPanel(vm.server) }
         }
     }
 }

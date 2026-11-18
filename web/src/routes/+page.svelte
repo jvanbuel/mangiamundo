@@ -12,9 +12,11 @@
 	import WorldMap from '#lib/WorldMap.svelte';
 	import MapPin from '@lucide/svelte/icons/map-pin';
 	import Navigation from '@lucide/svelte/icons/navigation';
+	import Settings from '@lucide/svelte/icons/settings';
 	import { app, init, refresh, select, setProjection, setTheme, toast, type Theme } from '#lib/state.svelte.ts';
 
 	let pickerOpen = $state(false);
+	let settingsOpen = $state(false);
 
 	const selected = $derived(app.discover?.countries.find((c) => c.code === app.selected) ?? null);
 	const earned = $derived(app.discover?.badges.filter((b) => b.earned).length ?? 0);
@@ -88,7 +90,12 @@
 
 	<aside>
 		<header>
-			<h1><img src="/icon.svg" alt="" width="32" height="32" />Mangiamundo</h1>
+			<h1>
+				<img src="/icon.svg" alt="" width="32" height="32" />Mangiamundo
+				<button class="gear" aria-label="Settings" aria-expanded={settingsOpen} onclick={() => (settingsOpen = !settingsOpen)}>
+					<Settings size={20} aria-hidden="true" />
+				</button>
+			</h1>
 			<p class="tagline">Eat the world, start with your city</p>
 			{#if app.location}
 				<button class="where" aria-expanded={pickerOpen} onclick={() => (pickerOpen = !pickerOpen)}>
@@ -99,6 +106,14 @@
 				</button>
 			{/if}
 		</header>
+
+		{#if settingsOpen}
+			<div class="card settings">
+				<h2>Settings</h2>
+				<p><a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">Map data © OpenStreetMap contributors</a></p>
+				<p class="build">Web {version}{app.server ? ` · Server ${app.server}` : ''}</p>
+			</div>
+		{/if}
 
 		{#if pickerOpen && app.location}
 			<div class="card"><LocationPicker onclose={() => (pickerOpen = false)} /></div>
@@ -155,7 +170,6 @@
 			{/if}
 		{/if}
 
-		<p class="build">Web {version}{app.server ? ` · Server ${app.server}` : ''}</p>
 	</aside>
 </main>
 
@@ -259,9 +273,15 @@
 		line-height: 1.25;
 	}
 
-	.build {
-		margin: auto 0 0;
-		padding: 0 4px;
+	.gear {
+		margin-left: auto;
+		display: flex;
+		padding: 4px;
+		color: var(--muted);
+	}
+
+	.settings p.build {
+		margin: 0;
 		font-size: 11px;
 		color: var(--muted);
 	}
