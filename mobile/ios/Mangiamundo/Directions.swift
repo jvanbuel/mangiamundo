@@ -12,15 +12,34 @@ enum MapsApp: String, CaseIterable {
         }
     }
 
-    /// A route to the place. Only the coordinates: a name in the destination makes both apps search for it.
-    func directions(lat: Double, lng: Double) -> URL? {
+    /// A route to the place, carrying its name.
+    ///
+    /// Neither app has a parameter that labels a route's destination, so:
+    /// - Apple Maps routes to the coordinates and gets the name as `q`, its label for a location.
+    /// - Google Maps gets "name, address" as the destination and looks it up, so the route ends at
+    ///   the place's own listing. Without an address that lookup could find a namesake elsewhere,
+    ///   so it routes to the bare coordinates instead.
+    func directions(to place: Place) -> URL? {
+        directions(name: place.name, address: place.address, lat: place.lat, lng: place.lng)
+    }
+
+    func directions(name: String, address: String?, lat: Double, lng: Double) -> URL? {
+        let coordinates = "\(lat),\(lng)"
         switch self {
         case .apple:
-            URL(string: "https://maps.apple.com/?daddr=\(lat),\(lng)")
+            return URL(string: "https://maps.apple.com/?daddr=\(coordinates)&q=\(Self.encode(name))")
         case .google:
             // The Google Maps app's URL scheme: no API key or SDK needed.
-            URL(string: "comgooglemaps://?daddr=\(lat),\(lng)&directionsmode=walking")
+            let destination = address.map { "\(name), \($0)" } ?? coordinates
+            return URL(string: "comgooglemaps://?daddr=\(Self.encode(destination))&directionsmode=walking")
         }
+    }
+
+    /// Percent-encodes a query value, including the `&`, `=`, `+` and `#` that URLComponents leaves alone.
+    private static func encode(_ value: String) -> String {
+        var allowed = CharacterSet.urlQueryAllowed
+        allowed.remove(charactersIn: "&=+#?")
+        return value.addingPercentEncoding(withAllowedCharacters: allowed) ?? value
     }
 
     /// Needs `comgooglemaps` in LSApplicationQueriesSchemes (project.yml).
