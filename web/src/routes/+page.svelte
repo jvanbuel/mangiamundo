@@ -7,6 +7,7 @@
 	import CountryList from '#lib/CountryList.svelte';
 	import LocationPicker from '#lib/LocationPicker.svelte';
 	import Passport from '#lib/Passport.svelte';
+	import PlaceDetail from '#lib/PlaceDetail.svelte';
 	import Toasts from '#lib/Toasts.svelte';
 	import WorldMap from '#lib/WorldMap.svelte';
 	import MapPin from '@lucide/svelte/icons/map-pin';
@@ -129,11 +130,13 @@
 		{:else}
 			<div class="card" class:dim={app.loading}><Passport discover={app.discover} /></div>
 
-			{#if app.celebrations.length && !selected}
+			{#if app.celebrations.length && !selected && !app.placeId}
 				<div class="card"><ComingUp celebrations={app.celebrations} /></div>
 			{/if}
 
-			{#if selected}
+			{#if app.placeId}
+				<section><PlaceDetail place={app.detail} /></section>
+			{:else if selected}
 				<section><CountryDetail progress={selected} onback={() => select(null)} /></section>
 			{:else}
 				<div class="tabs" role="tablist">

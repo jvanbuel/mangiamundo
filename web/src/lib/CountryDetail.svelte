@@ -1,18 +1,13 @@
 <script lang="ts">
 	import ArrowLeft from '@lucide/svelte/icons/arrow-left';
-	import Check from '@lucide/svelte/icons/check';
-	import { app, country, toggleVisit } from './state.svelte';
-	import { statusOf, visitedToday, type CountryProgress, type Place } from './types';
+	import CheckIn from './CheckIn.svelte';
+	import { app, country, openPlace } from './state.svelte';
+	import { directions, distance, statusOf, type CountryProgress, type Place } from './types';
 
 	let { progress, onback }: { progress: CountryProgress; onback: () => void } = $props();
 
 	const info = $derived(country(progress.code));
 	const status = $derived(statusOf(progress));
-	let busy = $state<string | null>(null);
-
-	const distance = (m: number) => (m < 1000 ? `${Math.round(m / 10) * 10} m` : `${(m / 1000).toFixed(1)} km`);
-	const directions = (lat: number, lng: number) =>
-		`https://www.openstreetmap.org/directions?route=%3B${lat}%2C${lng}`;
 
 	// The API sorts open places first, then closed, then unknown hours.
 	const groupName = (open: boolean | null) =>
@@ -20,10 +15,11 @@
 	const openNow = (p: Place) => p.hours?.status?.open ?? null;
 	const showGroups = $derived(app.places.some((p) => openNow(p) !== null));
 
-	async function toggle(place: Place) {
-		busy = place.id;
-		await toggleVisit(place);
-		busy = null;
+	function open(event: MouseEvent, place: Place) {
+		// Let modified clicks open the link in a new tab.
+		if (event.metaKey || event.ctrlKey || event.shiftKey || event.button !== 0) return;
+		event.preventDefault();
+		void openPlace(place.id);
 	}
 </script>
 
@@ -49,15 +45,13 @@
 {:else}
 	<ul>
 		{#each app.places as place, i (place.id)}
-			{@const visited = place.visits.length > 0}
-			{@const today = visitedToday(place)}
 			{@const now = place.hours?.status}
 			{#if showGroups && (i === 0 || openNow(app.places[i - 1]) !== openNow(place))}
 				<li class="group">{groupName(openNow(place))}</li>
 			{/if}
 			<li>
 				<div class="info">
-					<strong>{place.name}</strong>
+					<a class="name" href="?place={encodeURIComponent(place.id)}" onclick={(e) => open(e, place)}>{place.name}</a>
 					{#if now}
 						<span class="hours" class:open={now.open} title={place.hours?.raw}>{now.text}</span>
 					{/if}
@@ -70,15 +64,7 @@
 						{#if place.url}<a href={place.url} target="_blank" rel="noopener">Website</a>{/if}
 					</span>
 				</div>
-				<button
-					class="check"
-					class:done={today}
-					aria-pressed={today}
-					disabled={busy === place.id}
-					onclick={() => toggle(place)}
-				>
-					{#if today}<Check size={16} strokeWidth={3} /> Visited{:else if visited}Check in again{:else}Check in{/if}
-				</button>
+				<CheckIn {place} />
 			</li>
 		{/each}
 	</ul>
@@ -135,6 +121,7 @@
 	}
 
 	li {
+		position: relative;
 		display: flex;
 		align-items: center;
 		gap: 12px;
@@ -168,10 +155,29 @@
 		font-size: 14px;
 	}
 
-	.info strong {
+	.name {
+		color: inherit;
+		text-decoration: none;
 		font-size: 16px;
 		font-weight: 800;
 		overflow-wrap: anywhere;
+	}
+
+	.name:hover {
+		text-decoration: underline;
+	}
+
+	/* The whole card opens the details; the links and the button on it stay on top. */
+	.name::after {
+		content: '';
+		position: absolute;
+		inset: 0;
+	}
+
+	.links a,
+	li :global(.check) {
+		position: relative;
+		z-index: 1;
 	}
 
 	.links {
@@ -188,35 +194,5 @@
 
 	.verified {
 		color: var(--completed);
-	}
-
-	/* Chunky, pressable buttons: a solid face on a darker lower edge. */
-	.check {
-		--face: var(--accent);
-		flex: none;
-		display: inline-flex;
-		align-items: center;
-		gap: 4px;
-		padding: 9px 14px 11px;
-		border-radius: 12px;
-		background: var(--face);
-		color: var(--on-accent);
-		font-size: 14px;
-		font-weight: 800;
-		box-shadow: inset 0 -3px 0 color-mix(in srgb, var(--face) 70%, #000);
-	}
-
-	.check:active {
-		padding: 10px 14px;
-		box-shadow: none;
-	}
-
-	.check.done {
-		--face: var(--completed);
-		color: var(--on-completed);
-	}
-
-	.check:disabled {
-		opacity: 0.6;
 	}
 </style>
