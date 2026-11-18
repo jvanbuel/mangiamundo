@@ -256,9 +256,17 @@ async fn a_place_can_be_fetched_on_its_own() {
     // Anonymously, and without a position the distance is 0.
     let (status, alone) = call(&app, "GET", &uri, None, None).await;
     assert_eq!(status, StatusCode::OK);
-    for field in ["id", "name", "lat", "lng", "address", "url", "cuisine", "hours", "countries"] {
+    for field in ["id", "name", "lat", "lng", "address", "url", "cuisine", "countries", "osm_url"] {
         assert_eq!(alone[field], place[field], "{field}");
     }
+    assert_eq!(alone["hours"]["raw"], place["hours"]["raw"]);
+    assert_eq!(alone["hours"]["status"], place["hours"]["status"]);
+    // Only the detail has the week, Monday to Sunday with one day marked as today.
+    assert!(place["hours"]["week"].is_null());
+    let week = alone["hours"]["week"].as_array().unwrap();
+    assert_eq!(week.len(), 7);
+    assert_eq!(week[0]["name"], "Monday");
+    assert_eq!(week.iter().filter(|d| d["today"] == true).count(), 1);
     assert_eq!(alone["distance_m"], 0);
     assert_eq!(alone["visits"], serde_json::json!([]));
 

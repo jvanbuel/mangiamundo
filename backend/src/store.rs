@@ -213,6 +213,10 @@ pub struct Hours {
     /// `None` when `raw` can't be parsed.
     #[schema(required = true)]
     pub status: Option<HoursStatus>,
+    /// This week, Monday to Sunday. Only sent by `/api/places/{place_id}`; `None` in lists
+    /// and when `raw` can't be parsed.
+    #[schema(required = true)]
+    pub week: Option<Vec<crate::hours::Day>>,
 }
 
 #[derive(Debug, Serialize, utoipa::ToSchema)]
@@ -243,6 +247,10 @@ pub struct PlaceView {
     /// The user's visits, newest first. Lists of places carry only the latest one;
     /// `/api/places/{place_id}` carries all of them.
     pub visits: Vec<Visit>,
+    /// The place's page on openstreetmap.org, for fixing it there. `None` for places that
+    /// don't come from OpenStreetMap.
+    #[schema(required = true)]
+    pub osm_url: Option<String>,
 }
 
 const PLACE_COLUMNS: &str = "p.id, p.name, p.lat, p.lng, p.address, p.url, p.cuisine, p.opening_hours,
@@ -258,13 +266,14 @@ fn place_view(r: &sqlx::sqlite::SqliteRow) -> PlaceView {
         address: r.get("address"),
         url: r.get("url"),
         cuisine: r.get("cuisine"),
-        hours: r.get::<Option<String>, _>("opening_hours").map(|raw| Hours { raw, status: None }),
+        hours: r.get::<Option<String>, _>("opening_hours").map(|raw| Hours { raw, status: None, week: None }),
         countries: r
             .get::<Option<String>, _>("countries")
             .map(|s| s.split(',').map(str::to_string).collect())
             .unwrap_or_default(),
         distance_m: 0,
         visits: Vec::new(),
+        osm_url: None,
     }
 }
 

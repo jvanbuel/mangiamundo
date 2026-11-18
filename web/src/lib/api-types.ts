@@ -392,6 +392,18 @@ export interface components {
             /** Format: int32 */
             visited: number;
         };
+        /** @description One day of a place's week. */
+        Day: {
+            /** @description English weekday name, e.g. "Monday". */
+            name: string;
+            /**
+             * @description When it is open, e.g. `["11:30-14:00", "18:00-22:00"]`; empty when closed all day.
+             *     A range past midnight belongs to the day it starts: "18:00-02:00".
+             */
+            open: string[];
+            /** @description The current day where the place is. */
+            today: boolean;
+        };
         Discover: components["schemas"]["Summary"] & {
             area: components["schemas"]["AreaView"];
             events: components["schemas"]["EventProgress"][];
@@ -482,6 +494,11 @@ export interface components {
             /** @description OSM `opening_hours` syntax; Google hours are converted to it. */
             raw: string;
             status: components["schemas"]["HoursStatus"] | null;
+            /**
+             * @description This week, Monday to Sunday. Only sent by `/api/places/{place_id}`; `None` in lists
+             *     and when `raw` can't be parsed.
+             */
+            week: components["schemas"]["Day"][] | null;
         };
         HoursStatus: {
             open: boolean;
@@ -526,6 +543,11 @@ export interface components {
             /** Format: double */
             lng: number;
             name: string;
+            /**
+             * @description The place's page on openstreetmap.org, for fixing it there. `None` for places that
+             *     don't come from OpenStreetMap.
+             */
+            osm_url: string | null;
             url: string | null;
             /**
              * @description The user's visits, newest first. Lists of places carry only the latest one;

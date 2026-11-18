@@ -616,8 +616,10 @@ async fn places(
     Ok(Json(places))
 }
 
-/// Fills in what the store leaves empty: the distance and whether the place is open now.
+/// Fills in what the store leaves empty: the distance, whether the place is open now and
+/// its OSM page.
 fn complete(place: &mut PlaceView, from_lat: f64, from_lng: f64, now: i64) {
+    place.osm_url = osm_link(&place.id);
     place.distance_m = geo::distance_m(from_lat, from_lng, place.lat, place.lng).round() as u32;
     if let Some(h) = &mut place.hours {
         h.status = hours::status(&h.raw, place.lat, place.lng, now).map(|(open, text)| HoursStatus { open, text });
@@ -659,7 +661,11 @@ async fn place(
         (Some(lat), Some(lng)) => (lat, lng),
         _ => (place.lat, place.lng),
     };
-    complete(&mut place, from_lat, from_lng, state.now());
+    let now = state.now();
+    complete(&mut place, from_lat, from_lng, now);
+    if let Some(h) = &mut place.hours {
+        h.week = hours::week(&h.raw, place.lat, place.lng, now);
+    }
     Ok(Json(place))
 }
 

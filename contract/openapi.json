@@ -312,6 +312,32 @@
         ],
         "type": "object"
       },
+      "Day": {
+        "description": "One day of a place's week.",
+        "properties": {
+          "name": {
+            "description": "English weekday name, e.g. \"Monday\".",
+            "type": "string"
+          },
+          "open": {
+            "description": "When it is open, e.g. `[\"11:30-14:00\", \"18:00-22:00\"]`; empty when closed all day.\nA range past midnight belongs to the day it starts: \"18:00-02:00\".",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "today": {
+            "description": "The current day where the place is.",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "name",
+          "today",
+          "open"
+        ],
+        "type": "object"
+      },
       "Discover": {
         "allOf": [
           {
@@ -532,11 +558,22 @@
                 "type": "null"
               }
             ]
+          },
+          "week": {
+            "description": "This week, Monday to Sunday. Only sent by `/api/places/{place_id}`; `None` in lists\nand when `raw` can't be parsed.",
+            "items": {
+              "$ref": "#/components/schemas/Day"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
           }
         },
         "required": [
           "raw",
-          "status"
+          "status",
+          "week"
         ],
         "type": "object"
       },
@@ -696,6 +733,13 @@
           "name": {
             "type": "string"
           },
+          "osm_url": {
+            "description": "The place's page on openstreetmap.org, for fixing it there. `None` for places that\ndon't come from OpenStreetMap.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
           "url": {
             "type": [
               "string",
@@ -721,7 +765,8 @@
           "hours",
           "countries",
           "distance_m",
-          "visits"
+          "visits",
+          "osm_url"
         ],
         "type": "object"
       },
