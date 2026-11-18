@@ -1,3 +1,4 @@
+import { tick } from 'svelte';
 import * as api from './api';
 import * as push from './push';
 import { hideSplash } from './splash';
@@ -12,6 +13,7 @@ import {
 	type Located,
 	type Location,
 	type Place,
+	type Visit,
 	visitedToday
 } from './types';
 
@@ -51,6 +53,13 @@ export const app = $state({
 	selected: null as string | null,
 	places: [] as Place[],
 	placesLoading: false,
+	/** Id of the place whose details are open, and the details once loaded. */
+	placeId: null as string | null,
+	detail: null as Place | null,
+	/** The last place whose details closed, so its link in the list gets focus back. */
+	closedPlace: null as string | null,
+	/** The place whose check-in or undo is running. One at a time, across cards and details. */
+	busyPlace: null as string | null,
 	locating: false,
 	locateError: null as string | null,
 	projection: 'globe' as 'globe' | 'mercator',
@@ -154,14 +163,75 @@ function optionsOf(located: Located): Area[] {
 	return [located.city, located.postal_code].filter((a): a is Area => a !== null);
 }
 
-/** Opens what a link (for example from a reminder) points at: ?country=JP or ?tab=badges. */
+/** Opens what a link (for example from a reminder) points at: ?country=JP, ?tab=badges or
+ * ?place=osm-node-123. A place link stays in the address bar while its details are open. */
 async function followLink() {
+	addEventListener('popstate', () => {
+		closing = false;
+		const id = new URLSearchParams(location.search).get('place');
+		if (id) void loadPlace(id);
+		else clearPlace();
+	});
 	const params = new URLSearchParams(location.search);
 	if (!params.size) return;
 	if (params.get('tab') === 'badges') app.tab = 'badges';
 	const code = params.get('country')?.toUpperCase();
 	if (code && app.discover?.countries.some((c) => c.code === code)) await select(code);
-	history.replaceState(null, '', location.pathname);
+	const id = params.get('place');
+	history.replaceState(null, '', id ? `?place=${encodeURIComponent(id)}` : location.pathname);
+	if (id) await loadPlace(id);
+}
+
+/** Opens a place's details, as a new history entry so Back closes them. */
+export async function openPlace(id: string) {
+	history.pushState({ place: id }, '', `?place=${encodeURIComponent(id)}`);
+	await loadPlace(id);
+}
+
+/** Closes the details: back to where they were opened from, or to the list after a link. */
+export function closePlace() {
+	if (history.state?.place) {
+		// Once per close: a second Back before popstate would leave the list too.
+		if (closing) return;
+		closing = true;
+		loads++;
+		history.back();
+	} else {
+		clearPlace();
+		history.replaceState(null, '', location.pathname);
+	}
+}
+
+function clearPlace() {
+	if (app.placeId) {
+		app.closedPlace = app.placeId;
+		// Only the list that renders right now may take focus.
+		void tick().then(() => (app.closedPlace = null));
+	}
+	app.placeId = null;
+	app.detail = null;
+	loads++;
+}
+
+/** Counts detail loads, so only the latest one shows its result. */
+let loads = 0;
+/** A Back from the details is on its way. */
+let closing = false;
+
+async function loadPlace(id: string) {
+	const load = ++loads;
+	app.placeId = id;
+	app.detail = null;
+	// Measured from the user when known, otherwise from the map pin, as the list is.
+	const from = here() ?? (app.location && { lat: app.location.lat, lng: app.location.lng });
+	try {
+		const place = await api.place(id, from);
+		if (load === loads) app.detail = place;
+	} catch (error) {
+		if (load !== loads) return;
+		toast(null, 'Could not load this place', message(error));
+		closePlace();
+	}
 }
 
 async function checkReminders() {
@@ -219,6 +289,7 @@ export async function setLocation(location: Location) {
 
 /** Picks a city or postal code from a search. */
 export async function chooseArea(area: Area) {
+	if (app.placeId) closePlace();
 	await setLocation({ area, lat: area.lat, lng: area.lng, source: 'search', options: [] });
 }
 
@@ -226,6 +297,7 @@ export async function chooseArea(area: Area) {
 export async function switchArea(area: Area) {
 	const current = app.location;
 	if (!current || current.area.id === area.id) return;
+	if (app.placeId) closePlace();
 	await setLocation({ ...current, area });
 }
 
@@ -265,6 +337,8 @@ export async function locate(quiet = false) {
 		// Background refreshes skip small moves; an explicit request always looks the area up,
 		// since a short walk can cross a postal-code boundary.
 		if (quiet && !moved) return;
+		// A background move leaves open details alone: a place doesn't depend on the area.
+		if (!quiet && app.placeId) closePlace();
 		const located = await api.locateArea(coords.latitude, coords.longitude);
 		// The city by default; someone who narrowed to their postal code keeps that. Read the
 		// selection now: it may have changed while the lookup ran.
@@ -314,6 +388,8 @@ export async function refresh() {
 }
 
 export async function select(code: string | null) {
+	// Picking a country on the map while a place is open shows that country's list.
+	if (app.placeId && code) closePlace();
 	app.selected = code;
 	app.places = [];
 	const location = app.location;
@@ -360,24 +436,45 @@ function celebrate(before: Discover, after: Discover, place: Place) {
 export async function toggleVisit(place: Place) {
 	const before = app.discover;
 	const location = app.location;
-	if (!before || !location) return;
+	if (!before || !location || app.busyPlace) return;
 	// Visited today: undo that visit. Otherwise check in, also when there are older visits.
 	const undoing = visitedToday(place);
+	app.busyPlace = place.id;
 	try {
 		if (!undoing) {
 			const fresh = gpsFix && Date.now() - gpsFix.at < 10 * 60_000 ? gpsFix : null;
 			const result = await api.checkIn(place.id, fresh && { lat: fresh.lat, lng: fresh.lng });
-			place.visits = [result.visit];
+			setVisits(place.id, (visits) => [result.visit, ...visits.filter((v) => v.id !== result.visit.id)]);
 		} else {
-			// The place stays visited if there are older visits.
-			await api.removeVisit(place.visits[0].id);
-			const rest = (await api.place(place.id, null)).visits;
-			place.visits = rest.slice(0, 1);
+			const removed = place.visits[0].id;
+			await api.removeVisit(removed);
+			setVisits(place.id, (visits) => visits.filter((v) => v.id !== removed));
+		}
+		// Details still loading may have read the visits from before this change.
+		if (app.placeId === place.id && !app.detail) void loadPlace(place.id);
+		if (undoing) {
+			// The server has the remaining visits; details shown here may be out of date.
+			const rest = await api.place(place.id, null).then((p) => p.visits, () => null);
+			if (rest) setVisits(place.id, () => rest);
+			else if (app.detail?.id === place.id) {
+				// The card shows only the latest visit: fall back on the older ones in the details.
+				const card = app.places.find((p) => p.id === place.id);
+				if (card) card.visits = app.detail.visits.slice(0, 1);
+			}
 		}
 		const after = await api.discover(location.area.id);
 		app.discover = after;
 		if (!undoing) celebrate(before, after, place);
 	} catch (error) {
 		toast(null, 'That did not work', message(error));
+	} finally {
+		app.busyPlace = null;
 	}
+}
+
+/** Updates a place's visits on its card (which shows only the latest) and in its details. */
+function setVisits(id: string, update: (visits: Visit[]) => Visit[]) {
+	const card = app.places.find((p) => p.id === id);
+	if (card) card.visits = update(card.visits).slice(0, 1);
+	if (app.detail?.id === id) app.detail.visits = update(app.detail.visits);
 }

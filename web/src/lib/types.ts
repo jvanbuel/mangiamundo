@@ -19,6 +19,7 @@ export type Located = Schemas['Located'];
 export type Discover = Schemas['Discover'];
 export type Place = Schemas['PlaceView'];
 export type Visit = Schemas['Visit'];
+export type Day = Schemas['Day'];
 export type VisitResult = Schemas['VisitResult'];
 export type Health = Schemas['Health'];
 
@@ -44,3 +45,8 @@ export function statusOf(c: { places: number; visited: number }): Status {
 	if (c.visited === 0) return 'available';
 	return c.visited >= c.places ? 'completed' : 'discovered';
 }
+
+export const distance = (m: number) => (m < 1000 ? `${Math.round(m / 10) * 10} m` : `${(m / 1000).toFixed(1)} km`);
+
+export const directions = (lat: number, lng: number) =>
+	`https://www.openstreetmap.org/directions?route=%3B${lat}%2C${lng}`;

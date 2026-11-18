@@ -10,12 +10,64 @@
     "status": {
       "open": true,
       "text": "Open"
-    }
+    },
+    "week": [
+      {
+        "name": "Monday",
+        "open": [
+          "24 hours"
+        ],
+        "today": true
+      },
+      {
+        "name": "Tuesday",
+        "open": [
+          "24 hours"
+        ],
+        "today": false
+      },
+      {
+        "name": "Wednesday",
+        "open": [
+          "24 hours"
+        ],
+        "today": false
+      },
+      {
+        "name": "Thursday",
+        "open": [
+          "24 hours"
+        ],
+        "today": false
+      },
+      {
+        "name": "Friday",
+        "open": [
+          "24 hours"
+        ],
+        "today": false
+      },
+      {
+        "name": "Saturday",
+        "open": [
+          "24 hours"
+        ],
+        "today": false
+      },
+      {
+        "name": "Sunday",
+        "open": [
+          "24 hours"
+        ],
+        "today": false
+      }
+    ]
   },
   "id": "demo-leuven-AL-1",
   "lat": 50.89448040522253,
   "lng": 4.707786056764152,
   "name": "Little Albania",
+  "osm_url": null,
   "url": null,
   "visits": [
     {

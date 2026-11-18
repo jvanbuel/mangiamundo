@@ -67,6 +67,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.platform.LocalContext
@@ -80,6 +81,8 @@ import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import app.mangiamundo.AppViewModel
+import app.mangiamundo.DetailVisits
+import java.time.LocalDate
 import app.mangiamundo.BuildConfig
 import app.mangiamundo.SavedLocation
 import app.mangiamundo.core.Badge
@@ -498,13 +501,68 @@ fun PlaceGroupHeader(openNow: Boolean?) {
     )
 }
 
+/** Opens a URL in the browser or the app that handles it, or says there is none. */
+private fun android.content.Context.open(url: String) =
+    try {
+        startActivity(Intent(Intent.ACTION_VIEW, url.toUri()))
+    } catch (_: ActivityNotFoundException) {
+        android.widget.Toast.makeText(this, "No app on this phone can open that link.", android.widget.Toast.LENGTH_SHORT).show()
+    }
+
+/** geo: opens whichever maps app the user has; the web map covers phones without one. */
+private fun android.content.Context.directions(place: Place) =
+    try {
+        startActivity(Intent(Intent.ACTION_VIEW, "geo:0,0?q=${place.lat},${place.lng}(${Uri.encode(place.name)})".toUri()))
+    } catch (_: ActivityNotFoundException) {
+        open("https://www.openstreetmap.org/directions?route=%3B${place.lat}%2C${place.lng}")
+    }
+
 @Composable
-fun PlaceRow(place: Place, busy: Boolean, onToggle: () -> Unit) {
+private fun PlaceLinks(place: Place) {
     val colors = LocalAppColors.current
     val context = LocalContext.current
-    val open = { url: String -> context.startActivity(Intent(Intent.ACTION_VIEW, url.toUri())) }
+    Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+        Text(
+            "Directions",
+            style = MaterialTheme.typography.labelLarge,
+            color = colors.accent,
+            modifier = Modifier.clickable { context.directions(place) },
+        )
+        place.url?.let { url ->
+            Text("Website", style = MaterialTheme.typography.labelLarge, color = colors.accent, modifier = Modifier.clickable { context.open(url) })
+        }
+    }
+}
+
+@Composable
+fun CheckInButton(place: Place, busy: Boolean, today: LocalDate = LocalDate.now(), onToggle: () -> Unit) {
+    val colors = LocalAppColors.current
+    var day by remember(today) { mutableStateOf(today) }
+    val visited = place.visitedToday(day)
+    // Past midnight the label changes first, so a tap never does the opposite of what it says.
+    val onClick = {
+        val now = LocalDate.now()
+        if (place.visitedToday(now) == visited) onToggle() else day = now
+    }
+    if (visited) {
+        ChunkyButton("Visited", onClick, face = colors.completed, content = colors.onCompleted, enabled = !busy, icon = Icons.Rounded.Check)
+    } else {
+        ChunkyButton(if (place.visited) "Check in again" else "Check in", onClick, enabled = !busy)
+    }
+}
+
+/** A place in a country's list. Tapping it (outside its links and button) opens the details. */
+@Composable
+fun PlaceRow(place: Place, busy: Boolean, onOpen: () -> Unit, onToggle: () -> Unit) {
+    val colors = LocalAppColors.current
     Column {
-        Row(Modifier.fillMaxWidth().padding(vertical = 14.dp), verticalAlignment = Alignment.CenterVertically) {
+        Row(
+            Modifier
+                .fillMaxWidth()
+                .clickable(onClickLabel = "Show details", onClick = onOpen)
+                .padding(vertical = 14.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
             Column(Modifier.weight(1f).padding(end = 12.dp)) {
                 Text(place.name, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.ExtraBold, color = colors.text)
                 place.hoursText?.let {
@@ -521,33 +579,123 @@ fun PlaceRow(place: Place, busy: Boolean, onToggle: () -> Unit) {
                     style = MaterialTheme.typography.bodyMedium,
                     color = colors.muted,
                 )
-                Row(horizontalArrangement = Arrangement.spacedBy(16.dp), modifier = Modifier.padding(top = 4.dp)) {
-                    Text(
-                        "Directions",
-                        style = MaterialTheme.typography.labelLarge,
-                        color = colors.accent,
-                        modifier = Modifier.clickable {
-                            // geo: opens whichever maps app the user has; the web map covers phones without one.
-                            try {
-                                open("geo:0,0?q=${place.lat},${place.lng}(${Uri.encode(place.name)})")
-                            } catch (_: ActivityNotFoundException) {
-                                open("https://www.openstreetmap.org/directions?route=%3B${place.lat}%2C${place.lng}")
-                            }
-                        },
-                    )
-                    place.url?.let { url ->
-                        Text("Website", style = MaterialTheme.typography.labelLarge, color = colors.accent, modifier = Modifier.clickable { open(url) })
-                    }
-                }
+                Box(Modifier.padding(top = 4.dp)) { PlaceLinks(place) }
             }
-            if (place.visitedToday()) {
-                ChunkyButton("Visited", onToggle, face = colors.completed, content = colors.onCompleted, enabled = !busy, icon = Icons.Rounded.Check)
-            } else {
-                ChunkyButton(if (place.visited) "Check in again" else "Check in", onToggle, enabled = !busy)
-            }
+            CheckInButton(place, busy, onToggle = onToggle)
         }
         HorizontalDivider(color = colors.line)
     }
+}
+
+/** OSM cuisine tags read as words: "ethiopian;coffee_shop" becomes "ethiopian, coffee shop". */
+private fun cuisine(raw: String) = raw.replace('_', ' ').split(';').joinToString(", ") { it.trim() }
+
+private val visitDate = java.time.format.DateTimeFormatter.ofLocalizedDate(java.time.format.FormatStyle.FULL)
+
+/** Everything about a place, with all of the user's visits. Shown in a bottom sheet. */
+@Composable
+fun PlaceDetail(
+    place: Place,
+    country: (String) -> Country?,
+    busy: Boolean,
+    visits: DetailVisits = DetailVisits.LOADED,
+    onRetry: () -> Unit = {},
+    today: LocalDate = LocalDate.now(),
+    onToggle: () -> Unit,
+) {
+    val colors = LocalAppColors.current
+    val context = LocalContext.current
+    val body = MaterialTheme.typography.bodyMedium
+    Column(Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, bottom = 32.dp)) {
+        Text(place.name, style = MaterialTheme.typography.headlineSmall, color = colors.text, modifier = Modifier.semantics { heading() })
+        place.cuisine?.let { Text(cuisine(it), style = body, color = colors.muted) }
+        Text(
+            place.countries.joinToString("   ") { code -> country(code)?.let { "${it.flag} ${it.name}" } ?: code },
+            style = body,
+            fontWeight = FontWeight.Bold,
+            color = colors.text,
+            modifier = Modifier.padding(top = 2.dp),
+        )
+        Row(
+            Modifier.padding(vertical = 12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(16.dp),
+        ) {
+            CheckInButton(place, busy, today, onToggle)
+            PlaceLinks(place)
+        }
+        val where = listOfNotNull(place.address, place.distanceM.takeIf { it > 0 }?.let { "${distance(it)} away" })
+        if (where.isNotEmpty()) Text(where.joinToString(" · "), style = body, color = colors.text)
+
+        place.hours?.let { hours ->
+            DetailHeading("Opening hours")
+            hours.status?.let {
+                Text(it.text, style = body, fontWeight = FontWeight.Bold, color = if (it.open) colors.completed else colors.muted)
+            }
+            val week = hours.week
+            if (week == null) {
+                Text(hours.raw, style = body, color = colors.muted)
+            } else {
+                for (day in week) {
+                    val weight = if (day.today) FontWeight.ExtraBold else FontWeight.Normal
+                    Row(Modifier.padding(vertical = 2.dp)) {
+                        Text(day.name, style = body, fontWeight = weight, color = colors.text, modifier = Modifier.width(110.dp))
+                        Text(day.open.joinToString(", ").ifEmpty { "Closed" }, style = body, fontWeight = weight, color = colors.text)
+                    }
+                }
+            }
+        }
+
+        DetailHeading("Your visits")
+        // Until the details load, the visits are the card's, which has only the latest one.
+        when (visits) {
+            DetailVisits.LOADING -> Text("Loading visits…", style = body, color = colors.muted)
+            DetailVisits.FAILED -> Text(
+                "Could not load all visits. Try again",
+                style = body,
+                color = colors.accent,
+                modifier = Modifier.clickable(onClick = onRetry).padding(vertical = 6.dp),
+            )
+            DetailVisits.LOADED -> if (place.visits.isEmpty()) Text("Not visited yet.", style = body, color = colors.muted)
+        }
+        for (visit in place.visits) {
+            val date = java.time.Instant.ofEpochSecond(visit.at).atZone(java.time.ZoneId.systemDefault()).format(visitDate)
+            Text(
+                date + if (visit.verified) " · checked in on the spot" else "",
+                style = body,
+                color = colors.text,
+                modifier = Modifier.padding(vertical = 6.dp),
+            )
+            HorizontalDivider(color = colors.line)
+        }
+
+        place.osmUrl?.let { url ->
+            val small = MaterialTheme.typography.bodySmall
+            Text(
+                "Something wrong? Edit on OpenStreetMap",
+                style = small,
+                color = colors.muted,
+                modifier = Modifier.padding(top = 28.dp).clickable { context.open(url) },
+            )
+            Text(
+                "Data © OpenStreetMap contributors",
+                style = small,
+                color = colors.muted,
+                modifier = Modifier.padding(top = 4.dp).clickable { context.open("https://www.openstreetmap.org/copyright") },
+            )
+        }
+    }
+}
+
+@Composable
+private fun DetailHeading(text: String) {
+    Text(
+        text,
+        style = MaterialTheme.typography.titleSmall,
+        fontWeight = FontWeight.ExtraBold,
+        color = LocalAppColors.current.text,
+        modifier = Modifier.padding(top = 18.dp, bottom = 4.dp).semantics { heading() },
+    )
 }
 
 private fun BadgeKind.icon(): ImageVector = when (this) {

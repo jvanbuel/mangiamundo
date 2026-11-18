@@ -25,6 +25,11 @@ final class AppModel {
     private(set) var places: [Place] = []
     private(set) var placesLoading = false
     private(set) var busyPlace: String?
+    /// The place whose details are open: its card's data until the full place has loaded.
+    private(set) var detail: Place?
+    /// Whether `detail` holds all visits yet.
+    private(set) var detailVisits = DetailVisits.loading
+    @ObservationIgnored private var detailTask: Task<Void, Never>?
 
     private(set) var locating = false
     private(set) var locateError: String?
@@ -152,6 +157,7 @@ final class AppModel {
         if let data = try? JSONEncoder().encode(target) {
             defaults.set(data, forKey: "mangiamundo.location")
         }
+        closePlace()
         select(nil)
         refresh()
     }
@@ -293,6 +299,31 @@ final class AppModel {
         }
     }
 
+    /// Opens a place's details, with all of the user's visits.
+    func openPlace(_ place: Place) {
+        detail = place
+        detailVisits = .loading
+        detailTask?.cancel()
+        // Measured from the user when known, otherwise from the map pin.
+        let from = userPosition ?? location.map { (lat: $0.lat, lng: $0.lng) }
+        detailTask = Task {
+            do {
+                let full = try await api.place(id: place.id, from: from)
+                guard !Task.isCancelled else { return }
+                detail = full
+                detailVisits = .loaded
+            } catch {
+                guard !Task.isCancelled else { return }
+                detailVisits = .failed
+            }
+        }
+    }
+
+    func closePlace() {
+        detailTask?.cancel()
+        detail = nil
+    }
+
     /// A tap on the map: open the country if it is available here, otherwise say so.
     func tapCountry(code: String, name: String) {
         guard let discover else { return }
@@ -303,35 +334,58 @@ final class AppModel {
         }
     }
 
-    func toggleVisit(_ place: Place) async {
+    /// Checks in, or undoes today's visit. `visited` is what the button showed, so the
+    /// action matches its label even if midnight passes in between.
+    func toggleVisit(_ place: Place, visited: Bool? = nil) async {
         guard let before = discover, let here = location, busyPlace == nil else { return }
         busyPlace = place.id
         defer { busyPlace = nil }
         do {
-            var updated = place
+            let update: ([Visit]) -> [Visit]
             // Visited today: undo that visit. Otherwise check in, also when there are older visits.
-            let undoing = place.visitedToday()
+            let undoing = visited ?? place.visitedToday()
             if !undoing {
                 var position: (lat: Double, lng: Double)?
                 if let fix = gpsFix, Date().timeIntervalSince(fix.at) < 600 {
                     position = (fix.lat, fix.lng)
                 }
-                let result = try await api.checkIn(placeID: place.id, here: position)
-                updated.visits = [result.visit]
+                let visit = try await api.checkIn(placeID: place.id, here: position).visit
+                // Checking in twice on one day returns that day's visit.
+                update = { old in [visit] + old.filter { $0.id != visit.id } }
             } else if let latest = place.visits.first {
-                // The place stays visited if there are older visits.
                 try await api.removeVisit(id: latest.id)
-                let fresh = try await api.place(id: place.id, from: nil)
-                updated.visits = Array(fresh.visits.prefix(1))
+                update = { old in old.filter { $0.id != latest.id } }
+            } else {
+                return
             }
-            if let index = places.firstIndex(where: { $0.id == place.id }) {
-                places[index] = updated
+            setVisits(place.id, update)
+            // Details still loading may have read the visits from before this change.
+            if let detail, detail.id == place.id, detailVisits != .loaded { openPlace(detail) }
+            if undoing {
+                // The server has the remaining visits; details shown here may be out of date.
+                if let rest = try? await api.place(id: place.id, from: nil).visits {
+                    setVisits(place.id) { _ in rest }
+                } else if let detail, detail.id == place.id, detailVisits == .loaded,
+                          let index = places.firstIndex(where: { $0.id == place.id }) {
+                    // The card shows only the latest visit: fall back on the older ones in the details.
+                    places[index].visits = Array(detail.visits.prefix(1))
+                }
             }
             let after = try await api.discover(areaID: here.area.id)
             discover = after
-            if !undoing { celebrate(before: before, after: after, place: updated) }
+            if !undoing { celebrate(before: before, after: after, place: place) }
         } catch {
             toast("That did not work: \(error.localizedDescription)")
+        }
+    }
+
+    /// Updates a place's visits on its card (which shows only the latest) and in its details.
+    private func setVisits(_ id: String, _ update: ([Visit]) -> [Visit]) {
+        if let index = places.firstIndex(where: { $0.id == id }) {
+            places[index].visits = Array(update(places[index].visits).prefix(1))
+        }
+        if detail?.id == id, let visits = detail?.visits {
+            detail?.visits = update(visits)
         }
     }
 
@@ -371,3 +425,5 @@ final class AppModel {
         }
     }
 }
+
+enum DetailVisits { case loading, loaded, failed }

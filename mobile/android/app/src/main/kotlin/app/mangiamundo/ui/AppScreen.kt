@@ -16,6 +16,8 @@ import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Scaffold
@@ -92,7 +94,8 @@ fun AppScreen(vm: AppViewModel = viewModel()) {
     val statuses = remember(discover) { discover?.countries.orEmpty().associate { it.code to it.status } }
 
     Scaffold(
-        snackbarHost = { SnackbarHost(snackbar) },
+        // The place sheet covers this host, so it shows messages itself while open.
+        snackbarHost = { if (vm.detail == null) SnackbarHost(snackbar) },
         containerColor = colors.panel,
         contentWindowInsets = WindowInsets(0, 0, 0, 0),
     ) { padding ->
@@ -162,7 +165,7 @@ fun AppScreen(vm: AppViewModel = viewModel()) {
                             for ((openNow, group) in vm.places.groupBy { it.openNow }) {
                                 if (showGroups) item(key = "group-$openNow") { PlaceGroupHeader(openNow) }
                                 items(group, key = { it.id }) { place ->
-                                    PlaceRow(place, busy = vm.busyPlace == place.id) { vm.toggleVisit(place) }
+                                    PlaceRow(place, busy = vm.busyPlace != null, onOpen = { vm.openPlace(place) }) { vm.toggleVisit(place) }
                                 }
                             }
                         } else {
@@ -190,6 +193,20 @@ fun AppScreen(vm: AppViewModel = viewModel()) {
                     }
                 }
                 item(key = "build") { BuildLine(vm.server) }
+            }
+        }
+    }
+
+    vm.detail?.let { place ->
+        ModalBottomSheet(onDismissRequest = vm::closePlace, containerColor = colors.panel) {
+            Box {
+                Column(Modifier.verticalScroll(rememberScrollState())) {
+                    PlaceDetail(place, vm::country, busy = vm.busyPlace != null, visits = vm.detailVisits, onRetry = { vm.openPlace(place) }) {
+                        vm.toggleVisit(place)
+                    }
+                }
+                // At the top: a half-open sheet's bottom edge is off screen.
+                SnackbarHost(snackbar, Modifier.align(Alignment.TopCenter))
             }
         }
     }

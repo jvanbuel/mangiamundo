@@ -162,6 +162,8 @@ data class Place(
     @SerialName("distance_m") val distanceM: Int,
     /** Newest first. Lists of places carry only the latest visit; [ApiClient.place] all of them. */
     val visits: List<Visit> = emptyList(),
+    /** The place's page on openstreetmap.org. Null for places that don't come from OSM. */
+    @SerialName("osm_url") val osmUrl: String? = null,
 ) {
     /** Null when the hours are unknown or can't be read. */
     val openNow: Boolean? get() = hours?.status?.open
@@ -182,6 +184,18 @@ data class Hours(
     val raw: String,
     /** Null when [raw] can't be parsed. */
     val status: HoursStatus? = null,
+    /** This week, Monday to Sunday. Only from [ApiClient.place]; null in lists. */
+    val week: List<Day>? = null,
+)
+
+/** One day of a place's week. */
+@Serializable
+data class Day(
+    /** "Monday". */
+    val name: String,
+    val today: Boolean,
+    /** E.g. "11:30-14:00"; empty when closed all day. */
+    val open: List<String>,
 )
 
 @Serializable
