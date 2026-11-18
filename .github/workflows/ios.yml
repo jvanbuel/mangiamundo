@@ -1,0 +1,42 @@
+name: iOS
+
+# Its own workflow so it only runs when something the iOS app builds from changes:
+# macOS runners are slower to start and to run than the Linux ones in test.yml.
+on:
+  push:
+    branches: [main]
+    paths:
+      - mobile/ios/**
+      - mobile/shared/**
+      - contract/**
+      - .github/workflows/ios.yml
+  pull_request:
+    # The iOS tests decode the contract fixtures, so those count too.
+    paths:
+      - mobile/ios/**
+      - mobile/shared/**
+      - contract/**
+      - .github/workflows/ios.yml
+
+jobs:
+  ios:
+    runs-on: macos-15
+    timeout-minutes: 30
+    defaults:
+      run:
+        working-directory: mobile/ios
+    steps:
+      - uses: actions/checkout@v4
+      - run: brew install xcodegen
+      - run: xcodegen
+      # Simulator names change with each Xcode on the runner image, so take the first iPhone available.
+      - name: Test on the simulator
+        run: |
+          device=$(xcrun simctl list devices available | grep -m1 -oE 'iPhone[^(]*\(([0-9A-F-]{36})\)' | grep -oE '[0-9A-F-]{36}' || true)
+          test -n "$device" || { xcrun simctl list devices available; echo "No iPhone simulator found."; exit 1; }
+          echo "Simulator: $device"
+          xcodebuild test \
+            -project Mangiamundo.xcodeproj \
+            -scheme Mangiamundo \
+            -destination "id=$device" \
+            CODE_SIGNING_ALLOWED=NO
