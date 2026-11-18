@@ -2,7 +2,11 @@ import SwiftUI
 
 struct ContentView: View {
     @Environment(AppModel.self) private var model
+    @Environment(\.scenePhase) private var scenePhase
     @State private var pickerOpen = false
+    /// Whether "Directions with" is a choice to make. Checked again on return to the foreground,
+    /// since Google Maps may have been installed or removed in the meantime.
+    @State private var googleInstalled = false
 
     private var selected: CountryProgress? {
         model.discover?.countries.first { $0.code == model.selected }
@@ -34,7 +38,7 @@ struct ContentView: View {
                     LazyVStack(alignment: .leading, spacing: 12) {
                         Header(onChange: { pickerOpen = true })
                         content
-                        DirectionsSetting()
+                        if googleInstalled { DirectionsSetting() }
                         BuildLine(server: model.server)
                     }
                     .padding(16)
@@ -46,6 +50,10 @@ struct ContentView: View {
         .foregroundStyle(Theme.text)
         .font(Theme.font(.body))
         .overlay(alignment: .top) { ToastStack(toasts: model.toasts) }
+        .onAppear { googleInstalled = MapsApp.googleInstalled }
+        .onChange(of: scenePhase) { _, phase in
+            if phase == .active { googleInstalled = MapsApp.googleInstalled }
+        }
         .sheet(isPresented: $pickerOpen) {
             ScrollView {
                 LocationPicker(onDone: { pickerOpen = false }).padding(20)
@@ -123,35 +131,24 @@ struct ContentView: View {
     }
 }
 
-/// The "Directions with" setting. Only a choice to make when Google Maps is installed.
+/// The "Directions with" setting. Only shown when Google Maps is installed.
 struct DirectionsSetting: View {
     @Environment(AppModel.self) private var model
-    @Environment(\.scenePhase) private var scenePhase
-    @State private var googleInstalled = false
 
     var body: some View {
-        Group {
-            if googleInstalled {
-                HStack {
-                    Text("Directions with").foregroundStyle(Theme.muted)
-                    Spacer()
-                    Picker("Directions with", selection: Binding(get: { model.directionsWith }, set: { model.setDirectionsWith($0) })) {
-                        ForEach(DirectionsPreference.allCases, id: \.self) { preference in
-                            Text(preference.label).tag(preference)
-                        }
-                    }
-                    .pickerStyle(.menu)
-                    .tint(Theme.accent)
+        HStack {
+            Text("Directions with").foregroundStyle(Theme.muted)
+            Spacer()
+            Picker("Directions with", selection: Binding(get: { model.directionsWith }, set: { model.setDirectionsWith($0) })) {
+                ForEach(DirectionsPreference.allCases, id: \.self) { preference in
+                    Text(preference.label).tag(preference)
                 }
-                .font(Theme.font(.subheadline, .bold))
-                .padding(.top, 16)
             }
+            .pickerStyle(.menu)
+            .tint(Theme.accent)
         }
-        .onAppear { googleInstalled = MapsApp.googleInstalled }
-        // Google Maps may have been installed or removed while the app was in the background.
-        .onChange(of: scenePhase) { _, phase in
-            if phase == .active { googleInstalled = MapsApp.googleInstalled }
-        }
+        .font(Theme.font(.subheadline, .bold))
+        .padding(.top, 16)
     }
 }
 
