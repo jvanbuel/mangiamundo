@@ -791,6 +791,8 @@ struct PlaceDetail: View {
     @Environment(AppModel.self) private var model
     @Environment(\.openURL) private var openURL
     let place: Place
+    // Reports cannot be taken back, so the button only asks first.
+    @State private var confirmingClosed = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
@@ -860,17 +862,24 @@ struct PlaceDetail: View {
                 Divider().overlay(Theme.line)
             }
 
-            if let link = place.osmUrl, let url = URL(string: link) {
-                VStack(alignment: .leading, spacing: 4) {
+            VStack(alignment: .leading, spacing: 4) {
+                Button("Closed for good?") { confirmingClosed = true }
+                    .disabled(model.busyPlace != nil)
+                if let link = place.osmUrl, let url = URL(string: link) {
                     Button("Something wrong? Edit on OpenStreetMap") { openURL(url) }
                     Button("Data © OpenStreetMap contributors") {
                         if let copyright = URL(string: "https://www.openstreetmap.org/copyright") { openURL(copyright) }
                     }
                 }
-                .buttonStyle(.plain)
-                .font(Theme.font(.caption))
-                .foregroundStyle(Theme.muted)
-                .padding(.top, 24)
+            }
+            .buttonStyle(.plain)
+            .font(Theme.font(.caption))
+            .foregroundStyle(Theme.muted)
+            .padding(.top, 24)
+            .confirmationDialog("Has \(place.name) closed for good?", isPresented: $confirmingClosed, titleVisibility: .visible) {
+                Button("Yes, it closed", role: .destructive) { Task { await model.reportClosed(place) } }
+            } message: {
+                Text("It will be hidden for you, and for everyone once someone else reports it too.")
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)

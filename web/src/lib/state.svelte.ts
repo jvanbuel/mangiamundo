@@ -472,6 +472,25 @@ export async function toggleVisit(place: Place) {
 	}
 }
 
+/** Reports a place as closed for good: it disappears from this user's lists right away. */
+export async function reportClosed(place: Place) {
+	if (app.busyPlace) return;
+	app.busyPlace = place.id;
+	try {
+		await api.reportClosed(place.id);
+		app.places = app.places.filter((p) => p.id !== place.id);
+		if (app.placeId === place.id) closePlace();
+		toast(null, 'Thanks for letting us know', `${place.name} is hidden for you now.`);
+		// The place no longer counts towards its countries.
+		const location = app.location;
+		if (location) app.discover = await api.discover(location.area.id);
+	} catch (error) {
+		toast(null, 'Could not report this place', message(error));
+	} finally {
+		app.busyPlace = null;
+	}
+}
+
 /** Updates a place's visits on its card (which shows only the latest) and in its details. */
 function setVisits(id: string, update: (visits: Visit[]) => Visit[]) {
 	const card = app.places.find((p) => p.id === id);

@@ -201,7 +201,14 @@ fun AppScreen(vm: AppViewModel = viewModel()) {
         ModalBottomSheet(onDismissRequest = vm::closePlace, containerColor = colors.panel) {
             Box {
                 Column(Modifier.verticalScroll(rememberScrollState())) {
-                    PlaceDetail(place, vm::country, busy = vm.busyPlace != null, visits = vm.detailVisits, onRetry = { vm.openPlace(place) }) {
+                    PlaceDetail(
+                        place,
+                        vm::country,
+                        busy = vm.busyPlace != null,
+                        visits = vm.detailVisits,
+                        onRetry = { vm.openPlace(place) },
+                        onReportClosed = { vm.reportClosed(place) },
+                    ) {
                         vm.toggleVisit(place)
                     }
                 }

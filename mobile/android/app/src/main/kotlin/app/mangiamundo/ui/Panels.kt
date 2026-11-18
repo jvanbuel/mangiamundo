@@ -41,6 +41,7 @@ import androidx.compose.material.icons.rounded.Public
 import androidx.compose.material.icons.rounded.Restaurant
 import androidx.compose.material.icons.rounded.Settings
 import androidx.compose.material.icons.rounded.Verified
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -629,12 +630,26 @@ fun PlaceDetail(
     busy: Boolean,
     visits: DetailVisits = DetailVisits.LOADED,
     onRetry: () -> Unit = {},
+    onReportClosed: () -> Unit = {},
     today: LocalDate = LocalDate.now(),
     onToggle: () -> Unit,
 ) {
     val colors = LocalAppColors.current
     val context = LocalContext.current
     val body = MaterialTheme.typography.bodyMedium
+    // Reports cannot be taken back, so the link only asks first.
+    var confirmingClosed by remember { mutableStateOf(false) }
+    if (confirmingClosed) {
+        AlertDialog(
+            onDismissRequest = { confirmingClosed = false },
+            title = { Text("Has ${place.name} closed for good?") },
+            text = { Text("It will be hidden for you, and for everyone once someone else reports it too.") },
+            confirmButton = {
+                TextButton(onClick = { confirmingClosed = false; onReportClosed() }) { Text("Yes, it closed") }
+            },
+            dismissButton = { TextButton(onClick = { confirmingClosed = false }) { Text("Cancel") } },
+        )
+    }
     Column(Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, bottom = 32.dp)) {
         Text(place.name, style = MaterialTheme.typography.headlineSmall, color = colors.text, modifier = Modifier.semantics { heading() })
         place.cuisine?.let { Text(cuisine(it), style = body, color = colors.muted) }
@@ -698,13 +713,19 @@ fun PlaceDetail(
             HorizontalDivider(color = colors.line)
         }
 
+        val small = MaterialTheme.typography.bodySmall
+        Text(
+            "Closed for good?",
+            style = small,
+            color = colors.muted,
+            modifier = Modifier.padding(top = 28.dp).clickable(enabled = !busy) { confirmingClosed = true },
+        )
         place.osmUrl?.let { url ->
-            val small = MaterialTheme.typography.bodySmall
             Text(
                 "Something wrong? Edit on OpenStreetMap",
                 style = small,
                 color = colors.muted,
-                modifier = Modifier.padding(top = 28.dp).clickable { context.open(url) },
+                modifier = Modifier.padding(top = 4.dp).clickable { context.open(url) },
             )
             Text(
                 "Data © OpenStreetMap contributors",

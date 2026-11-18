@@ -59,6 +59,11 @@ class ApiClient(private val baseUrl: String, private val tokens: TokenStore) {
         authed("DELETE", "/api/visits/$visitId")
     }
 
+    /** "This place has closed": hides it for this user, and for everyone after a second report. */
+    suspend fun reportClosed(placeId: String) {
+        authed("PUT", "/api/places/${encode(placeId)}/closed")
+    }
+
     /** Cities and postal codes matching what someone typed. */
     suspend fun searchAreas(query: String): List<Area> =
         json.decodeFromString(request("GET", "/api/areas?q=${encode(query)}"))

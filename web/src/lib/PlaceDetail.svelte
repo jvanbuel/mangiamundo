@@ -1,12 +1,14 @@
 <script lang="ts">
 	import ArrowLeft from '@lucide/svelte/icons/arrow-left';
 	import CheckIn from './CheckIn.svelte';
-	import { closePlace, country } from './state.svelte';
+	import { app, closePlace, country, reportClosed } from './state.svelte';
 	import { directions, distance, type Place } from './types';
 
 	let { place }: { place: Place | null } = $props();
 
 	let heading = $state<HTMLElement>();
+	// Reports cannot be taken back, so the first press only asks.
+	let confirming = $state(false);
 	// Move focus to the details when they open, so screen readers start there.
 	$effect(() => heading?.focus());
 
@@ -82,16 +84,25 @@
 		{/if}
 	</section>
 
-	{#if place.osm_url}
-		<footer class="muted">
+	<footer class="muted">
+		<p>
+			{#if confirming}
+				Hide it for you, and for everyone once someone else reports it too?
+				<button disabled={app.busyPlace !== null} onclick={() => place && reportClosed(place)}>Yes, it closed</button>
+				· <button onclick={() => (confirming = false)}>Cancel</button>
+			{:else}
+				<button onclick={() => (confirming = true)}>Closed for good?</button>
+			{/if}
+		</p>
+		{#if place.osm_url}
 			<p>
 				Something wrong? <a href={place.osm_url} target="_blank" rel="noopener">Edit on OpenStreetMap</a>
 			</p>
 			<p>
 				Data © <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap contributors</a>
 			</p>
-		</footer>
-	{/if}
+		{/if}
+	</footer>
 {/if}
 
 <style>
@@ -214,7 +225,13 @@
 		font-size: 12px;
 	}
 
-	footer a {
+	footer a,
+	footer button {
 		color: inherit;
+		text-decoration: underline;
+	}
+
+	footer button:disabled {
+		opacity: 0.6;
 	}
 </style>
