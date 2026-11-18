@@ -37,6 +37,7 @@ final class AppModel {
     private(set) var server: String?
 
     private(set) var projection = ProjectionKind.globe
+    private(set) var directionsWith = DirectionsPreference.ask
     var camera = Camera()
     /// Short announcements (badges, discoveries, errors), newest last.
     private(set) var toasts: [Toast] = []
@@ -57,6 +58,9 @@ final class AppModel {
         let base = Bundle.main.object(forInfoDictionaryKey: "APIBaseURL") as? String
         api = APIClient(baseURL: base ?? "http://localhost:8080")
         defaults.removeObject(forKey: "mangiamundo.radius")
+        if let raw = defaults.string(forKey: "mangiamundo.directions"), let preference = DirectionsPreference(rawValue: raw) {
+            directionsWith = preference
+        }
         if let raw = defaults.string(forKey: "mangiamundo.projection"), let kind = ProjectionKind(rawValue: raw) {
             projection = kind
         }
@@ -100,6 +104,11 @@ final class AppModel {
     func setProjection(_ kind: ProjectionKind) {
         projection = kind
         defaults.set(kind.rawValue, forKey: "mangiamundo.projection")
+    }
+
+    func setDirectionsWith(_ preference: DirectionsPreference) {
+        directionsWith = preference
+        defaults.set(preference.rawValue, forKey: "mangiamundo.directions")
     }
 
     /// Picks a city or postal code from a search.

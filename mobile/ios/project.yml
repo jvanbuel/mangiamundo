@@ -59,6 +59,9 @@ targets:
           - Nunito-Bold.ttf
           - Nunito-ExtraBold.ttf
           - Nunito-Black.ttf
+        # Lets Directions check whether the Google Maps app is installed (canOpenURL).
+        LSApplicationQueriesSchemes:
+          - comgooglemaps
         NSLocationWhenInUseUsageDescription: Mangiamundo uses your location to find restaurants from around the world near you.
         # Where the app finds the backend: see API_BASE_URL above.
         APIBaseURL: $(API_BASE_URL)

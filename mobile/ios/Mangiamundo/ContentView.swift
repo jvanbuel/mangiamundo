@@ -34,6 +34,7 @@ struct ContentView: View {
                     LazyVStack(alignment: .leading, spacing: 12) {
                         Header(onChange: { pickerOpen = true })
                         content
+                        DirectionsSetting()
                         BuildLine(server: model.server)
                     }
                     .padding(16)
@@ -118,6 +119,38 @@ struct ContentView: View {
         } else {
             Text("Scouting restaurants in \(model.location?.area.name ?? "your area")…")
                 .foregroundStyle(Theme.muted)
+        }
+    }
+}
+
+/// The "Directions with" setting. Only a choice to make when Google Maps is installed.
+struct DirectionsSetting: View {
+    @Environment(AppModel.self) private var model
+    @Environment(\.scenePhase) private var scenePhase
+    @State private var googleInstalled = false
+
+    var body: some View {
+        Group {
+            if googleInstalled {
+                HStack {
+                    Text("Directions with").foregroundStyle(Theme.muted)
+                    Spacer()
+                    Picker("Directions with", selection: Binding(get: { model.directionsWith }, set: { model.setDirectionsWith($0) })) {
+                        ForEach(DirectionsPreference.allCases, id: \.self) { preference in
+                            Text(preference.label).tag(preference)
+                        }
+                    }
+                    .pickerStyle(.menu)
+                    .tint(Theme.accent)
+                }
+                .font(Theme.font(.subheadline, .bold))
+                .padding(.top, 16)
+            }
+        }
+        .onAppear { googleInstalled = MapsApp.googleInstalled }
+        // Google Maps may have been installed or removed while the app was in the background.
+        .onChange(of: scenePhase) { _, phase in
+            if phase == .active { googleInstalled = MapsApp.googleInstalled }
         }
     }
 }

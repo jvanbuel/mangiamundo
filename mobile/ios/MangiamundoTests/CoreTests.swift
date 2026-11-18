@@ -104,3 +104,22 @@ final class ContractTests: XCTestCase {
         XCTAssertEqual(discover.events[0].status, .unknown)
     }
 }
+
+final class DirectionsTests: XCTestCase {
+    func testDirectionsURLs() {
+        XCTAssertEqual(MapsApp.apple.directions(lat: 50.88, lng: 4.7)?.absoluteString, "https://maps.apple.com/?daddr=50.88,4.7")
+        XCTAssertEqual(
+            MapsApp.google.directions(lat: 50.88, lng: 4.7)?.absoluteString,
+            "comgooglemaps://?daddr=50.88,4.7&directionsmode=walking"
+        )
+    }
+
+    func testDirectionsFallBackToAppleMapsWithoutGoogleMaps() {
+        for preference in DirectionsPreference.allCases {
+            XCTAssertEqual(preference.app(googleInstalled: false), .apple)
+        }
+        XCTAssertNil(DirectionsPreference.ask.app(googleInstalled: true))
+        XCTAssertEqual(DirectionsPreference.apple.app(googleInstalled: true), .apple)
+        XCTAssertEqual(DirectionsPreference.google.app(googleInstalled: true), .google)
+    }
+}

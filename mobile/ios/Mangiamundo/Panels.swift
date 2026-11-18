@@ -673,6 +673,7 @@ struct PlaceRow: View {
     @Environment(AppModel.self) private var model
     @Environment(\.openURL) private var openURL
     let place: Place
+    @State private var choosingMaps = false
 
     var body: some View {
         VStack(spacing: 0) {
@@ -689,9 +690,18 @@ struct PlaceRow: View {
                         .foregroundStyle(Theme.muted)
                     HStack(spacing: 16) {
                         Button("Directions") {
-                            if let url = URL(string: "https://maps.apple.com/?daddr=\(place.lat),\(place.lng)") {
-                                openURL(url)
+                            if let app = model.directionsWith.app(googleInstalled: MapsApp.googleInstalled) {
+                                directions(app)
+                            } else {
+                                choosingMaps = true
                             }
+                        }
+                        .confirmationDialog("Directions to \(place.name)", isPresented: $choosingMaps, titleVisibility: .visible) {
+                            ForEach(MapsApp.allCases, id: \.self) { app in
+                                Button(app.name) { directions(app) }
+                            }
+                        } message: {
+                            Text("To skip this question, pick an app under \"Directions with\" at the bottom of the screen.")
                         }
                         if let link = place.url, let url = URL(string: link) {
                             Button("Website") { openURL(url) }
@@ -721,6 +731,10 @@ struct PlaceRow: View {
             .padding(.vertical, 14)
             Divider().overlay(Theme.line)
         }
+    }
+
+    private func directions(_ app: MapsApp) {
+        if let url = app.directions(lat: place.lat, lng: place.lng) { openURL(url) }
     }
 
     private var details: String {
