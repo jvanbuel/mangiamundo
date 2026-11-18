@@ -4,6 +4,7 @@ struct ContentView: View {
     @Environment(AppModel.self) private var model
     @Environment(\.scenePhase) private var scenePhase
     @State private var pickerOpen = false
+    @State private var settingsOpen = false
     /// Whether "Directions with" is a choice to make. Checked again on return to the foreground,
     /// since Google Maps may have been installed or removed in the meantime.
     @State private var googleInstalled = false
@@ -36,10 +37,8 @@ struct ContentView: View {
 
                 ScrollView {
                     LazyVStack(alignment: .leading, spacing: 12) {
-                        Header(onChange: { pickerOpen = true })
+                        Header(onChange: { pickerOpen = true }, onSettings: { settingsOpen = true })
                         content
-                        if googleInstalled { DirectionsSetting() }
-                        BuildLine(server: model.server)
                     }
                     .padding(16)
                 }
@@ -69,6 +68,12 @@ struct ContentView: View {
             }
             .presentationDetents([.medium, .large])
             .presentationBackground(Theme.panel)
+        }
+        .sheet(isPresented: $settingsOpen) {
+            SettingsSheet(googleInstalled: googleInstalled)
+                .padding(20)
+                .presentationDetents([.medium])
+                .presentationBackground(Theme.panel)
         }
     }
 
@@ -140,6 +145,30 @@ struct ContentView: View {
     }
 }
 
+/// Rarely needed things, kept off the main screen.
+struct SettingsSheet: View {
+    @Environment(AppModel.self) private var model
+    @Environment(\.openURL) private var openURL
+    let googleInstalled: Bool
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            Text("Settings").font(Theme.font(.title3, .black))
+            if googleInstalled { DirectionsSetting() }
+            Button("Map data © OpenStreetMap contributors") {
+                if let copyright = URL(string: "https://www.openstreetmap.org/copyright") { openURL(copyright) }
+            }
+            .buttonStyle(.plain)
+            .font(Theme.font(.subheadline, .bold))
+            .foregroundStyle(Theme.accent)
+            .padding(.top, 16)
+            BuildLine(server: model.server)
+            Spacer()
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+}
+
 /// The "Directions with" setting. Only shown when Google Maps is installed.
 struct DirectionsSetting: View {
     @Environment(AppModel.self) private var model
@@ -173,6 +202,7 @@ struct BuildLine: View {
         Text("App \(version) (\(build), \(commit))" + (server.map { " · Server \($0)" } ?? ""))
             .font(Theme.font(.caption2))
             .foregroundStyle(Theme.muted)
+            .textSelection(.enabled)
             .padding(.top, 16)
     }
 }

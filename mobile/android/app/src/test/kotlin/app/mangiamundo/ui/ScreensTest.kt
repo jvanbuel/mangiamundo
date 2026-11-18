@@ -100,7 +100,7 @@ class ScreensTest {
                 Legend(Modifier.align(Alignment.BottomStart).padding(8.dp))
             }
             Column(Modifier.weight(0.58f).padding(16.dp)) {
-                Header(leuven) {}
+                Header(leuven, onChange = {}, onSettings = {})
                 Passport(discover)
                 ContinentHeader(discover.continents[2])
                 for (code in listOf("FR", "GR", "IT")) {
