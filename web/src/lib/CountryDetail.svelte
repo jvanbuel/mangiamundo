@@ -2,7 +2,7 @@
 	import ArrowLeft from '@lucide/svelte/icons/arrow-left';
 	import Check from '@lucide/svelte/icons/check';
 	import { app, country, toggleVisit } from './state.svelte';
-	import { statusOf, type CountryProgress, type Place } from './types';
+	import { statusOf, visitedToday, type CountryProgress, type Place } from './types';
 
 	let { progress, onback }: { progress: CountryProgress; onback: () => void } = $props();
 
@@ -50,6 +50,7 @@
 	<ul>
 		{#each app.places as place, i (place.id)}
 			{@const visited = place.visits.length > 0}
+			{@const today = visitedToday(place)}
 			{@const now = place.hours?.status}
 			{#if showGroups && (i === 0 || openNow(app.places[i - 1]) !== openNow(place))}
 				<li class="group">{groupName(openNow(place))}</li>
@@ -71,12 +72,12 @@
 				</div>
 				<button
 					class="check"
-					class:done={visited}
-					aria-pressed={visited}
+					class:done={today}
+					aria-pressed={today}
 					disabled={busy === place.id}
 					onclick={() => toggle(place)}
 				>
-					{#if visited}<Check size={16} strokeWidth={3} /> Visited{:else}Check in{/if}
+					{#if today}<Check size={16} strokeWidth={3} /> Visited{:else if visited}Check in again{:else}Check in{/if}
 				</button>
 			</li>
 		{/each}

@@ -309,7 +309,9 @@ final class AppModel {
         defer { busyPlace = nil }
         do {
             var updated = place
-            if !place.visited {
+            // Visited today: undo that visit. Otherwise check in, also when there are older visits.
+            let undoing = place.visitedToday()
+            if !undoing {
                 var position: (lat: Double, lng: Double)?
                 if let fix = gpsFix, Date().timeIntervalSince(fix.at) < 600 {
                     position = (fix.lat, fix.lng)
@@ -317,7 +319,7 @@ final class AppModel {
                 let result = try await api.checkIn(placeID: place.id, here: position)
                 updated.visits = [result.visit]
             } else if let latest = place.visits.first {
-                // Undo the latest visit; the place stays visited if there are older ones.
+                // The place stays visited if there are older visits.
                 try await api.removeVisit(id: latest.id)
                 let fresh = try await api.place(id: place.id, from: nil)
                 updated.visits = Array(fresh.visits.prefix(1))
@@ -327,7 +329,7 @@ final class AppModel {
             }
             let after = try await api.discover(areaID: here.area.id)
             discover = after
-            if updated.visited { celebrate(before: before, after: after, place: updated) }
+            if !undoing { celebrate(before: before, after: after, place: updated) }
         } catch {
             toast("That did not work: \(error.localizedDescription)")
         }

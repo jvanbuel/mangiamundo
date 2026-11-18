@@ -716,13 +716,13 @@ struct PlaceRow: View {
                 Button {
                     Task { await model.toggleVisit(place) }
                 } label: {
-                    if place.visited {
+                    if place.visitedToday() {
                         Label("Visited", systemImage: "checkmark")
                     } else {
-                        Text("Check in")
+                        Text(place.visited ? "Check in again" : "Check in")
                     }
                 }
-                .buttonStyle(place.visited
+                .buttonStyle(place.visitedToday()
                     ? ChunkyButtonStyle(face: Theme.completed, content: Theme.onCompleted)
                     : ChunkyButtonStyle())
                 .disabled(model.busyPlace != nil)

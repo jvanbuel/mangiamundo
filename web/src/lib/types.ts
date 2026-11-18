@@ -32,6 +32,12 @@ export interface Location {
 	options: Area[];
 }
 
+/** Whether the latest visit to a place was today, in the device's time zone. */
+export function visitedToday(place: Place, now = new Date()): boolean {
+	const latest = place.visits[0];
+	return latest !== undefined && new Date(latest.at * 1000).toDateString() === now.toDateString();
+}
+
 export type Status = 'available' | 'discovered' | 'completed';
 
 export function statusOf(c: { places: number; visited: number }): Status {

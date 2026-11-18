@@ -1,6 +1,8 @@
 package app.mangiamundo.core
 
 import java.io.File
+import java.time.LocalDate
+import java.time.ZoneId
 import kotlin.math.abs
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -59,6 +61,18 @@ class CoreTest {
         assertEquals(-170.0, camera.lng, 1e-9)
         assertEquals(Camera.MAX_LAT, camera.lat)
         assertEquals(Camera.MAX_ZOOM, camera.zoom)
+    }
+
+    @Test
+    fun visitedTodayFollowsTheLocalDayOfTheLatestVisit() {
+        val brussels = ZoneId.of("Europe/Brussels")
+        // 2026-11-17 23:30 in Brussels (22:30 UTC), then an older visit.
+        val place = Place("p", "P", 0.0, 0.0, distanceM = 0, visits = listOf(Visit(2, 1_794_954_600), Visit(1, 1_794_000_000)))
+        assertTrue(place.visitedToday(LocalDate.of(2026, 11, 17), brussels))
+        assertFalse(place.visitedToday(LocalDate.of(2026, 11, 18), brussels))
+        assertTrue(place.visitedToday(LocalDate.of(2026, 11, 17), ZoneId.of("UTC")))
+        assertTrue(place.visitedToday(LocalDate.of(2026, 11, 18), ZoneId.of("Asia/Tokyo")), "07:30 on the 18th there")
+        assertFalse(place.copy(visits = emptyList()).visitedToday(LocalDate.of(2026, 11, 17), brussels))
     }
 
     /** Real responses, written by the backend's `writes_contract_fixtures` test. */

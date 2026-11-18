@@ -158,6 +158,12 @@ struct Place: Decodable, Identifiable {
     var visited: Bool { !visits.isEmpty }
     /// The latest visit was checked in on the spot.
     var verified: Bool { visits.first?.verified ?? false }
+
+    /// Whether the latest visit was today on `calendar`. Checking in again is for an earlier one.
+    func visitedToday(now: Date = Date(), calendar: Calendar = .current) -> Bool {
+        guard let latest = visits.first else { return false }
+        return calendar.isDate(Date(timeIntervalSince1970: TimeInterval(latest.at)), inSameDayAs: now)
+    }
 }
 
 struct Hours: Decodable {

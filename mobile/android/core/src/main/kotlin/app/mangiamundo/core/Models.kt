@@ -1,5 +1,8 @@
 package app.mangiamundo.core
 
+import java.time.Instant
+import java.time.LocalDate
+import java.time.ZoneId
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 
@@ -167,6 +170,10 @@ data class Place(
     val visited: Boolean get() = visits.isNotEmpty()
     /** The latest visit was checked in on the spot. */
     val verified: Boolean get() = visits.firstOrNull()?.verified == true
+
+    /** Whether the latest visit was on `today` in `zone`. Checking in again is for an earlier one. */
+    fun visitedToday(today: LocalDate = LocalDate.now(), zone: ZoneId = ZoneId.systemDefault()): Boolean =
+        visits.firstOrNull()?.let { Instant.ofEpochSecond(it.at).atZone(zone).toLocalDate() == today } == true
 }
 
 @Serializable
