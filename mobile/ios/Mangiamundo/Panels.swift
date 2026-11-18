@@ -734,7 +734,7 @@ struct PlaceRow: View {
     }
 
     private func directions(_ app: MapsApp) {
-        if let url = app.directions(lat: place.lat, lng: place.lng) { openURL(url) }
+        if let url = app.directions(to: place) { openURL(url) }
     }
 
     private var details: String {
