@@ -25,6 +25,9 @@ final class AppModel {
     private(set) var places: [Place] = []
     private(set) var placesLoading = false
     private(set) var busyPlace: String?
+    /// The place whose details are open: its card's data until the full place has loaded.
+    private(set) var detail: Place?
+    @ObservationIgnored private var detailTask: Task<Void, Never>?
 
     private(set) var locating = false
     private(set) var locateError: String?
@@ -152,6 +155,7 @@ final class AppModel {
         if let data = try? JSONEncoder().encode(target) {
             defaults.set(data, forKey: "mangiamundo.location")
         }
+        closePlace()
         select(nil)
         refresh()
     }
@@ -293,6 +297,29 @@ final class AppModel {
         }
     }
 
+    /// Opens a place's details, with all of the user's visits.
+    func openPlace(_ place: Place) {
+        detail = place
+        detailTask?.cancel()
+        // Measured from the user when known, otherwise from the map pin.
+        let from = userPosition ?? location.map { (lat: $0.lat, lng: $0.lng) }
+        detailTask = Task {
+            do {
+                let full = try await api.place(id: place.id, from: from)
+                guard !Task.isCancelled, detail?.id == place.id else { return }
+                detail = full
+            } catch {
+                guard !Task.isCancelled else { return }
+                toast("Could not load this place: \(error.localizedDescription)")
+            }
+        }
+    }
+
+    func closePlace() {
+        detailTask?.cancel()
+        detail = nil
+    }
+
     /// A tap on the map: open the country if it is available here, otherwise say so.
     func tapCountry(code: String, name: String) {
         guard let discover else { return }
@@ -308,7 +335,7 @@ final class AppModel {
         busyPlace = place.id
         defer { busyPlace = nil }
         do {
-            var updated = place
+            let update: ([Visit]) -> [Visit]
             // Visited today: undo that visit. Otherwise check in, also when there are older visits.
             let undoing = place.visitedToday()
             if !undoing {
@@ -316,20 +343,27 @@ final class AppModel {
                 if let fix = gpsFix, Date().timeIntervalSince(fix.at) < 600 {
                     position = (fix.lat, fix.lng)
                 }
-                let result = try await api.checkIn(placeID: place.id, here: position)
-                updated.visits = [result.visit]
+                let visit = try await api.checkIn(placeID: place.id, here: position).visit
+                // Checking in twice on one day returns that day's visit.
+                update = { old in [visit] + old.filter { $0.id != visit.id } }
             } else if let latest = place.visits.first {
                 // The place stays visited if there are older visits.
                 try await api.removeVisit(id: latest.id)
-                let fresh = try await api.place(id: place.id, from: nil)
-                updated.visits = Array(fresh.visits.prefix(1))
+                let rest = try await api.place(id: place.id, from: nil).visits
+                update = { _ in rest }
+            } else {
+                return
             }
+            // Cards show only the latest visit, the details all of them.
             if let index = places.firstIndex(where: { $0.id == place.id }) {
-                places[index] = updated
+                places[index].visits = Array(update(places[index].visits).prefix(1))
+            }
+            if detail?.id == place.id, let visits = detail?.visits {
+                detail?.visits = update(visits)
             }
             let after = try await api.discover(areaID: here.area.id)
             discover = after
-            if !undoing { celebrate(before: before, after: after, place: updated) }
+            if !undoing { celebrate(before: before, after: after, place: place) }
         } catch {
             toast("That did not work: \(error.localizedDescription)")
         }

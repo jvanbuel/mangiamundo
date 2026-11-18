@@ -54,6 +54,13 @@ struct ContentView: View {
         .onChange(of: scenePhase) { _, phase in
             if phase == .active { googleInstalled = MapsApp.googleInstalled }
         }
+        .sheet(item: Binding(get: { model.detail }, set: { if $0 == nil { model.closePlace() } })) { place in
+            ScrollView {
+                PlaceDetail(place: place).padding(20)
+            }
+            .presentationDetents([.medium, .large])
+            .presentationBackground(Theme.panel)
+        }
         .sheet(isPresented: $pickerOpen) {
             ScrollView {
                 LocationPicker(onDone: { pickerOpen = false }).padding(20)

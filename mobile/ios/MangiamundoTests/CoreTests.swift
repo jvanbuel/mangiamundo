@@ -98,6 +98,9 @@ final class ContractTests: XCTestCase {
         let place = try decode(Place.self, "place")
         XCTAssertEqual(place.visits.count, 1)
         XCTAssertTrue(place.verified)
+        XCTAssertEqual(place.hours?.week?.count, 7)
+        XCTAssertEqual(place.hours?.week?.filter(\.today).count, 1)
+        XCTAssertTrue(places.allSatisfy { $0.hours?.week == nil })
         XCTAssertFalse(try decode([Area].self, "areas").isEmpty)
         XCTAssertEqual(try decode(Located.self, "located").options.count, 2)
     }

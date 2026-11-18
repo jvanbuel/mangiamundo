@@ -150,6 +150,8 @@ struct Place: Decodable, Identifiable {
     let distanceM: Int
     /// Newest first. Lists of places carry only the latest visit; `APIClient.place` all of them.
     var visits: [Visit]
+    /// The place's page on openstreetmap.org. Nil for places that don't come from OSM.
+    var osmUrl: String? = nil
 
     /// Nil when the hours are unknown or can't be read.
     var openNow: Bool? { hours?.status?.open }
@@ -171,6 +173,17 @@ struct Hours: Decodable {
     let raw: String
     /// Nil when `raw` can't be parsed.
     let status: HoursStatus?
+    /// This week, Monday to Sunday. Only from `APIClient.place`; nil in lists.
+    var week: [Day]? = nil
+}
+
+/// One day of a place's week.
+struct Day: Decodable {
+    /// "Monday".
+    let name: String
+    let today: Bool
+    /// E.g. "11:30-14:00"; empty when closed all day.
+    let open: [String]
 }
 
 struct HoursStatus: Decodable {
