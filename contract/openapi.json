@@ -213,19 +213,15 @@
       },
       "CheckIn": {
         "properties": {
-          "lat": {
-            "description": "Where the user is right now. Optional; used to mark the visit as verified.",
-            "format": "double",
-            "type": [
-              "number",
-              "null"
-            ]
-          },
-          "lng": {
-            "format": "double",
-            "type": [
-              "number",
-              "null"
+          "position": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/LatLng",
+                "description": "Where the user is right now. Optional; used to mark the visit as verified."
+              },
+              {
+                "type": "null"
+              }
             ]
           }
         },
@@ -519,6 +515,64 @@
         ],
         "type": "object"
       },
+      "Hours": {
+        "description": "Opening hours.",
+        "properties": {
+          "raw": {
+            "description": "OSM `opening_hours` syntax; Google hours are converted to it.",
+            "type": "string"
+          },
+          "status": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/HoursStatus",
+                "description": "`None` when `raw` can't be parsed."
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "raw",
+          "status"
+        ],
+        "type": "object"
+      },
+      "HoursStatus": {
+        "properties": {
+          "open": {
+            "type": "boolean"
+          },
+          "text": {
+            "description": "Short status line, e.g. \"Open until 22:00\".",
+            "type": "string"
+          }
+        },
+        "required": [
+          "open",
+          "text"
+        ],
+        "type": "object"
+      },
+      "LatLng": {
+        "properties": {
+          "lat": {
+            "format": "double",
+            "type": "number"
+          },
+          "lng": {
+            "format": "double",
+            "type": "number"
+          }
+        },
+        "required": [
+          "lat",
+          "lng"
+        ],
+        "type": "object"
+      },
       "Located": {
         "description": "The areas a point lies in.",
         "properties": {
@@ -617,11 +671,15 @@
             "minimum": 0,
             "type": "integer"
           },
-          "hours_text": {
-            "description": "Short status line, e.g. \"Open until 22:00\".",
-            "type": [
-              "string",
-              "null"
+          "hours": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/Hours",
+                "description": "`None` when the hours are unknown."
+              },
+              {
+                "type": "null"
+              }
             ]
           },
           "id": {
@@ -638,35 +696,18 @@
           "name": {
             "type": "string"
           },
-          "open_now": {
-            "description": "`None` when the hours are unknown.",
-            "type": [
-              "boolean",
-              "null"
-            ]
-          },
-          "opening_hours": {
-            "description": "Raw OSM `opening_hours`.",
-            "type": [
-              "string",
-              "null"
-            ]
-          },
           "url": {
             "type": [
               "string",
               "null"
             ]
           },
-          "verified": {
-            "type": "boolean"
-          },
-          "visited_at": {
-            "format": "int64",
-            "type": [
-              "integer",
-              "null"
-            ]
+          "visits": {
+            "description": "The user's visits, newest first. Lists of places carry only the latest one;\n`/api/places/{place_id}` carries all of them.",
+            "items": {
+              "$ref": "#/components/schemas/Visit"
+            },
+            "type": "array"
           }
         },
         "required": [
@@ -677,13 +718,10 @@
           "address",
           "url",
           "cuisine",
-          "opening_hours",
-          "open_now",
-          "hours_text",
+          "hours",
           "countries",
           "distance_m",
-          "visited_at",
-          "verified"
+          "visits"
         ],
         "type": "object"
       },
@@ -855,23 +893,41 @@
         ],
         "type": "object"
       },
+      "Visit": {
+        "description": "One check-in.",
+        "properties": {
+          "at": {
+            "description": "When the user checked in (unix seconds).",
+            "format": "int64",
+            "type": "integer"
+          },
+          "id": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "verified": {
+            "description": "Checked in within walking distance of the place.",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "id",
+          "at",
+          "verified"
+        ],
+        "type": "object"
+      },
       "VisitResult": {
         "properties": {
           "profile": {
             "$ref": "#/components/schemas/Profile"
           },
-          "verified": {
-            "type": "boolean"
-          },
-          "visited_at": {
-            "description": "When the visit was first recorded (unix seconds), kept when checking in again.",
-            "format": "int64",
-            "type": "integer"
+          "visit": {
+            "$ref": "#/components/schemas/Visit"
           }
         },
         "required": [
-          "visited_at",
-          "verified",
+          "visit",
           "profile"
         ],
         "type": "object"
@@ -1288,6 +1344,72 @@
         ]
       }
     },
+    "/api/places/{place_id}": {
+      "get": {
+        "operationId": "place",
+        "parameters": [
+          {
+            "description": "A place id from `/api/places`.",
+            "in": "path",
+            "name": "place_id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Where the user is, for the distance. Without it the distance is 0.",
+            "in": "query",
+            "name": "lat",
+            "required": false,
+            "schema": {
+              "format": "double",
+              "type": "number"
+            }
+          },
+          {
+            "in": "query",
+            "name": "lng",
+            "required": false,
+            "schema": {
+              "format": "double",
+              "type": "number"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PlaceView"
+                }
+              }
+            }
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "An error"
+          }
+        },
+        "security": [
+          {},
+          {
+            "token": []
+          }
+        ],
+        "summary": "One place with all of the user's visits, newest first. Works for any place id, whatever\narea it is in, so links such as `?place=osm-node-123` can open it directly.",
+        "tags": [
+          "game"
+        ]
+      }
+    },
     "/api/places/{place_id}/closed": {
       "put": {
         "operationId": "report_closed",
@@ -1328,182 +1450,8 @@
         ]
       }
     },
-    "/api/push/key": {
-      "get": {
-        "operationId": "push_key",
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/PushKey"
-                }
-              }
-            }
-          },
-          "default": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorBody"
-                }
-              }
-            },
-            "description": "An error"
-          }
-        },
-        "summary": "The key for Web Push. A 404 when the server has push turned off.",
-        "tags": [
-          "push"
-        ]
-      }
-    },
-    "/api/push/subscription": {
-      "delete": {
-        "operationId": "unsubscribe",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/UnsubscribeBody"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "204": {
-            "description": "Unsubscribed"
-          },
-          "default": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorBody"
-                }
-              }
-            },
-            "description": "An error"
-          }
-        },
-        "security": [
-          {
-            "token": []
-          }
-        ],
-        "summary": "Unsubscribes a browser.",
-        "tags": [
-          "push"
-        ]
-      },
-      "put": {
-        "operationId": "subscribe",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/SubscribeBody"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "204": {
-            "description": "Subscribed"
-          },
-          "default": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorBody"
-                }
-              }
-            },
-            "description": "An error"
-          }
-        },
-        "security": [
-          {
-            "token": []
-          }
-        ],
-        "summary": "Subscribes a browser to reminders.",
-        "tags": [
-          "push"
-        ]
-      }
-    },
-    "/api/session": {
+    "/api/places/{place_id}/visits": {
       "post": {
-        "operationId": "create_session",
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Session"
-                }
-              }
-            }
-          },
-          "default": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorBody"
-                }
-              }
-            },
-            "description": "An error"
-          }
-        },
-        "summary": "Creates an anonymous account. A device asks for a token once and keeps it.",
-        "tags": [
-          "account"
-        ]
-      }
-    },
-    "/api/visits/{place_id}": {
-      "delete": {
-        "operationId": "remove_visit",
-        "parameters": [
-          {
-            "description": "A place id from `/api/places`.",
-            "in": "path",
-            "name": "place_id",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "204": {
-            "description": "Removed, or there was no visit"
-          },
-          "default": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorBody"
-                }
-              }
-            },
-            "description": "An error"
-          }
-        },
-        "security": [
-          {
-            "token": []
-          }
-        ],
-        "summary": "Undoes a check-in.",
-        "tags": [
-          "game"
-        ]
-      },
-      "put": {
         "operationId": "add_visit",
         "parameters": [
           {
@@ -1568,7 +1516,186 @@
             "token": []
           }
         ],
-        "summary": "Checks in at a place. Checking in again keeps the first date.",
+        "summary": "Checks in at a place. There is at most one visit per place per day: checking in again the\nsame day returns that day's visit, verified if either check-in was made on the spot.",
+        "tags": [
+          "game"
+        ]
+      }
+    },
+    "/api/push/key": {
+      "get": {
+        "operationId": "push_key",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PushKey"
+                }
+              }
+            }
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "An error"
+          }
+        },
+        "summary": "The key for Web Push. A 404 when the server has push turned off.",
+        "tags": [
+          "push"
+        ]
+      }
+    },
+    "/api/push/subscription": {
+      "put": {
+        "operationId": "subscribe",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SubscribeBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": "Subscribed"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "An error"
+          }
+        },
+        "security": [
+          {
+            "token": []
+          }
+        ],
+        "summary": "Subscribes a browser to reminders.",
+        "tags": [
+          "push"
+        ]
+      }
+    },
+    "/api/push/subscription/delete": {
+      "post": {
+        "operationId": "unsubscribe",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UnsubscribeBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": "Unsubscribed"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "An error"
+          }
+        },
+        "security": [
+          {
+            "token": []
+          }
+        ],
+        "summary": "Unsubscribes a browser. A POST, because a DELETE with a body has no defined meaning\nand some proxies drop it.",
+        "tags": [
+          "push"
+        ]
+      }
+    },
+    "/api/session": {
+      "post": {
+        "operationId": "create_session",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Session"
+                }
+              }
+            }
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "An error"
+          }
+        },
+        "summary": "Creates an anonymous account. A device asks for a token once and keeps it.",
+        "tags": [
+          "account"
+        ]
+      }
+    },
+    "/api/visits/{visit_id}": {
+      "delete": {
+        "operationId": "remove_visit",
+        "parameters": [
+          {
+            "description": "A visit id from a place's `visits`.",
+            "in": "path",
+            "name": "visit_id",
+            "required": true,
+            "schema": {
+              "format": "int64",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Removed, or there was no such visit"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "An error"
+          }
+        },
+        "security": [
+          {
+            "token": []
+          }
+        ],
+        "summary": "Removes one visit. The place stays visited while the user has other visits to it.",
         "tags": [
           "game"
         ]

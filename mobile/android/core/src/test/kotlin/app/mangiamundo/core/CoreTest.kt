@@ -1,6 +1,8 @@
 package app.mangiamundo.core
 
 import java.io.File
+import java.time.LocalDate
+import java.time.ZoneId
 import kotlin.math.abs
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -61,6 +63,18 @@ class CoreTest {
         assertEquals(Camera.MAX_ZOOM, camera.zoom)
     }
 
+    @Test
+    fun visitedTodayFollowsTheLocalDayOfTheLatestVisit() {
+        val brussels = ZoneId.of("Europe/Brussels")
+        // 2026-11-17 23:30 in Brussels (22:30 UTC), then an older visit.
+        val place = Place("p", "P", 0.0, 0.0, distanceM = 0, visits = listOf(Visit(2, 1_794_954_600), Visit(1, 1_794_000_000)))
+        assertTrue(place.visitedToday(LocalDate.of(2026, 11, 17), brussels))
+        assertFalse(place.visitedToday(LocalDate.of(2026, 11, 18), brussels))
+        assertTrue(place.visitedToday(LocalDate.of(2026, 11, 17), ZoneId.of("UTC")))
+        assertTrue(place.visitedToday(LocalDate.of(2026, 11, 18), ZoneId.of("Asia/Tokyo")), "07:30 on the 18th there")
+        assertFalse(place.copy(visits = emptyList()).visitedToday(LocalDate.of(2026, 11, 17), brussels))
+    }
+
     /** Real responses, written by the backend's `writes_contract_fixtures` test. */
     private val json = ApiClient("http://localhost", object : TokenStore { override var token: String? = null }).json
     private fun fixture(name: String) = File("../../../contract/$name.json").readText()
@@ -76,7 +90,11 @@ class CoreTest {
         assertEquals(1, places.count { it.verified })
         val celebrations = json.decodeFromString<List<Celebration>>(fixture("celebrations"))
         assertTrue(celebrations.all { it.nearby.isNotEmpty() && it.reminder.title.isNotEmpty() })
-        assertTrue(json.decodeFromString<VisitResult>(fixture("visit")).verified)
+        assertTrue(places.any { it.hours?.status != null })
+        assertTrue(json.decodeFromString<VisitResult>(fixture("visit")).visit.verified)
+        val place = json.decodeFromString<Place>(fixture("place"))
+        assertEquals(1, place.visits.size)
+        assertTrue(place.verified)
         assertTrue(json.decodeFromString<List<Area>>(fixture("areas")).isNotEmpty())
         assertEquals(2, json.decodeFromString<Located>(fixture("located")).options.size)
         assertEquals("area not found", json.decodeFromString<ErrorBody>(fixture("error")).error)

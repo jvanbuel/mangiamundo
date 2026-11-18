@@ -79,15 +79,19 @@ export const places = (areaId: string, country: string, from: { lat: number; lng
 		`/api/places?${area(areaId)}&country=${country}${from ? `&lat=${from.lat}&lng=${from.lng}` : ''}`
 	);
 
-export const checkIn = (placeId: string, here: { lat: number; lng: number } | null) =>
-	authed<VisitResult>(
-		'PUT',
-		`/api/visits/${encodeURIComponent(placeId)}?${tz()}`,
-		here ?? {}
+/** One place with all of the user's visits; the distance is measured from `from` when given. */
+export const place = (placeId: string, from: { lat: number; lng: number } | null) =>
+	authed<Place>(
+		'GET',
+		`/api/places/${encodeURIComponent(placeId)}${from ? `?lat=${from.lat}&lng=${from.lng}` : ''}`
 	);
 
-export const undoCheckIn = (placeId: string) =>
-	authed<void>('DELETE', `/api/visits/${encodeURIComponent(placeId)}`);
+export const checkIn = (placeId: string, here: { lat: number; lng: number } | null) =>
+	authed<VisitResult>('POST', `/api/places/${encodeURIComponent(placeId)}/visits?${tz()}`, {
+		position: here
+	});
+
+export const removeVisit = (visitId: number) => authed<void>('DELETE', `/api/visits/${visitId}`);
 
 /** Cities and postal codes matching what someone typed. */
 export const searchAreas = (query: string) => raw<Area[]>('GET', `/api/areas?q=${encodeURIComponent(query)}`, null);
@@ -119,4 +123,4 @@ export const savePushSubscription = (subscription: PushSubscriptionJSON, target:
 	authed<void>('PUT', '/api/push/subscription', { ...subscription, ...target });
 
 export const deletePushSubscription = (endpoint: string) =>
-	authed<void>('DELETE', '/api/push/subscription', { endpoint });
+	authed<void>('POST', '/api/push/subscription/delete', { endpoint });

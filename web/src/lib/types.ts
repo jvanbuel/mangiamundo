@@ -18,6 +18,7 @@ export type Area = Schemas['AreaInfo'];
 export type Located = Schemas['Located'];
 export type Discover = Schemas['Discover'];
 export type Place = Schemas['PlaceView'];
+export type Visit = Schemas['Visit'];
 export type VisitResult = Schemas['VisitResult'];
 export type Health = Schemas['Health'];
 
@@ -29,6 +30,12 @@ export interface Location {
 	source: 'gps' | 'search';
 	/** The city and postal code found at the GPS position, to switch between. */
 	options: Area[];
+}
+
+/** Whether the latest visit to a place was today, in the device's time zone. */
+export function visitedToday(place: Place, now = new Date()): boolean {
+	const latest = place.visits[0];
+	return latest !== undefined && new Date(latest.at * 1000).toDateString() === now.toDateString();
 }
 
 export type Status = 'available' | 'discovered' | 'completed';

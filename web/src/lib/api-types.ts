@@ -146,6 +146,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/places/{place_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * One place with all of the user's visits, newest first. Works for any place id, whatever
+         *     area it is in, so links such as `?place=osm-node-123` can open it directly.
+         */
+        get: operations["place"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/places/{place_id}/closed": {
         parameters: {
             query?: never;
@@ -157,6 +177,26 @@ export interface paths {
         /** "This place has closed": hides it for the reporter now, and for everyone after more reports. */
         put: operations["report_closed"];
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/places/{place_id}/visits": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Checks in at a place. There is at most one visit per place per day: checking in again the
+         *     same day returns that day's visit, verified if either check-in was made on the spot.
+         */
+        post: operations["add_visit"];
         delete?: never;
         options?: never;
         head?: never;
@@ -191,8 +231,27 @@ export interface paths {
         /** Subscribes a browser to reminders. */
         put: operations["subscribe"];
         post?: never;
-        /** Unsubscribes a browser. */
-        delete: operations["unsubscribe"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/push/subscription/delete": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Unsubscribes a browser. A POST, because a DELETE with a body has no defined meaning
+         *     and some proxies drop it.
+         */
+        post: operations["unsubscribe"];
+        delete?: never;
         options?: never;
         head?: never;
         patch?: never;
@@ -215,7 +274,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/visits/{place_id}": {
+    "/api/visits/{visit_id}": {
         parameters: {
             query?: never;
             header?: never;
@@ -223,10 +282,9 @@ export interface paths {
             cookie?: never;
         };
         get?: never;
-        /** Checks in at a place. Checking in again keeps the first date. */
-        put: operations["add_visit"];
+        put?: never;
         post?: never;
-        /** Undoes a check-in. */
+        /** Removes one visit. The place stays visited while the user has other visits to it. */
         delete: operations["remove_visit"];
         options?: never;
         head?: never;
@@ -304,13 +362,7 @@ export interface components {
             reminder: components["schemas"]["Notification"];
         };
         CheckIn: {
-            /**
-             * Format: double
-             * @description Where the user is right now. Optional; used to mark the visit as verified.
-             */
-            lat?: number | null;
-            /** Format: double */
-            lng?: number | null;
+            position?: components["schemas"]["LatLng"] | null;
         };
         Continent: {
             code: string;
@@ -425,6 +477,23 @@ export interface components {
             /** @description The server's Cargo version. */
             version: string;
         };
+        /** @description Opening hours. */
+        Hours: {
+            /** @description OSM `opening_hours` syntax; Google hours are converted to it. */
+            raw: string;
+            status: components["schemas"]["HoursStatus"] | null;
+        };
+        HoursStatus: {
+            open: boolean;
+            /** @description Short status line, e.g. "Open until 22:00". */
+            text: string;
+        };
+        LatLng: {
+            /** Format: double */
+            lat: number;
+            /** Format: double */
+            lng: number;
+        };
         /** @description The areas a point lies in. */
         Located: {
             city: components["schemas"]["AreaInfo"] | null;
@@ -450,22 +519,19 @@ export interface components {
             cuisine: string | null;
             /** Format: int32 */
             distance_m: number;
-            /** @description Short status line, e.g. "Open until 22:00". */
-            hours_text: string | null;
+            hours: components["schemas"]["Hours"] | null;
             id: string;
             /** Format: double */
             lat: number;
             /** Format: double */
             lng: number;
             name: string;
-            /** @description `None` when the hours are unknown. */
-            open_now: boolean | null;
-            /** @description Raw OSM `opening_hours`. */
-            opening_hours: string | null;
             url: string | null;
-            verified: boolean;
-            /** Format: int64 */
-            visited_at: number | null;
+            /**
+             * @description The user's visits, newest first. Lists of places carry only the latest one;
+             *     `/api/places/{place_id}` carries all of them.
+             */
+            visits: components["schemas"]["Visit"][];
         };
         Profile: {
             /** Format: int32 */
@@ -519,14 +585,21 @@ export interface components {
         UnsubscribeBody: {
             endpoint: string;
         };
-        VisitResult: {
-            profile: components["schemas"]["Profile"];
-            verified: boolean;
+        /** @description One check-in. */
+        Visit: {
             /**
              * Format: int64
-             * @description When the visit was first recorded (unix seconds), kept when checking in again.
+             * @description When the user checked in (unix seconds).
              */
-            visited_at: number;
+            at: number;
+            /** Format: int64 */
+            id: number;
+            /** @description Checked in within walking distance of the place. */
+            verified: boolean;
+        };
+        VisitResult: {
+            profile: components["schemas"]["Profile"];
+            visit: components["schemas"]["Visit"];
         };
     };
     responses: never;
@@ -778,6 +851,41 @@ export interface operations {
             };
         };
     };
+    place: {
+        parameters: {
+            query?: {
+                /** @description Where the user is, for the distance. Without it the distance is 0. */
+                lat?: number;
+                lng?: number;
+            };
+            header?: never;
+            path: {
+                /** @description A place id from `/api/places`. */
+                place_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PlaceView"];
+                };
+            };
+            /** @description An error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
     report_closed: {
         parameters: {
             query?: never;
@@ -796,6 +904,45 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+            /** @description An error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    add_visit: {
+        parameters: {
+            query?: {
+                /** @description As for `/api/discover`: the check-in counts for events by its date in this zone. */
+                tz?: string;
+            };
+            header?: never;
+            path: {
+                /** @description A place id from `/api/places`. */
+                place_id: string;
+            };
+            cookie?: never;
+        };
+        /** @description Optional. Sent with `Content-Type: application/json`, or it is ignored. */
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["CheckIn"] | null;
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["VisitResult"];
+                };
             };
             /** @description An error */
             default: {
@@ -926,58 +1073,19 @@ export interface operations {
             };
         };
     };
-    add_visit: {
-        parameters: {
-            query?: {
-                /** @description As for `/api/discover`: the check-in counts for events by its date in this zone. */
-                tz?: string;
-            };
-            header?: never;
-            path: {
-                /** @description A place id from `/api/places`. */
-                place_id: string;
-            };
-            cookie?: never;
-        };
-        /** @description Optional. Sent with `Content-Type: application/json`, or it is ignored. */
-        requestBody?: {
-            content: {
-                "application/json": components["schemas"]["CheckIn"] | null;
-            };
-        };
-        responses: {
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["VisitResult"];
-                };
-            };
-            /** @description An error */
-            default: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorBody"];
-                };
-            };
-        };
-    };
     remove_visit: {
         parameters: {
             query?: never;
             header?: never;
             path: {
-                /** @description A place id from `/api/places`. */
-                place_id: string;
+                /** @description A visit id from a place's `visits`. */
+                visit_id: number;
             };
             cookie?: never;
         };
         requestBody?: never;
         responses: {
-            /** @description Removed, or there was no visit */
+            /** @description Removed, or there was no such visit */
             204: {
                 headers: {
                     [name: string]: unknown;

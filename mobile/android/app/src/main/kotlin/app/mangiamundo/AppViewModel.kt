@@ -288,18 +288,21 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         busyPlace = place.id
         viewModelScope.launch {
             try {
-                val updated = if (!place.visited) {
+                // Visited today: undo that visit. Otherwise check in, also when there are older visits.
+                val undoing = place.visitedToday()
+                val updated = if (!undoing) {
                     val fix = gpsFix?.takeIf { System.currentTimeMillis() - it.third < 10 * 60_000 }
                     val result = api.checkIn(place.id, fix?.let { it.first to it.second })
-                    place.copy(visitedAt = result.visitedAt, verified = result.verified)
+                    place.copy(visits = listOf(result.visit))
                 } else {
-                    api.undoCheckIn(place.id)
-                    place.copy(visitedAt = null, verified = false)
+                    // The place stays visited if there are older visits.
+                    api.removeVisit(place.visits.first().id)
+                    place.copy(visits = api.place(place.id, null).visits.take(1))
                 }
                 places = places.map { if (it.id == place.id) updated else it }
                 val after = api.discover(here.area.id)
                 discover = after
-                if (updated.visited) celebrate(before, after, updated)
+                if (!undoing) celebrate(before, after, updated)
             } catch (e: Exception) {
                 messageChannel.trySend("That did not work: ${e.message}")
             }

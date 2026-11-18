@@ -540,10 +540,10 @@ fun PlaceRow(place: Place, busy: Boolean, onToggle: () -> Unit) {
                     }
                 }
             }
-            if (place.visited) {
+            if (place.visitedToday()) {
                 ChunkyButton("Visited", onToggle, face = colors.completed, content = colors.onCompleted, enabled = !busy, icon = Icons.Rounded.Check)
             } else {
-                ChunkyButton("Check in", onToggle, enabled = !busy)
+                ChunkyButton(if (place.visited) "Check in again" else "Check in", onToggle, enabled = !busy)
             }
         }
         HorizontalDivider(color = colors.line)

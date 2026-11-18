@@ -28,7 +28,7 @@ use chrono_tz::Tz;
 use crate::calendar::{self, Celebration};
 use crate::game::{self, Lifetime, PlaceRow, Summary};
 use crate::providers::{AreaInfo, Located};
-use crate::store::{self, Area, PlaceView};
+use crate::store::{self, Area, HoursStatus, PlaceView, Visit};
 use crate::{catalog, geo, hours, AppState};
 
 /// A check-in counts as verified when made within this distance of the place.
@@ -61,11 +61,14 @@ fn api_router() -> (Router<AppState>, utoipa::openapi::OpenApi) {
         .routes(routes!(countries))
         .routes(routes!(discover))
         .routes(routes!(places))
+        .routes(routes!(place))
         .routes(routes!(celebrations))
         .routes(routes!(report_closed))
-        .routes(routes!(add_visit, remove_visit))
+        .routes(routes!(add_visit))
+        .routes(routes!(remove_visit))
         .routes(routes!(push_key))
-        .routes(routes!(subscribe, unsubscribe))
+        .routes(routes!(subscribe))
+        .routes(routes!(unsubscribe))
         .routes(routes!(search_areas))
         .routes(routes!(locate_area))
         .routes(routes!(suggest_areas))
@@ -606,32 +609,70 @@ async fn places(
     };
     let now = state.now();
     for place in &mut places {
-        place.distance_m = geo::distance_m(from_lat, from_lng, place.lat, place.lng).round() as u32;
-        if let Some((open, text)) =
-            place.opening_hours.as_deref().and_then(|raw| hours::status(raw, place.lat, place.lng, now))
-        {
-            place.open_now = Some(open);
-            place.hours_text = Some(text);
-        }
+        complete(place, from_lat, from_lng, now);
     }
     // Open first, then closed, then unknown hours; alphabetical within each group.
-    places.sort_by_cached_key(|p| (group(p.open_now), p.name.to_lowercase()));
+    places.sort_by_cached_key(|p| (group(p), p.name.to_lowercase()));
     Ok(Json(places))
 }
 
-fn group(open_now: Option<bool>) -> u8 {
-    match open_now {
-        Some(true) => 0,
-        Some(false) => 1,
+/// Fills in what the store leaves empty: the distance and whether the place is open now.
+fn complete(place: &mut PlaceView, from_lat: f64, from_lng: f64, now: i64) {
+    place.distance_m = geo::distance_m(from_lat, from_lng, place.lat, place.lng).round() as u32;
+    if let Some(h) = &mut place.hours {
+        h.status = hours::status(&h.raw, place.lat, place.lng, now).map(|(open, text)| HoursStatus { open, text });
+    }
+}
+
+fn group(place: &PlaceView) -> u8 {
+    match place.hours.as_ref().and_then(|h| h.status.as_ref()) {
+        Some(HoursStatus { open: true, .. }) => 0,
+        Some(HoursStatus { open: false, .. }) => 1,
         None => 2,
     }
+}
+
+#[derive(Deserialize, IntoParams)]
+#[into_params(parameter_in = Query)]
+struct PlaceQuery {
+    /// Where the user is, for the distance. Without it the distance is 0.
+    lat: Option<f64>,
+    lng: Option<f64>,
+}
+
+/// One place with all of the user's visits, newest first. Works for any place id, whatever
+/// area it is in, so links such as `?place=osm-node-123` can open it directly.
+#[utoipa::path(
+    get, path = "/api/places/{place_id}", tag = "game",
+    params(("place_id" = String, Path, description = "A place id from `/api/places`."), PlaceQuery),
+    security((), ("token" = [])),
+    responses((status = 200, body = PlaceView), (status = "default", description = "An error", body = ErrorBody)),
+)]
+async fn place(
+    State(state): State<AppState>,
+    MaybeUser(user): MaybeUser,
+    Path(place_id): Path<String>,
+    Query(query): Query<PlaceQuery>,
+) -> ApiResult<PlaceView> {
+    let mut place = store::place(&state.db, &place_id, user.as_deref()).await?.ok_or(ApiError::NotFound("place"))?;
+    let (from_lat, from_lng) = match (query.lat, query.lng) {
+        (Some(lat), Some(lng)) => (lat, lng),
+        _ => (place.lat, place.lng),
+    };
+    complete(&mut place, from_lat, from_lng, state.now());
+    Ok(Json(place))
+}
+
+#[derive(Deserialize, ToSchema)]
+struct LatLng {
+    lat: f64,
+    lng: f64,
 }
 
 #[derive(Deserialize, Default, ToSchema)]
 struct CheckIn {
     /// Where the user is right now. Optional; used to mark the visit as verified.
-    lat: Option<f64>,
-    lng: Option<f64>,
+    position: Option<LatLng>,
 }
 
 #[derive(Deserialize, IntoParams)]
@@ -643,15 +684,14 @@ struct VisitQuery {
 
 #[derive(Serialize, ToSchema)]
 struct VisitResult {
-    /// When the visit was first recorded (unix seconds), kept when checking in again.
-    visited_at: i64,
-    verified: bool,
+    visit: Visit,
     profile: game::Profile,
 }
 
-/// Checks in at a place. Checking in again keeps the first date.
+/// Checks in at a place. There is at most one visit per place per day: checking in again the
+/// same day returns that day's visit, verified if either check-in was made on the spot.
 #[utoipa::path(
-    put, path = "/api/visits/{place_id}", tag = "game",
+    post, path = "/api/places/{place_id}/visits", tag = "game",
     params(("place_id" = String, Path, description = "A place id from `/api/places`."), VisitQuery),
     request_body(
         content = Option<CheckIn>,
@@ -671,28 +711,28 @@ async fn add_visit(
         .await?
         .ok_or(ApiError::NotFound("place"))?;
     let check_in = body.map(|JsonBody(b)| b).unwrap_or_default();
-    let verified = match (check_in.lat, check_in.lng) {
-        (Some(lat), Some(lng)) => geo::distance_m(lat, lng, plat, plng) <= VERIFY_DISTANCE_M,
-        _ => false,
-    };
-    let (visited_at, verified) = store::add_visit(&state.db, &user, &place_id, verified, state.now(), state.today(zone(query.tz.as_deref())))
+    let verified = check_in
+        .position
+        .is_some_and(|p| geo::distance_m(p.lat, p.lng, plat, plng) <= VERIFY_DISTANCE_M);
+    let visit = store::add_visit(&state.db, &user, &place_id, verified, state.now(), state.today(zone(query.tz.as_deref())))
             .await?;
     let profile = game::profile(store::lifetime(&state.db, &user).await?);
-    Ok(Json(VisitResult { visited_at, verified, profile }))
+    Ok(Json(VisitResult { visit, profile }))
 }
 
-/// Undoes a check-in.
+/// Removes one visit. The place stays visited while the user has other visits to it.
 #[utoipa::path(
-    delete, path = "/api/visits/{place_id}", tag = "game", params(("place_id" = String, Path, description = "A place id from `/api/places`.")),
+    delete, path = "/api/visits/{visit_id}", tag = "game",
+    params(("visit_id" = i64, Path, description = "A visit id from a place's `visits`.")),
     security(("token" = [])),
-    responses((status = 204, description = "Removed, or there was no visit"), (status = "default", description = "An error", body = ErrorBody)),
+    responses((status = 204, description = "Removed, or there was no such visit"), (status = "default", description = "An error", body = ErrorBody)),
 )]
 async fn remove_visit(
     State(state): State<AppState>,
     User(user): User,
-    Path(place_id): Path<String>,
+    Path(visit_id): Path<i64>,
 ) -> Result<StatusCode, ApiError> {
-    store::remove_visit(&state.db, &user, &place_id).await?;
+    store::remove_visit(&state.db, &user, visit_id).await?;
     Ok(StatusCode::NO_CONTENT)
 }
 
@@ -807,9 +847,10 @@ struct UnsubscribeBody {
     endpoint: String,
 }
 
-/// Unsubscribes a browser.
+/// Unsubscribes a browser. A POST, because a DELETE with a body has no defined meaning
+/// and some proxies drop it.
 #[utoipa::path(
-    delete, path = "/api/push/subscription", tag = "push", request_body = UnsubscribeBody,
+    post, path = "/api/push/subscription/delete", tag = "push", request_body = UnsubscribeBody,
     security(("token" = [])),
     responses((status = 204, description = "Unsubscribed"), (status = "default", description = "An error", body = ErrorBody)),
 )]

@@ -2,7 +2,7 @@
 	import ArrowLeft from '@lucide/svelte/icons/arrow-left';
 	import Check from '@lucide/svelte/icons/check';
 	import { app, country, toggleVisit } from './state.svelte';
-	import { statusOf, type CountryProgress, type Place } from './types';
+	import { statusOf, visitedToday, type CountryProgress, type Place } from './types';
 
 	let { progress, onback }: { progress: CountryProgress; onback: () => void } = $props();
 
@@ -17,7 +17,8 @@
 	// The API sorts open places first, then closed, then unknown hours.
 	const groupName = (open: boolean | null) =>
 		open === true ? 'Open now' : open === false ? 'Closed' : 'Hours unknown';
-	const showGroups = $derived(app.places.some((p) => p.open_now !== null));
+	const openNow = (p: Place) => p.hours?.status?.open ?? null;
+	const showGroups = $derived(app.places.some((p) => openNow(p) !== null));
 
 	async function toggle(place: Place) {
 		busy = place.id;
@@ -48,19 +49,21 @@
 {:else}
 	<ul>
 		{#each app.places as place, i (place.id)}
-			{@const visited = place.visited_at !== null}
-			{#if showGroups && (i === 0 || app.places[i - 1].open_now !== place.open_now)}
-				<li class="group">{groupName(place.open_now)}</li>
+			{@const visited = place.visits.length > 0}
+			{@const today = visitedToday(place)}
+			{@const now = place.hours?.status}
+			{#if showGroups && (i === 0 || openNow(app.places[i - 1]) !== openNow(place))}
+				<li class="group">{groupName(openNow(place))}</li>
 			{/if}
 			<li>
 				<div class="info">
 					<strong>{place.name}</strong>
-					{#if place.hours_text}
-						<span class="hours" class:open={place.open_now} title={place.opening_hours}>{place.hours_text}</span>
+					{#if now}
+						<span class="hours" class:open={now.open} title={place.hours?.raw}>{now.text}</span>
 					{/if}
 					<span class="muted">
 						{distance(place.distance_m)}{place.address ? ` · ${place.address}` : ''}
-						{#if place.verified}<span class="verified"> · checked in on the spot</span>{/if}
+						{#if place.visits[0]?.verified}<span class="verified"> · checked in on the spot</span>{/if}
 					</span>
 					<span class="links">
 						<a href={directions(place.lat, place.lng)} target="_blank" rel="noopener">Directions</a>
@@ -69,12 +72,12 @@
 				</div>
 				<button
 					class="check"
-					class:done={visited}
-					aria-pressed={visited}
+					class:done={today}
+					aria-pressed={today}
 					disabled={busy === place.id}
 					onclick={() => toggle(place)}
 				>
-					{#if visited}<Check size={16} strokeWidth={3} /> Visited{:else}Check in{/if}
+					{#if today}<Check size={16} strokeWidth={3} /> Visited{:else if visited}Check in again{:else}Check in{/if}
 				</button>
 			</li>
 		{/each}

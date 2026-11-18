@@ -11,7 +11,8 @@ import {
 	type Discover,
 	type Located,
 	type Location,
-	type Place
+	type Place,
+	visitedToday
 } from './types';
 
 const LOCATION_KEY = 'mangiamundo.location';
@@ -360,21 +361,22 @@ export async function toggleVisit(place: Place) {
 	const before = app.discover;
 	const location = app.location;
 	if (!before || !location) return;
-	const visiting = place.visited_at === null;
+	// Visited today: undo that visit. Otherwise check in, also when there are older visits.
+	const undoing = visitedToday(place);
 	try {
-		if (visiting) {
+		if (!undoing) {
 			const fresh = gpsFix && Date.now() - gpsFix.at < 10 * 60_000 ? gpsFix : null;
 			const result = await api.checkIn(place.id, fresh && { lat: fresh.lat, lng: fresh.lng });
-			place.visited_at = result.visited_at;
-			place.verified = result.verified;
+			place.visits = [result.visit];
 		} else {
-			await api.undoCheckIn(place.id);
-			place.visited_at = null;
-			place.verified = false;
+			// The place stays visited if there are older visits.
+			await api.removeVisit(place.visits[0].id);
+			const rest = (await api.place(place.id, null)).visits;
+			place.visits = rest.slice(0, 1);
 		}
 		const after = await api.discover(location.area.id);
 		app.discover = after;
-		if (visiting) celebrate(before, after, place);
+		if (!undoing) celebrate(before, after, place);
 	} catch (error) {
 		toast(null, 'That did not work', message(error));
 	}
