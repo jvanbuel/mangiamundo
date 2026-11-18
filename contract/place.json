@@ -1,0 +1,27 @@
+{
+  "address": "200 Demo Street",
+  "countries": [
+    "AL"
+  ],
+  "cuisine": "albanian",
+  "distance_m": 1711,
+  "hours": {
+    "raw": "24/7",
+    "status": {
+      "open": true,
+      "text": "Open"
+    }
+  },
+  "id": "demo-leuven-AL-1",
+  "lat": 50.89448040522253,
+  "lng": 4.707786056764152,
+  "name": "Little Albania",
+  "url": null,
+  "visits": [
+    {
+      "at": 1794830400,
+      "id": 1,
+      "verified": true
+    }
+  ]
+}

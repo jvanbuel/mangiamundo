@@ -67,6 +67,16 @@ async fn session(app: &Router) -> String {
     body["token"].as_str().unwrap().to_string()
 }
 
+/// Where to check in at a place from `/api/places`.
+fn visits_uri(place: &Value) -> String {
+    format!("/api/places/{}/visits", place["id"].as_str().unwrap())
+}
+
+/// A check-in body made at the place itself.
+fn at(place: &Value) -> String {
+    format!(r#"{{"position":{{"lat":{},"lng":{}}}}}"#, place["lat"], place["lng"])
+}
+
 fn badge<'a>(discover: &'a Value, id: &str) -> &'a Value {
     discover["badges"].as_array().unwrap().iter().find(|b| b["id"] == id).unwrap()
 }
@@ -135,28 +145,27 @@ async fn visiting_every_place_completes_a_country() {
     assert!(places.iter().all(|p| p["countries"].as_array().unwrap().contains(&Value::from(country.clone()))));
     // Open places first, then closed, then unknown hours; alphabetical within each group.
     let key = |p: &Value| {
-        let group = match p["open_now"].as_bool() { Some(true) => 0, Some(false) => 1, None => 2 };
+        let group = match p["hours"]["status"]["open"].as_bool() { Some(true) => 0, Some(false) => 1, None => 2 };
         (group, p["name"].as_str().unwrap().to_lowercase())
     };
     assert!(places.windows(2).all(|w| key(&w[0]) <= key(&w[1])));
-    assert!(places.iter().all(|p| p["open_now"].is_null() == p["hours_text"].is_null()));
+    assert!(places.iter().all(|p| p["visits"] == Value::Array(vec![])));
 
     // First check-in, made on the spot: verified, 10 XP for the visit + 50 for the country.
     let first = &places[0];
-    let here = format!(r#"{{"lat":{},"lng":{}}}"#, first["lat"], first["lng"]);
-    let (status, visit) =
-        call(&app, "PUT", &format!("/api/visits/{}", first["id"].as_str().unwrap()), Some(&token), Some(&here)).await;
+    let here = at(first);
+    let (status, visit) = call(&app, "POST", &visits_uri(first), Some(&token), Some(&here)).await;
     assert_eq!(status, StatusCode::OK);
-    assert_eq!(visit["verified"], true);
+    assert_eq!(visit["visit"]["verified"], true);
     assert_eq!(visit["profile"]["xp"], 60);
 
     for place in &places[1..] {
-        let uri = format!("/api/visits/{}", place["id"].as_str().unwrap());
-        let (status, visit) = call(&app, "PUT", &uri, Some(&token), None).await;
+        let uri = visits_uri(place);
+        let (status, visit) = call(&app, "POST", &uri, Some(&token), None).await;
         assert_eq!(status, StatusCode::OK);
-        assert_eq!(visit["verified"], false);
+        assert_eq!(visit["visit"]["verified"], false);
         // Checking in twice changes nothing.
-        call(&app, "PUT", &uri, Some(&token), None).await;
+        call(&app, "POST", &uri, Some(&token), None).await;
     }
 
     let (_, after) = call(&app, "GET", &format!("/api/discover?{HERE}"), Some(&token), None).await;
@@ -176,7 +185,7 @@ async fn visiting_every_place_completes_a_country() {
     assert_eq!(theirs["world"]["discovered"], 0);
 
     // Undoing a visit takes the completion away again.
-    let uri = format!("/api/visits/{}", first["id"].as_str().unwrap());
+    let uri = format!("/api/visits/{}", visit["visit"]["id"]);
     let (status, _) = call(&app, "DELETE", &uri, Some(&token), None).await;
     assert_eq!(status, StatusCode::NO_CONTENT);
     let (_, undone) = call(&app, "GET", &format!("/api/discover?{HERE}"), Some(&token), None).await;
@@ -184,28 +193,81 @@ async fn visiting_every_place_completes_a_country() {
 }
 
 #[tokio::test]
-async fn checking_in_again_keeps_the_first_visit() {
+async fn visits_are_a_history_with_one_visit_per_day() {
     let (app, clock) = app_with_clock().await;
     let token = session(&app).await;
     let (_, discover) = call(&app, "GET", &format!("/api/discover?{HERE}"), Some(&token), None).await;
     let country = discover["countries"][0]["code"].as_str().unwrap();
     let (_, places) = call(&app, "GET", &format!("/api/places?{HERE}&country={country}"), Some(&token), None).await;
     let place = &places[0];
-    let uri = format!("/api/visits/{}", place["id"].as_str().unwrap());
+    let uri = visits_uri(place);
 
-    let here = format!(r#"{{"lat":{},"lng":{}}}"#, place["lat"], place["lng"]);
-    let (status, first) = call(&app, "PUT", &uri, Some(&token), Some(&here)).await;
+    // On the spot, then again the same day from elsewhere: one visit, still verified.
+    let (status, first) = call(&app, "POST", &uri, Some(&token), Some(&at(place))).await;
     assert_eq!(status, StatusCode::OK);
-    assert_eq!(first["visited_at"], START);
-    assert_eq!(first["verified"], true);
-    assert!(first.get("place_id").is_none());
+    assert_eq!(first["visit"]["at"], START);
+    assert_eq!(first["visit"]["verified"], true);
+    assert_eq!(first["profile"]["xp"], 60);
+    let (_, same_day) = call(&app, "POST", &uri, Some(&token), None).await;
+    assert_eq!(same_day["visit"], first["visit"]);
 
-    // A day later, from elsewhere: still the first date, and still verified.
+    // A day later: a second visit, unverified. The place still counts once.
     clock.fetch_add(DAY, Ordering::Relaxed);
-    let (status, again) = call(&app, "PUT", &uri, Some(&token), None).await;
+    let (_, second) = call(&app, "POST", &uri, Some(&token), None).await;
+    assert_ne!(second["visit"]["id"], first["visit"]["id"]);
+    assert_eq!(second["visit"]["at"], START + DAY);
+    assert_eq!(second["visit"]["verified"], false);
+    assert_eq!(second["profile"], first["profile"], "a repeat visit earns no XP");
+
+    // The list carries the latest visit, the place all of them, newest first.
+    let (_, listed) = call(&app, "GET", &format!("/api/places?{HERE}&country={country}"), Some(&token), None).await;
+    let listed = listed.as_array().unwrap().iter().find(|p| p["id"] == place["id"]).unwrap();
+    assert_eq!(listed["visits"], serde_json::json!([second["visit"]]));
+    let detail_uri = format!("/api/places/{}", place["id"].as_str().unwrap());
+    let (status, detail) = call(&app, "GET", &detail_uri, Some(&token), None).await;
     assert_eq!(status, StatusCode::OK);
-    assert_eq!(again["visited_at"], START);
-    assert_eq!(again["verified"], true);
+    assert_eq!(detail["visits"], serde_json::json!([second["visit"], first["visit"]]));
+
+    // Removing the latest visit leaves the place visited.
+    let (status, _) = call(&app, "DELETE", &format!("/api/visits/{}", second["visit"]["id"]), Some(&token), None).await;
+    assert_eq!(status, StatusCode::NO_CONTENT);
+    let (_, after) = call(&app, "GET", &format!("/api/discover?{HERE}"), Some(&token), None).await;
+    assert_eq!(after["places_visited"], 1);
+    let (_, detail) = call(&app, "GET", &detail_uri, Some(&token), None).await;
+    assert_eq!(detail["visits"], serde_json::json!([first["visit"]]));
+
+    // Nobody else can see or remove the visit.
+    let other = session(&app).await;
+    let (_, theirs) = call(&app, "GET", &detail_uri, Some(&other), None).await;
+    assert_eq!(theirs["visits"], serde_json::json!([]));
+    let (status, _) = call(&app, "DELETE", &format!("/api/visits/{}", first["visit"]["id"]), Some(&other), None).await;
+    assert_eq!(status, StatusCode::NO_CONTENT);
+    let (_, detail) = call(&app, "GET", &detail_uri, Some(&token), None).await;
+    assert_eq!(detail["visits"], serde_json::json!([first["visit"]]));
+}
+
+#[tokio::test]
+async fn a_place_can_be_fetched_on_its_own() {
+    let app = app().await;
+    let (_, places) = call(&app, "GET", &format!("/api/places?{HERE}"), None, None).await;
+    let place = places.as_array().unwrap().iter().find(|p| !p["hours"].is_null()).unwrap();
+    let uri = format!("/api/places/{}", place["id"].as_str().unwrap());
+
+    // Anonymously, and without a position the distance is 0.
+    let (status, alone) = call(&app, "GET", &uri, None, None).await;
+    assert_eq!(status, StatusCode::OK);
+    for field in ["id", "name", "lat", "lng", "address", "url", "cuisine", "hours", "countries"] {
+        assert_eq!(alone[field], place[field], "{field}");
+    }
+    assert_eq!(alone["distance_m"], 0);
+    assert_eq!(alone["visits"], serde_json::json!([]));
+
+    let (_, near) = call(&app, "GET", &format!("{uri}?lat=50.8798&lng=4.7005"), None, None).await;
+    assert!(near["distance_m"].as_u64().unwrap() > 0);
+
+    let (status, body) = call(&app, "GET", "/api/places/does-not-exist", None, None).await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+    assert_eq!(body["code"], "not_found");
 }
 
 #[tokio::test]
@@ -217,12 +279,12 @@ async fn rejects_bad_input() {
     assert_eq!(status, StatusCode::NOT_FOUND);
     let (status, _) = call(&app, "GET", "/api/areas/locate?lat=95&lng=4", None, None).await;
     assert_eq!(status, StatusCode::BAD_REQUEST);
-    let (status, _) = call(&app, "PUT", "/api/visits/demo-x", None, None).await;
+    let (status, _) = call(&app, "POST", "/api/places/demo-x/visits", None, None).await;
     assert_eq!(status, StatusCode::UNAUTHORIZED);
     let (status, _) = call(&app, "GET", &format!("/api/discover?{HERE}"), Some("nope"), None).await;
     assert_eq!(status, StatusCode::UNAUTHORIZED);
     let token = session(&app).await;
-    let (status, body) = call(&app, "PUT", "/api/visits/does-not-exist", Some(&token), None).await;
+    let (status, body) = call(&app, "POST", "/api/places/does-not-exist/visits", Some(&token), None).await;
     assert_eq!(status, StatusCode::NOT_FOUND);
     assert_eq!(body["code"], "not_found");
 }
@@ -252,16 +314,16 @@ async fn every_error_is_json_with_a_code() {
     assert_eq!(status, StatusCode::BAD_REQUEST);
     assert_error(&body, "bad_request");
     let token = session(&app).await;
-    let (status, body) = call(&app, "PUT", "/api/visits/demo-x", Some(&token), Some("{not json")).await;
+    let (status, body) = call(&app, "POST", "/api/places/demo-x/visits", Some(&token), Some("{not json")).await;
     assert_eq!(status, StatusCode::BAD_REQUEST);
     assert_error(&body, "bad_request");
-    let (status, body) = call(&app, "DELETE", "/api/push/subscription", Some(&token), Some(r#"{"lat": 1}"#)).await;
+    let (status, body) = call(&app, "POST", "/api/push/subscription/delete", Some(&token), Some(r#"{"lat": 1}"#)).await;
     assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY);
     assert_error(&body, "bad_request");
     // A JSON body without the JSON content type.
     let request = Request::builder()
-        .method("DELETE")
-        .uri("/api/push/subscription")
+        .method("POST")
+        .uri("/api/push/subscription/delete")
         .header("authorization", format!("Bearer {token}"))
         .body(Body::from("{}"))
         .unwrap();
@@ -271,10 +333,13 @@ async fn every_error_is_json_with_a_code() {
     assert_error(&serde_json::from_slice(&bytes).unwrap(), "bad_request");
 
     let big = format!(r#"{{"lat": 1, "pad": "{}"}}"#, "x".repeat(3 << 20));
-    let (status, body) = call(&app, "PUT", "/api/visits/demo-x", Some(&token), Some(&big)).await;
+    let (status, body) = call(&app, "POST", "/api/places/demo-x/visits", Some(&token), Some(&big)).await;
     assert_eq!(status, StatusCode::PAYLOAD_TOO_LARGE);
     assert_error(&body, "bad_request");
-    let (status, body) = call(&app, "PUT", "/api/visits/%FF", Some(&token), None).await;
+    let (status, body) = call(&app, "POST", "/api/places/%FF/visits", Some(&token), None).await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    assert_error(&body, "bad_request");
+    let (status, body) = call(&app, "DELETE", "/api/visits/not-a-number", Some(&token), None).await;
     assert_eq!(status, StatusCode::BAD_REQUEST);
     assert_error(&body, "bad_request");
 
@@ -402,7 +467,7 @@ async fn event_days_follow_the_users_time_zone() {
     let (_, places) = call(&app, "GET", "/api/places?area=demo-tokyo&country=JP", Some(&token), None).await;
     let places = places.as_array().unwrap().clone();
     assert!(places.len() >= 2, "demo Tokyo has Japanese places");
-    let visit = |i: usize, tz: &str| format!("/api/visits/{}{tz}", places[i]["id"].as_str().unwrap());
+    let visit = |i: usize, tz: &str| format!("{}{tz}", visits_uri(&places[i]));
 
     let japan = |discover: &Value| {
         discover["events"].as_array().unwrap().iter().find(|e| e["id"] == "japan-month-2026-12").unwrap().clone()
@@ -413,7 +478,7 @@ async fn event_days_follow_the_users_time_zone() {
     assert_eq!(japan(&before)["status"], "upcoming", "without a zone, today is the UTC date");
 
     // Checked in on 1 December, Tokyo time: it counts, whatever zone asks later.
-    let (status, _) = call(&app, "PUT", &visit(0, "?tz=Asia%2FTokyo"), Some(&token), None).await;
+    let (status, _) = call(&app, "POST", &visit(0, "?tz=Asia%2FTokyo"), Some(&token), None).await;
     assert_eq!(status, StatusCode::OK);
     for tz in ["Asia%2FTokyo", "UTC", "America%2FLos_Angeles"] {
         let (_, now) = call(&app, "GET", &format!("/api/discover?area=demo-tokyo&tz={tz}"), Some(&token), None).await;
@@ -423,7 +488,7 @@ async fn event_days_follow_the_users_time_zone() {
     // 31 December 20:00 UTC, without a zone: dated 31 December, so it counts, even though
     // it was already 1 January in Tokyo (where the event, unearned, is now over).
     clock.store(1_798_747_200, Ordering::Relaxed);
-    call(&app, "PUT", &visit(1, ""), Some(&token), None).await;
+    call(&app, "POST", &visit(1, ""), Some(&token), None).await;
     let (_, late) =
         call(&app, "GET", "/api/discover?area=demo-tokyo&tz=America%2FLos_Angeles", Some(&token), None).await;
     assert_eq!(japan(&late)["progress"], 2);
@@ -602,11 +667,9 @@ async fn writes_contract_fixtures() {
     let country = busy["code"].as_str().unwrap().to_string();
     let places = get(format!("/api/places?{HERE}&country={country}")).await;
     let (first, second) = (&places[0], &places[1]);
-    let here = format!(r#"{{"lat":{},"lng":{}}}"#, first["lat"], first["lng"]);
-    let (status, visit) =
-        call(&app, "PUT", &format!("/api/visits/{}", first["id"].as_str().unwrap()), Some(&token), Some(&here)).await;
+    let (status, visit) = call(&app, "POST", &visits_uri(first), Some(&token), Some(&at(first))).await;
     assert_eq!(status, StatusCode::OK);
-    call(&app, "PUT", &format!("/api/visits/{}", second["id"].as_str().unwrap()), Some(&token), None).await;
+    call(&app, "POST", &visits_uri(second), Some(&token), None).await;
 
     let discover = get(format!("/api/discover?{HERE}")).await;
     write("countries", &get("/api/countries".into()).await);
@@ -614,6 +677,7 @@ async fn writes_contract_fixtures() {
     write("places", &get(format!("/api/places?{HERE}&country={country}")).await);
     write("celebrations", &get(format!("/api/celebrations?{HERE}&days=90")).await);
     write("visit", &visit);
+    write("place", &get(format!("/api/places/{}?lat=50.8798&lng=4.7005", first["id"].as_str().unwrap())).await);
     write("areas", &get("/api/areas?q=leuv".into()).await);
     write("located", &get("/api/areas/locate?lat=50.8798&lng=4.71".into()).await);
     let (status, error) = call(&app, "GET", "/api/discover?area=demo-nowhere", None, None).await;

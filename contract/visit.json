@@ -7,6 +7,9 @@
     "visits": 1,
     "xp": 60
   },
-  "verified": true,
-  "visited_at": 1794830400
+  "visit": {
+    "at": 1794830400,
+    "id": 1,
+    "verified": true
+  }
 }

@@ -156,7 +156,7 @@ async fn sends_each_reminder_once_in_the_subscribers_morning() {
 
     // Unsubscribing removes it.
     let (status, _) = call(
-        &app, "DELETE", "/api/push/subscription", Some(&token),
+        &app, "POST", "/api/push/subscription/delete", Some(&token),
         Some(serde_json::json!({ "endpoint": format!("{push_url}/push/utc") })),
     ).await;
     assert_eq!(status, StatusCode::NO_CONTENT);

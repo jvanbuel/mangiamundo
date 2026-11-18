@@ -161,11 +161,11 @@ const NOT_REPORTED_CLOSED: &str = "NOT EXISTS (SELECT 1 FROM closed_reports WHER
 
 pub async fn area_rows(db: &SqlitePool, area_id: &str, user: Option<&str>) -> sqlx::Result<Vec<PlaceRow>> {
     let sql = format!(
-        "SELECT pc.place_id, pc.country, v.place_id IS NOT NULL AS visited
+        "SELECT pc.place_id, pc.country,
+                EXISTS (SELECT 1 FROM visits WHERE user_id = ?1 AND place_id = p.id) AS visited
          FROM area_places ap
          JOIN places p ON p.id = ap.place_id
          JOIN place_countries pc ON pc.place_id = p.id
-         LEFT JOIN visits v ON v.place_id = p.id AND v.user_id = ?1
          WHERE ap.area_id = ?2 AND {NOT_REPORTED_CLOSED}"
     );
     let rows = sqlx::query(&sql)
@@ -179,8 +179,9 @@ pub async fn area_rows(db: &SqlitePool, area_id: &str, user: Option<&str>) -> sq
         .collect())
 }
 
+/// Visits count each place once, however often the user went back.
 pub async fn lifetime(db: &SqlitePool, user: &str) -> sqlx::Result<Lifetime> {
-    let visits: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM visits WHERE user_id = ?")
+    let visits: i64 = sqlx::query_scalar("SELECT COUNT(DISTINCT place_id) FROM visits WHERE user_id = ?")
         .bind(user)
         .fetch_one(db)
         .await?;
@@ -192,6 +193,33 @@ pub async fn lifetime(db: &SqlitePool, user: &str) -> sqlx::Result<Lifetime> {
     .fetch_one(db)
     .await?;
     Ok(Lifetime { visits: visits as u32, countries: countries as u32 })
+}
+
+/// One check-in.
+#[derive(Debug, Clone, PartialEq, Serialize, sqlx::FromRow, utoipa::ToSchema)]
+pub struct Visit {
+    pub id: i64,
+    /// When the user checked in (unix seconds).
+    pub at: i64,
+    /// Checked in within walking distance of the place.
+    pub verified: bool,
+}
+
+/// Opening hours.
+#[derive(Debug, Serialize, utoipa::ToSchema)]
+pub struct Hours {
+    /// OSM `opening_hours` syntax; Google hours are converted to it.
+    pub raw: String,
+    /// `None` when `raw` can't be parsed.
+    #[schema(required = true)]
+    pub status: Option<HoursStatus>,
+}
+
+#[derive(Debug, Serialize, utoipa::ToSchema)]
+pub struct HoursStatus {
+    pub open: bool,
+    /// Short status line, e.g. "Open until 22:00".
+    pub text: String,
 }
 
 /// Every `Option` field is sent, as `null` when empty.
@@ -207,24 +235,41 @@ pub struct PlaceView {
     pub url: Option<String>,
     #[schema(required = true)]
     pub cuisine: Option<String>,
-    /// Raw OSM `opening_hours`.
-    #[schema(required = true)]
-    pub opening_hours: Option<String>,
     /// `None` when the hours are unknown.
     #[schema(required = true)]
-    pub open_now: Option<bool>,
-    /// Short status line, e.g. "Open until 22:00".
-    #[schema(required = true)]
-    pub hours_text: Option<String>,
+    pub hours: Option<Hours>,
     pub countries: Vec<String>,
     pub distance_m: u32,
-    #[schema(required = true)]
-    pub visited_at: Option<i64>,
-    pub verified: bool,
+    /// The user's visits, newest first. Lists of places carry only the latest one;
+    /// `/api/places/{place_id}` carries all of them.
+    pub visits: Vec<Visit>,
 }
 
-/// Places of an area, optionally restricted to one country. `distance_m`, `open_now`
-/// and `hours_text` are left empty.
+const PLACE_COLUMNS: &str = "p.id, p.name, p.lat, p.lng, p.address, p.url, p.cuisine, p.opening_hours,
+    (SELECT group_concat(country) FROM place_countries WHERE place_id = p.id) AS countries";
+
+/// A place from a row with [`PLACE_COLUMNS`], without status, distance or visits.
+fn place_view(r: &sqlx::sqlite::SqliteRow) -> PlaceView {
+    PlaceView {
+        id: r.get("id"),
+        name: r.get("name"),
+        lat: r.get("lat"),
+        lng: r.get("lng"),
+        address: r.get("address"),
+        url: r.get("url"),
+        cuisine: r.get("cuisine"),
+        hours: r.get::<Option<String>, _>("opening_hours").map(|raw| Hours { raw, status: None }),
+        countries: r
+            .get::<Option<String>, _>("countries")
+            .map(|s| s.split(',').map(str::to_string).collect())
+            .unwrap_or_default(),
+        distance_m: 0,
+        visits: Vec::new(),
+    }
+}
+
+/// Places of an area, optionally restricted to one country, each with the user's latest
+/// visit. `distance_m` and the hours status are left empty.
 pub async fn area_places(
     db: &SqlitePool,
     area_id: &str,
@@ -232,12 +277,12 @@ pub async fn area_places(
     user: Option<&str>,
 ) -> sqlx::Result<Vec<PlaceView>> {
     let sql = format!(
-        "SELECT p.id, p.name, p.lat, p.lng, p.address, p.url, p.cuisine, p.opening_hours,
-                (SELECT group_concat(country) FROM place_countries WHERE place_id = p.id) AS countries,
-                v.visited_at, COALESCE(v.verified, 0) AS verified
+        "SELECT {PLACE_COLUMNS}, v.id AS visit_id, v.visited_at, v.verified
          FROM area_places ap
          JOIN places p ON p.id = ap.place_id
-         LEFT JOIN visits v ON v.place_id = p.id AND v.user_id = ?1
+         LEFT JOIN visits v ON v.id = (
+             SELECT id FROM visits WHERE user_id = ?1 AND place_id = p.id
+             ORDER BY visited_at DESC, id DESC LIMIT 1)
          WHERE ap.area_id = ?2
            AND (?3 IS NULL OR EXISTS (
                 SELECT 1 FROM place_countries WHERE place_id = p.id AND country = ?3))
@@ -250,27 +295,41 @@ pub async fn area_places(
     .fetch_all(db)
     .await?;
     Ok(rows
-        .into_iter()
-        .map(|r| PlaceView {
-            id: r.get("id"),
-            name: r.get("name"),
-            lat: r.get("lat"),
-            lng: r.get("lng"),
-            address: r.get("address"),
-            url: r.get("url"),
-            cuisine: r.get("cuisine"),
-            opening_hours: r.get("opening_hours"),
-            open_now: None,
-            hours_text: None,
-            countries: r
-                .get::<Option<String>, _>("countries")
-                .map(|s| s.split(',').map(str::to_string).collect())
-                .unwrap_or_default(),
-            distance_m: 0,
-            visited_at: r.get("visited_at"),
-            verified: r.get("verified"),
+        .iter()
+        .map(|r| {
+            let mut place = place_view(r);
+            if let Some(id) = r.get::<Option<i64>, _>("visit_id") {
+                place.visits.push(Visit { id, at: r.get("visited_at"), verified: r.get("verified") });
+            }
+            place
         })
         .collect())
+}
+
+/// One place with all of the user's visits, whatever area it is in. `distance_m` and the
+/// hours status are left empty.
+pub async fn place(db: &SqlitePool, place_id: &str, user: Option<&str>) -> sqlx::Result<Option<PlaceView>> {
+    let sql = format!("SELECT {PLACE_COLUMNS} FROM places p WHERE p.id = ?");
+    let Some(row) = sqlx::query(&sql).bind(place_id).fetch_optional(db).await? else {
+        return Ok(None);
+    };
+    let mut place = place_view(&row);
+    if let Some(user) = user {
+        place.visits = visits(db, user, place_id).await?;
+    }
+    Ok(Some(place))
+}
+
+/// The user's visits to a place, newest first.
+pub async fn visits(db: &SqlitePool, user: &str, place_id: &str) -> sqlx::Result<Vec<Visit>> {
+    sqlx::query_as(
+        "SELECT id, visited_at AS at, verified FROM visits WHERE user_id = ? AND place_id = ?
+         ORDER BY visited_at DESC, id DESC",
+    )
+    .bind(user)
+    .bind(place_id)
+    .fetch_all(db)
+    .await
 }
 
 /// Different places in `countries` the user checked in at on the local days `first` to
@@ -303,9 +362,9 @@ pub async fn place_location(db: &SqlitePool, place_id: &str) -> sqlx::Result<Opt
     Ok(row.map(|r| (r.get("lat"), r.get("lng"))))
 }
 
-/// Records a visit and returns it as stored: checking in again keeps the first date, and the visit
-/// stays verified once any check-in was made on the spot. `local_date` is the day of `at` in the
-/// user's time zone.
+/// Records a visit and returns it as stored. There is at most one visit per place per local
+/// day: checking in again that day returns the same visit, verified once any of the day's
+/// check-ins was made on the spot. `local_date` is the day of `at` in the user's time zone.
 pub async fn add_visit(
     db: &SqlitePool,
     user: &str,
@@ -313,11 +372,11 @@ pub async fn add_visit(
     verified: bool,
     at: i64,
     local_date: NaiveDate,
-) -> sqlx::Result<(i64, bool)> {
+) -> sqlx::Result<Visit> {
     sqlx::query_as(
         "INSERT INTO visits (user_id, place_id, visited_at, verified, local_date) VALUES (?, ?, ?, ?, ?)
-         ON CONFLICT(user_id, place_id) DO UPDATE SET verified = MAX(verified, excluded.verified)
-         RETURNING visited_at, verified",
+         ON CONFLICT(user_id, place_id, local_date) DO UPDATE SET verified = MAX(verified, excluded.verified)
+         RETURNING id, visited_at AS at, verified",
     )
     .bind(user)
     .bind(place_id)
@@ -328,10 +387,11 @@ pub async fn add_visit(
     .await
 }
 
-pub async fn remove_visit(db: &SqlitePool, user: &str, place_id: &str) -> sqlx::Result<()> {
-    sqlx::query("DELETE FROM visits WHERE user_id = ? AND place_id = ?")
+/// Removes one of the user's visits. Visits of other users are left alone.
+pub async fn remove_visit(db: &SqlitePool, user: &str, visit_id: i64) -> sqlx::Result<()> {
+    sqlx::query("DELETE FROM visits WHERE user_id = ? AND id = ?")
         .bind(user)
-        .bind(place_id)
+        .bind(visit_id)
         .execute(db)
         .await?;
     Ok(())
