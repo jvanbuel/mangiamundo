@@ -711,20 +711,26 @@ struct CheckInButton: View {
     let place: Place
 
     var body: some View {
-        Button {
-            Task { await model.toggleVisit(place) }
-        } label: {
-            if place.visitedToday() {
-                Label("Visited", systemImage: "checkmark")
-            } else {
-                Text(place.visited ? "Check in again" : "Check in")
+        // Redrawn every minute, so "Visited" turns into "Check in again" after midnight.
+        TimelineView(.everyMinute) { context in
+            let visited = place.visitedToday(now: context.date)
+            Button {
+                // The label may be up to a minute old: act only if it still says the same.
+                guard place.visitedToday() == visited else { return }
+                Task { await model.toggleVisit(place) }
+            } label: {
+                if visited {
+                    Label("Visited", systemImage: "checkmark")
+                } else {
+                    Text(place.visited ? "Check in again" : "Check in")
+                }
             }
+            .buttonStyle(visited
+                ? ChunkyButtonStyle(face: Theme.completed, content: Theme.onCompleted)
+                : ChunkyButtonStyle())
+            .disabled(model.busyPlace != nil)
+            .opacity(model.busyPlace == place.id ? 0.6 : 1)
         }
-        .buttonStyle(place.visitedToday()
-            ? ChunkyButtonStyle(face: Theme.completed, content: Theme.onCompleted)
-            : ChunkyButtonStyle())
-        .disabled(model.busyPlace != nil)
-        .opacity(model.busyPlace == place.id ? 0.6 : 1)
     }
 }
 

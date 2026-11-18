@@ -15,6 +15,8 @@
 
 	function toggle() {
 		now = new Date();
+		// Past midnight the label just changed: let the user see it before acting.
+		if (visitedToday(place, now) !== today) return;
 		void toggleVisit(place);
 	}
 </script>

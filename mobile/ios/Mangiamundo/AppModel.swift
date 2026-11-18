@@ -357,12 +357,19 @@ final class AppModel {
                 return
             }
             setVisits(place.id, update)
-            // The card shows only the latest visit, so fetch the older ones it may still have.
-            if undoing, let rest = try? await api.place(id: place.id, from: nil).visits {
-                setVisits(place.id) { _ in rest }
-            }
             // Details still loading may have read the visits from before this change.
             if let detail, detail.id == place.id, detailVisits != .loaded { openPlace(detail) }
+            if undoing {
+                // The card shows only the latest visit. Loaded details know the older ones;
+                // otherwise fetch them.
+                if let detail, detail.id == place.id, detailVisits == .loaded {
+                    if let index = places.firstIndex(where: { $0.id == place.id }) {
+                        places[index].visits = Array(detail.visits.prefix(1))
+                    }
+                } else if let rest = try? await api.place(id: place.id, from: nil).visits {
+                    setVisits(place.id) { _ in rest }
+                }
+            }
             let after = try await api.discover(areaID: here.area.id)
             discover = after
             if !undoing { celebrate(before: before, after: after, place: place) }

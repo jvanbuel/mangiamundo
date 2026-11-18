@@ -332,12 +332,18 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
                     { old -> old.filter { it.id != removed } }
                 }
                 setVisits(place.id, update)
-                if (undoing) {
-                    // The card shows only the latest visit, so fetch the older ones it may still have.
-                    runCatching { api.place(place.id, null).visits }.getOrNull()?.let { rest -> setVisits(place.id) { rest } }
-                }
                 // Details still loading may have read the visits from before this change.
                 detail?.takeIf { it.id == place.id && detailVisits != DetailVisits.LOADED }?.let { openPlace(it) }
+                if (undoing) {
+                    // The card shows only the latest visit. Loaded details know the older ones;
+                    // otherwise fetch them.
+                    val loaded = detail?.takeIf { it.id == place.id && detailVisits == DetailVisits.LOADED }
+                    if (loaded != null) {
+                        places = places.map { if (it.id == place.id) it.copy(visits = loaded.visits.take(1)) else it }
+                    } else {
+                        runCatching { api.place(place.id, null).visits }.getOrNull()?.let { rest -> setVisits(place.id) { rest } }
+                    }
+                }
                 val after = api.discover(here.area.id)
                 discover = after
                 if (!undoing) celebrate(before, after, place)

@@ -537,10 +537,17 @@ private fun PlaceLinks(place: Place) {
 @Composable
 fun CheckInButton(place: Place, busy: Boolean, today: LocalDate = LocalDate.now(), onToggle: () -> Unit) {
     val colors = LocalAppColors.current
-    if (place.visitedToday(today)) {
-        ChunkyButton("Visited", onToggle, face = colors.completed, content = colors.onCompleted, enabled = !busy, icon = Icons.Rounded.Check)
+    var day by remember(today) { mutableStateOf(today) }
+    val visited = place.visitedToday(day)
+    // Past midnight the label changes first, so a tap never does the opposite of what it says.
+    val onClick = {
+        val now = LocalDate.now()
+        if (place.visitedToday(now) == visited) onToggle() else day = now
+    }
+    if (visited) {
+        ChunkyButton("Visited", onClick, face = colors.completed, content = colors.onCompleted, enabled = !busy, icon = Icons.Rounded.Check)
     } else {
-        ChunkyButton(if (place.visited) "Check in again" else "Check in", onToggle, enabled = !busy)
+        ChunkyButton(if (place.visited) "Check in again" else "Check in", onClick, enabled = !busy)
     }
 }
 

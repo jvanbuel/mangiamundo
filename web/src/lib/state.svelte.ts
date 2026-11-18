@@ -167,6 +167,7 @@ function optionsOf(located: Located): Area[] {
  * ?place=osm-node-123. A place link stays in the address bar while its details are open. */
 async function followLink() {
 	addEventListener('popstate', () => {
+		closing = false;
 		const id = new URLSearchParams(location.search).get('place');
 		if (id) void loadPlace(id);
 		else clearPlace();
@@ -190,6 +191,10 @@ export async function openPlace(id: string) {
 /** Closes the details: back to where they were opened from, or to the list after a link. */
 export function closePlace() {
 	if (history.state?.place) {
+		// Once per close: a second Back before popstate would leave the list too.
+		if (closing) return;
+		closing = true;
+		loads++;
 		history.back();
 	} else {
 		clearPlace();
@@ -210,6 +215,8 @@ function clearPlace() {
 
 /** Counts detail loads, so only the latest one shows its result. */
 let loads = 0;
+/** A Back from the details is on its way. */
+let closing = false;
 
 async function loadPlace(id: string) {
 	const load = ++loads;
@@ -442,12 +449,20 @@ export async function toggleVisit(place: Place) {
 			const removed = place.visits[0].id;
 			await api.removeVisit(removed);
 			setVisits(place.id, (visits) => visits.filter((v) => v.id !== removed));
-			// The card shows only the latest visit, so fetch the older ones it may still have.
-			const rest = await api.place(place.id, null).then((p) => p.visits, () => null);
-			if (rest) setVisits(place.id, () => rest);
 		}
 		// Details still loading may have read the visits from before this change.
 		if (app.placeId === place.id && !app.detail) void loadPlace(place.id);
+		if (undoing) {
+			// The card shows only the latest visit. Loaded details know the older ones;
+			// otherwise fetch them.
+			const card = app.places.find((p) => p.id === place.id);
+			if (app.detail?.id === place.id) {
+				if (card) card.visits = app.detail.visits.slice(0, 1);
+			} else {
+				const rest = await api.place(place.id, null).then((p) => p.visits, () => null);
+				if (rest) setVisits(place.id, () => rest);
+			}
+		}
 		const after = await api.discover(location.area.id);
 		app.discover = after;
 		if (!undoing) celebrate(before, after, place);
