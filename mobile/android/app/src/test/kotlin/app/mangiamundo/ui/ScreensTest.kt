@@ -152,7 +152,7 @@ class ScreensTest {
             osmUrl = "https://www.openstreetmap.org/node/1",
         )
         Column(Modifier.fillMaxSize().background(colors.panel).padding(top = 16.dp)) {
-            PlaceDetail(place, { code -> countries.firstOrNull { it.code == code } }, busy = false) {}
+            PlaceDetail(place, { code -> countries.firstOrNull { it.code == code } }, busy = false, today = today) {}
         }
     }
 

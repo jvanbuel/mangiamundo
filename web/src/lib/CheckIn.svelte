@@ -1,21 +1,25 @@
 <script lang="ts">
 	import Check from '@lucide/svelte/icons/check';
-	import { toggleVisit } from './state.svelte';
+	import { app, toggleVisit } from './state.svelte';
 	import { visitedToday, type Place } from './types';
 
 	let { place }: { place: Place } = $props();
 
-	const today = $derived(visitedToday(place));
-	let busy = $state(false);
+	// Ticks so "Visited" turns back into "Check in again" after midnight.
+	let now = $state(new Date());
+	$effect(() => {
+		const timer = setInterval(() => (now = new Date()), 60_000);
+		return () => clearInterval(timer);
+	});
+	const today = $derived(visitedToday(place, now));
 
-	async function toggle() {
-		busy = true;
-		await toggleVisit(place);
-		busy = false;
+	function toggle() {
+		now = new Date();
+		void toggleVisit(place);
 	}
 </script>
 
-<button class="check" class:done={today} aria-pressed={today} disabled={busy} onclick={toggle}>
+<button class="check" class:done={today} aria-pressed={today} disabled={app.busyPlace !== null} onclick={toggle}>
 	{#if today}<Check size={16} strokeWidth={3} /> Visited{:else if place.visits.length}Check in again{:else}Check in{/if}
 </button>
 

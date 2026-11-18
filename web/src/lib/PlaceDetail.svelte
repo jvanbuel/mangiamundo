@@ -54,7 +54,7 @@
 					<tbody>
 						{#each place.hours.week as d (d.name)}
 							<tr class:today={d.today}>
-								<th scope="row">{d.name}</th>
+								<th scope="row">{d.name}{#if d.today}<span class="sr-only"> (today)</span>{/if}</th>
 								<td>{d.open.length ? d.open.join(', ') : 'Closed'}</td>
 							</tr>
 						{/each}
@@ -181,6 +181,15 @@
 	tr.today th,
 	tr.today td {
 		font-weight: 800;
+	}
+
+	.sr-only {
+		position: absolute;
+		width: 1px;
+		height: 1px;
+		overflow: hidden;
+		clip-path: inset(50%);
+		white-space: nowrap;
 	}
 
 	.raw {

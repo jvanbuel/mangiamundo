@@ -213,8 +213,8 @@ pub struct Hours {
     /// `None` when `raw` can't be parsed.
     #[schema(required = true)]
     pub status: Option<HoursStatus>,
-    /// This week, Monday to Sunday. Only sent by `/api/places/{place_id}`; `None` in lists
-    /// and when `raw` can't be parsed.
+    /// This week, Monday to Sunday. Filled in only by `/api/places/{place_id}`. Lists, and
+    /// hours that can't be parsed, send `null`.
     #[schema(required = true)]
     pub week: Option<Vec<crate::hours::Day>>,
 }

@@ -81,6 +81,8 @@ import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import app.mangiamundo.AppViewModel
+import app.mangiamundo.DetailVisits
+import java.time.LocalDate
 import app.mangiamundo.BuildConfig
 import app.mangiamundo.SavedLocation
 import app.mangiamundo.core.Badge
@@ -499,13 +501,18 @@ fun PlaceGroupHeader(openNow: Boolean?) {
     )
 }
 
-/** Opens a URL in the browser or the app that handles it. */
-private fun android.content.Context.open(url: String) = startActivity(Intent(Intent.ACTION_VIEW, url.toUri()))
+/** Opens a URL in the browser or the app that handles it, or says there is none. */
+private fun android.content.Context.open(url: String) =
+    try {
+        startActivity(Intent(Intent.ACTION_VIEW, url.toUri()))
+    } catch (_: ActivityNotFoundException) {
+        android.widget.Toast.makeText(this, "No app on this phone can open that link.", android.widget.Toast.LENGTH_SHORT).show()
+    }
 
 /** geo: opens whichever maps app the user has; the web map covers phones without one. */
 private fun android.content.Context.directions(place: Place) =
     try {
-        open("geo:0,0?q=${place.lat},${place.lng}(${Uri.encode(place.name)})")
+        startActivity(Intent(Intent.ACTION_VIEW, "geo:0,0?q=${place.lat},${place.lng}(${Uri.encode(place.name)})".toUri()))
     } catch (_: ActivityNotFoundException) {
         open("https://www.openstreetmap.org/directions?route=%3B${place.lat}%2C${place.lng}")
     }
@@ -528,9 +535,9 @@ private fun PlaceLinks(place: Place) {
 }
 
 @Composable
-fun CheckInButton(place: Place, busy: Boolean, onToggle: () -> Unit) {
+fun CheckInButton(place: Place, busy: Boolean, today: LocalDate = LocalDate.now(), onToggle: () -> Unit) {
     val colors = LocalAppColors.current
-    if (place.visitedToday()) {
+    if (place.visitedToday(today)) {
         ChunkyButton("Visited", onToggle, face = colors.completed, content = colors.onCompleted, enabled = !busy, icon = Icons.Rounded.Check)
     } else {
         ChunkyButton(if (place.visited) "Check in again" else "Check in", onToggle, enabled = !busy)
@@ -567,7 +574,7 @@ fun PlaceRow(place: Place, busy: Boolean, onOpen: () -> Unit, onToggle: () -> Un
                 )
                 Box(Modifier.padding(top = 4.dp)) { PlaceLinks(place) }
             }
-            CheckInButton(place, busy, onToggle)
+            CheckInButton(place, busy, onToggle = onToggle)
         }
         HorizontalDivider(color = colors.line)
     }
@@ -580,7 +587,15 @@ private val visitDate = java.time.format.DateTimeFormatter.ofLocalizedDate(java.
 
 /** Everything about a place, with all of the user's visits. Shown in a bottom sheet. */
 @Composable
-fun PlaceDetail(place: Place, country: (String) -> Country?, busy: Boolean, onToggle: () -> Unit) {
+fun PlaceDetail(
+    place: Place,
+    country: (String) -> Country?,
+    busy: Boolean,
+    visits: DetailVisits = DetailVisits.LOADED,
+    onRetry: () -> Unit = {},
+    today: LocalDate = LocalDate.now(),
+    onToggle: () -> Unit,
+) {
     val colors = LocalAppColors.current
     val context = LocalContext.current
     val body = MaterialTheme.typography.bodyMedium
@@ -599,7 +614,7 @@ fun PlaceDetail(place: Place, country: (String) -> Country?, busy: Boolean, onTo
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(16.dp),
         ) {
-            CheckInButton(place, busy, onToggle)
+            CheckInButton(place, busy, today, onToggle)
             PlaceLinks(place)
         }
         val where = listOfNotNull(place.address, place.distanceM.takeIf { it > 0 }?.let { "${distance(it)} away" })
@@ -625,7 +640,17 @@ fun PlaceDetail(place: Place, country: (String) -> Country?, busy: Boolean, onTo
         }
 
         DetailHeading("Your visits")
-        if (place.visits.isEmpty()) Text("Not visited yet.", style = body, color = colors.muted)
+        // Until the details load, the visits are the card's, which has only the latest one.
+        when (visits) {
+            DetailVisits.LOADING -> Text("Loading visits…", style = body, color = colors.muted)
+            DetailVisits.FAILED -> Text(
+                "Could not load all visits. Try again",
+                style = body,
+                color = colors.accent,
+                modifier = Modifier.clickable(onClick = onRetry).padding(vertical = 6.dp),
+            )
+            DetailVisits.LOADED -> if (place.visits.isEmpty()) Text("Not visited yet.", style = body, color = colors.muted)
+        }
         for (visit in place.visits) {
             val date = java.time.Instant.ofEpochSecond(visit.at).atZone(java.time.ZoneId.systemDefault()).format(visitDate)
             Text(

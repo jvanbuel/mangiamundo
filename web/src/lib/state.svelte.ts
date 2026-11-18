@@ -1,3 +1,4 @@
+import { tick } from 'svelte';
 import * as api from './api';
 import * as push from './push';
 import { hideSplash } from './splash';
@@ -55,6 +56,10 @@ export const app = $state({
 	/** Id of the place whose details are open, and the details once loaded. */
 	placeId: null as string | null,
 	detail: null as Place | null,
+	/** The last place whose details closed, so its link in the list gets focus back. */
+	closedPlace: null as string | null,
+	/** The place whose check-in or undo is running. One at a time, across cards and details. */
+	busyPlace: null as string | null,
 	locating: false,
 	locateError: null as string | null,
 	projection: 'globe' as 'globe' | 'mercator',
@@ -193,20 +198,30 @@ export function closePlace() {
 }
 
 function clearPlace() {
+	if (app.placeId) {
+		app.closedPlace = app.placeId;
+		// Only the list that renders right now may take focus.
+		void tick().then(() => (app.closedPlace = null));
+	}
 	app.placeId = null;
 	app.detail = null;
+	loads++;
 }
 
+/** Counts detail loads, so only the latest one shows its result. */
+let loads = 0;
+
 async function loadPlace(id: string) {
+	const load = ++loads;
 	app.placeId = id;
 	app.detail = null;
 	// Measured from the user when known, otherwise from the map pin, as the list is.
 	const from = here() ?? (app.location && { lat: app.location.lat, lng: app.location.lng });
 	try {
 		const place = await api.place(id, from);
-		if (app.placeId === id) app.detail = place;
+		if (load === loads) app.detail = place;
 	} catch (error) {
-		if (app.placeId !== id) return;
+		if (load !== loads) return;
 		toast(null, 'Could not load this place', message(error));
 		closePlace();
 	}
@@ -414,25 +429,32 @@ function celebrate(before: Discover, after: Discover, place: Place) {
 export async function toggleVisit(place: Place) {
 	const before = app.discover;
 	const location = app.location;
-	if (!before || !location) return;
+	if (!before || !location || app.busyPlace) return;
 	// Visited today: undo that visit. Otherwise check in, also when there are older visits.
 	const undoing = visitedToday(place);
+	app.busyPlace = place.id;
 	try {
 		if (!undoing) {
 			const fresh = gpsFix && Date.now() - gpsFix.at < 10 * 60_000 ? gpsFix : null;
 			const result = await api.checkIn(place.id, fresh && { lat: fresh.lat, lng: fresh.lng });
 			setVisits(place.id, (visits) => [result.visit, ...visits.filter((v) => v.id !== result.visit.id)]);
 		} else {
-			// The place stays visited if there are older visits.
-			await api.removeVisit(place.visits[0].id);
-			const rest = (await api.place(place.id, null)).visits;
-			setVisits(place.id, () => rest);
+			const removed = place.visits[0].id;
+			await api.removeVisit(removed);
+			setVisits(place.id, (visits) => visits.filter((v) => v.id !== removed));
+			// The card shows only the latest visit, so fetch the older ones it may still have.
+			const rest = await api.place(place.id, null).then((p) => p.visits, () => null);
+			if (rest) setVisits(place.id, () => rest);
 		}
+		// Details still loading may have read the visits from before this change.
+		if (app.placeId === place.id && !app.detail) void loadPlace(place.id);
 		const after = await api.discover(location.area.id);
 		app.discover = after;
 		if (!undoing) celebrate(before, after, place);
 	} catch (error) {
 		toast(null, 'That did not work', message(error));
+	} finally {
+		app.busyPlace = null;
 	}
 }
 

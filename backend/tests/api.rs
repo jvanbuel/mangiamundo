@@ -262,7 +262,7 @@ async fn a_place_can_be_fetched_on_its_own() {
     assert_eq!(alone["hours"]["raw"], place["hours"]["raw"]);
     assert_eq!(alone["hours"]["status"], place["hours"]["status"]);
     // Only the detail has the week, Monday to Sunday with one day marked as today.
-    assert!(place["hours"]["week"].is_null());
+    assert_eq!(place["hours"].get("week"), Some(&Value::Null));
     let week = alone["hours"]["week"].as_array().unwrap();
     assert_eq!(week.len(), 7);
     assert_eq!(week[0]["name"], "Monday");

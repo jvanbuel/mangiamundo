@@ -495,8 +495,8 @@ export interface components {
             raw: string;
             status: components["schemas"]["HoursStatus"] | null;
             /**
-             * @description This week, Monday to Sunday. Only sent by `/api/places/{place_id}`; `None` in lists
-             *     and when `raw` can't be parsed.
+             * @description This week, Monday to Sunday. Filled in only by `/api/places/{place_id}`. Lists, and
+             *     hours that can't be parsed, send `null`.
              */
             week: components["schemas"]["Day"][] | null;
         };

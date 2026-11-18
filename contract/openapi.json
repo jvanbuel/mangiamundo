@@ -560,7 +560,7 @@
             ]
           },
           "week": {
-            "description": "This week, Monday to Sunday. Only sent by `/api/places/{place_id}`; `None` in lists\nand when `raw` can't be parsed.",
+            "description": "This week, Monday to Sunday. Filled in only by `/api/places/{place_id}`. Lists, and\nhours that can't be parsed, send `null`.",
             "items": {
               "$ref": "#/components/schemas/Day"
             },

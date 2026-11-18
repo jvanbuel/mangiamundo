@@ -50,6 +50,8 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     var busyPlace by mutableStateOf<String?>(null); private set
     /** The place whose details are open: its card's data until the full place has loaded. */
     var detail by mutableStateOf<Place?>(null); private set
+    /** Whether the details hold all visits yet. Until then they show the card's latest one. */
+    var detailVisits by mutableStateOf(DetailVisits.LOADING); private set
     private var detailJob: Job? = null
 
     var locating by mutableStateOf(false); private set
@@ -280,17 +282,18 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     /** Opens a place's details, with all of the user's visits. */
     fun openPlace(place: Place) {
         detail = place
+        detailVisits = DetailVisits.LOADING
         detailJob?.cancel()
         // Measured from the user when known, otherwise from the map pin.
         val from = userPosition() ?: location?.let { it.lat to it.lng }
         detailJob = viewModelScope.launch {
             try {
-                val full = api.place(place.id, from)
-                if (detail?.id == place.id) detail = full
+                detail = api.place(place.id, from)
+                detailVisits = DetailVisits.LOADED
             } catch (e: kotlinx.coroutines.CancellationException) {
                 throw e
             } catch (e: Exception) {
-                messageChannel.trySend("Could not load this place: ${e.message}")
+                detailVisits = DetailVisits.FAILED
             }
         }
     }
@@ -324,14 +327,17 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
                     // Checking in twice on one day returns that day's visit.
                     { old -> listOf(visit) + old.filter { it.id != visit.id } }
                 } else {
-                    // The place stays visited if there are older visits.
-                    api.removeVisit(place.visits.first().id)
-                    val rest = api.place(place.id, null).visits
-                    { _ -> rest }
+                    val removed = place.visits.first().id
+                    api.removeVisit(removed);
+                    { old -> old.filter { it.id != removed } }
                 }
-                // Cards show only the latest visit, the details all of them.
-                places = places.map { if (it.id == place.id) it.copy(visits = update(it.visits).take(1)) else it }
-                detail = detail?.let { if (it.id == place.id) it.copy(visits = update(it.visits)) else it }
+                setVisits(place.id, update)
+                if (undoing) {
+                    // The card shows only the latest visit, so fetch the older ones it may still have.
+                    runCatching { api.place(place.id, null).visits }.getOrNull()?.let { rest -> setVisits(place.id) { rest } }
+                }
+                // Details still loading may have read the visits from before this change.
+                detail?.takeIf { it.id == place.id && detailVisits != DetailVisits.LOADED }?.let { openPlace(it) }
                 val after = api.discover(here.area.id)
                 discover = after
                 if (!undoing) celebrate(before, after, place)
@@ -340,6 +346,12 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
             }
             busyPlace = null
         }
+    }
+
+    /** Updates a place's visits on its card (which shows only the latest) and in its details. */
+    private fun setVisits(id: String, update: (List<Visit>) -> List<Visit>) {
+        places = places.map { if (it.id == id) it.copy(visits = update(it.visits).take(1)) else it }
+        detail = detail?.let { if (it.id == id) it.copy(visits = update(it.visits)) else it }
     }
 
     /** Announces everything a check-in unlocked by comparing progress before and after. */
@@ -369,3 +381,5 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 }
+
+enum class DetailVisits { LOADING, LOADED, FAILED }

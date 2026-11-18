@@ -27,6 +27,8 @@ final class AppModel {
     private(set) var busyPlace: String?
     /// The place whose details are open: its card's data until the full place has loaded.
     private(set) var detail: Place?
+    /// Whether `detail` holds all visits yet.
+    private(set) var detailVisits = DetailVisits.loading
     @ObservationIgnored private var detailTask: Task<Void, Never>?
 
     private(set) var locating = false
@@ -300,17 +302,19 @@ final class AppModel {
     /// Opens a place's details, with all of the user's visits.
     func openPlace(_ place: Place) {
         detail = place
+        detailVisits = .loading
         detailTask?.cancel()
         // Measured from the user when known, otherwise from the map pin.
         let from = userPosition ?? location.map { (lat: $0.lat, lng: $0.lng) }
         detailTask = Task {
             do {
                 let full = try await api.place(id: place.id, from: from)
-                guard !Task.isCancelled, detail?.id == place.id else { return }
+                guard !Task.isCancelled else { return }
                 detail = full
+                detailVisits = .loaded
             } catch {
                 guard !Task.isCancelled else { return }
-                toast("Could not load this place: \(error.localizedDescription)")
+                detailVisits = .failed
             }
         }
     }
@@ -347,25 +351,33 @@ final class AppModel {
                 // Checking in twice on one day returns that day's visit.
                 update = { old in [visit] + old.filter { $0.id != visit.id } }
             } else if let latest = place.visits.first {
-                // The place stays visited if there are older visits.
                 try await api.removeVisit(id: latest.id)
-                let rest = try await api.place(id: place.id, from: nil).visits
-                update = { _ in rest }
+                update = { old in old.filter { $0.id != latest.id } }
             } else {
                 return
             }
-            // Cards show only the latest visit, the details all of them.
-            if let index = places.firstIndex(where: { $0.id == place.id }) {
-                places[index].visits = Array(update(places[index].visits).prefix(1))
+            setVisits(place.id, update)
+            // The card shows only the latest visit, so fetch the older ones it may still have.
+            if undoing, let rest = try? await api.place(id: place.id, from: nil).visits {
+                setVisits(place.id) { _ in rest }
             }
-            if detail?.id == place.id, let visits = detail?.visits {
-                detail?.visits = update(visits)
-            }
+            // Details still loading may have read the visits from before this change.
+            if let detail, detail.id == place.id, detailVisits != .loaded { openPlace(detail) }
             let after = try await api.discover(areaID: here.area.id)
             discover = after
             if !undoing { celebrate(before: before, after: after, place: place) }
         } catch {
             toast("That did not work: \(error.localizedDescription)")
+        }
+    }
+
+    /// Updates a place's visits on its card (which shows only the latest) and in its details.
+    private func setVisits(_ id: String, _ update: ([Visit]) -> [Visit]) {
+        if let index = places.firstIndex(where: { $0.id == id }) {
+            places[index].visits = Array(update(places[index].visits).prefix(1))
+        }
+        if detail?.id == id, let visits = detail?.visits {
+            detail?.visits = update(visits)
         }
     }
 
@@ -405,3 +417,5 @@ final class AppModel {
         }
     }
 }
+
+enum DetailVisits { case loading, loaded, failed }

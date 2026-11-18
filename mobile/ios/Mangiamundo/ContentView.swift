@@ -49,7 +49,7 @@ struct ContentView: View {
         .background(Theme.bg.ignoresSafeArea())
         .foregroundStyle(Theme.text)
         .font(Theme.font(.body))
-        .overlay(alignment: .top) { ToastStack(toasts: model.toasts) }
+        .overlay(alignment: .top) { if model.detail == nil { ToastStack(toasts: model.toasts) } }
         .onAppear { googleInstalled = MapsApp.googleInstalled }
         .onChange(of: scenePhase) { _, phase in
             if phase == .active { googleInstalled = MapsApp.googleInstalled }
@@ -58,6 +58,8 @@ struct ContentView: View {
             ScrollView {
                 PlaceDetail(place: place).padding(20)
             }
+            // The sheet covers the screen's toasts, so it shows them itself.
+            .overlay(alignment: .top) { ToastStack(toasts: model.toasts) }
             .presentationDetents([.medium, .large])
             .presentationBackground(Theme.panel)
         }

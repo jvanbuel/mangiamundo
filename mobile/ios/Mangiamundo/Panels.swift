@@ -824,8 +824,18 @@ struct PlaceDetail: View {
             }
 
             heading("Your visits")
-            if place.visits.isEmpty {
-                Text("Not visited yet.").font(Theme.font(.subheadline)).foregroundStyle(Theme.muted)
+            // Until the details load, the visits are the card's, which has only the latest one.
+            switch model.detailVisits {
+            case .loading:
+                Text("Loading visits…").font(Theme.font(.subheadline)).foregroundStyle(Theme.muted)
+            case .failed:
+                Button("Could not load all visits. Try again") { model.openPlace(place) }
+                    .font(Theme.font(.subheadline, .bold))
+                    .foregroundStyle(Theme.accent)
+            case .loaded:
+                if place.visits.isEmpty {
+                    Text("Not visited yet.").font(Theme.font(.subheadline)).foregroundStyle(Theme.muted)
+                }
             }
             ForEach(place.visits) { visit in
                 let date = Date(timeIntervalSince1970: TimeInterval(visit.at)).formatted(date: .complete, time: .omitted)

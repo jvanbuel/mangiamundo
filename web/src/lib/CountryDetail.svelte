@@ -15,6 +15,13 @@
 	const openNow = (p: Place) => p.hours?.status?.open ?? null;
 	const showGroups = $derived(app.places.some((p) => openNow(p) !== null));
 
+	/** Gives focus back to the link of the place whose details just closed. */
+	const refocus = (id: string) => (link: HTMLElement) => {
+		if (app.closedPlace !== id) return;
+		app.closedPlace = null;
+		link.focus();
+	};
+
 	function open(event: MouseEvent, place: Place) {
 		// Let modified clicks open the link in a new tab.
 		if (event.metaKey || event.ctrlKey || event.shiftKey || event.button !== 0) return;
@@ -51,7 +58,7 @@
 			{/if}
 			<li>
 				<div class="info">
-					<a class="name" href="?place={encodeURIComponent(place.id)}" onclick={(e) => open(e, place)}>{place.name}</a>
+					<a class="name" href="?place={encodeURIComponent(place.id)}" onclick={(e) => open(e, place)} {@attach refocus(place.id)}>{place.name}</a>
 					{#if now}
 						<span class="hours" class:open={now.open} title={place.hours?.raw}>{now.text}</span>
 					{/if}
