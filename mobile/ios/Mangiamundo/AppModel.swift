@@ -334,14 +334,16 @@ final class AppModel {
         }
     }
 
-    func toggleVisit(_ place: Place) async {
+    /// Checks in, or undoes today's visit. `visited` is what the button showed, so the
+    /// action matches its label even if midnight passes in between.
+    func toggleVisit(_ place: Place, visited: Bool? = nil) async {
         guard let before = discover, let here = location, busyPlace == nil else { return }
         busyPlace = place.id
         defer { busyPlace = nil }
         do {
             let update: ([Visit]) -> [Visit]
             // Visited today: undo that visit. Otherwise check in, also when there are older visits.
-            let undoing = place.visitedToday()
+            let undoing = visited ?? place.visitedToday()
             if !undoing {
                 var position: (lat: Double, lng: Double)?
                 if let fix = gpsFix, Date().timeIntervalSince(fix.at) < 600 {
@@ -360,14 +362,13 @@ final class AppModel {
             // Details still loading may have read the visits from before this change.
             if let detail, detail.id == place.id, detailVisits != .loaded { openPlace(detail) }
             if undoing {
-                // The card shows only the latest visit. Loaded details know the older ones;
-                // otherwise fetch them.
-                if let detail, detail.id == place.id, detailVisits == .loaded {
-                    if let index = places.firstIndex(where: { $0.id == place.id }) {
-                        places[index].visits = Array(detail.visits.prefix(1))
-                    }
-                } else if let rest = try? await api.place(id: place.id, from: nil).visits {
+                // The server has the remaining visits; details shown here may be out of date.
+                if let rest = try? await api.place(id: place.id, from: nil).visits {
                     setVisits(place.id) { _ in rest }
+                } else if let detail, detail.id == place.id, detailVisits == .loaded,
+                          let index = places.firstIndex(where: { $0.id == place.id }) {
+                    // The card shows only the latest visit: fall back on the older ones in the details.
+                    places[index].visits = Array(detail.visits.prefix(1))
                 }
             }
             let after = try await api.discover(areaID: here.area.id)

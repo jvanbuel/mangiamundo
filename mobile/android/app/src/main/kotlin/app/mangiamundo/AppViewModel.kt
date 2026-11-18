@@ -335,13 +335,14 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
                 // Details still loading may have read the visits from before this change.
                 detail?.takeIf { it.id == place.id && detailVisits != DetailVisits.LOADED }?.let { openPlace(it) }
                 if (undoing) {
-                    // The card shows only the latest visit. Loaded details know the older ones;
-                    // otherwise fetch them.
+                    // The server has the remaining visits; details shown here may be out of date.
+                    val rest = runCatching { api.place(place.id, null).visits }.getOrNull()
                     val loaded = detail?.takeIf { it.id == place.id && detailVisits == DetailVisits.LOADED }
-                    if (loaded != null) {
+                    if (rest != null) {
+                        setVisits(place.id) { rest }
+                    } else if (loaded != null) {
+                        // The card shows only the latest visit: fall back on the older ones in the details.
                         places = places.map { if (it.id == place.id) it.copy(visits = loaded.visits.take(1)) else it }
-                    } else {
-                        runCatching { api.place(place.id, null).visits }.getOrNull()?.let { rest -> setVisits(place.id) { rest } }
                     }
                 }
                 val after = api.discover(here.area.id)

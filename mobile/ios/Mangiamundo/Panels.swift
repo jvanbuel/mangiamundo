@@ -717,7 +717,7 @@ struct CheckInButton: View {
             Button {
                 // The label may be up to a minute old: act only if it still says the same.
                 guard place.visitedToday() == visited else { return }
-                Task { await model.toggleVisit(place) }
+                Task { await model.toggleVisit(place, visited: visited) }
             } label: {
                 if visited {
                     Label("Visited", systemImage: "checkmark")

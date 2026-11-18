@@ -453,14 +453,13 @@ export async function toggleVisit(place: Place) {
 		// Details still loading may have read the visits from before this change.
 		if (app.placeId === place.id && !app.detail) void loadPlace(place.id);
 		if (undoing) {
-			// The card shows only the latest visit. Loaded details know the older ones;
-			// otherwise fetch them.
-			const card = app.places.find((p) => p.id === place.id);
-			if (app.detail?.id === place.id) {
+			// The server has the remaining visits; details shown here may be out of date.
+			const rest = await api.place(place.id, null).then((p) => p.visits, () => null);
+			if (rest) setVisits(place.id, () => rest);
+			else if (app.detail?.id === place.id) {
+				// The card shows only the latest visit: fall back on the older ones in the details.
+				const card = app.places.find((p) => p.id === place.id);
 				if (card) card.visits = app.detail.visits.slice(0, 1);
-			} else {
-				const rest = await api.place(place.id, null).then((p) => p.visits, () => null);
-				if (rest) setVisits(place.id, () => rest);
 			}
 		}
 		const after = await api.discover(location.area.id);
