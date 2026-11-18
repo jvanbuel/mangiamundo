@@ -29,6 +29,7 @@ import app.mangiamundo.core.Discover
 import app.mangiamundo.core.GroupProgress
 import app.mangiamundo.core.Place
 import app.mangiamundo.core.Profile
+import app.mangiamundo.core.Visit
 import app.mangiamundo.core.ProjectionKind
 import app.mangiamundo.core.World
 import com.android.resources.NightMode
@@ -127,8 +128,8 @@ class ScreensTest {
         val colors = LocalAppColors.current
         Column(Modifier.fillMaxSize().background(colors.panel).padding(16.dp)) {
             CountryHeader(progress.first { it.code == "JP" }, countries.first { it.code == "JP" }) {}
-            PlaceRow(Place("a", "Sushi Kaito", 50.88, 4.70, address = "Naamsestraat 12, Leuven", url = "https://example.org", countries = listOf("JP"), distanceM = 420, visitedAt = 1, verified = true), busy = false) {}
-            PlaceRow(Place("b", "Ramen Bar Ichi", 50.87, 4.71, address = "Bondgenotenlaan 40", countries = listOf("JP"), distanceM = 1250, visitedAt = 1), busy = false) {}
+            PlaceRow(Place("a", "Sushi Kaito", 50.88, 4.70, address = "Naamsestraat 12, Leuven", url = "https://example.org", countries = listOf("JP"), distanceM = 420, visits = listOf(Visit(1, 1, verified = true))), busy = false) {}
+            PlaceRow(Place("b", "Ramen Bar Ichi", 50.87, 4.71, address = "Bondgenotenlaan 40", countries = listOf("JP"), distanceM = 1250, visits = listOf(Visit(2, 1))), busy = false) {}
             PlaceRow(Place("c", "Izakaya Kumo", 50.86, 4.69, countries = listOf("JP"), distanceM = 3400), busy = false) {}
             BadgeGrid(discover.badges)
         }

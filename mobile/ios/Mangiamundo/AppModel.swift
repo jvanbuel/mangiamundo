@@ -315,12 +315,12 @@ final class AppModel {
                     position = (fix.lat, fix.lng)
                 }
                 let result = try await api.checkIn(placeID: place.id, here: position)
-                updated.visitedAt = result.visitedAt
-                updated.verified = result.verified
-            } else {
-                try await api.undoCheckIn(placeID: place.id)
-                updated.visitedAt = nil
-                updated.verified = false
+                updated.visits = [result.visit]
+            } else if let latest = place.visits.first {
+                // Undo the latest visit; the place stays visited if there are older ones.
+                try await api.removeVisit(id: latest.id)
+                let fresh = try await api.place(id: place.id, from: nil)
+                updated.visits = Array(fresh.visits.prefix(1))
             }
             if let index = places.firstIndex(where: { $0.id == place.id }) {
                 places[index] = updated

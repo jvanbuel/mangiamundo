@@ -18,6 +18,7 @@ export type Area = Schemas['AreaInfo'];
 export type Located = Schemas['Located'];
 export type Discover = Schemas['Discover'];
 export type Place = Schemas['PlaceView'];
+export type Visit = Schemas['Visit'];
 export type VisitResult = Schemas['VisitResult'];
 export type Health = Schemas['Health'];
 

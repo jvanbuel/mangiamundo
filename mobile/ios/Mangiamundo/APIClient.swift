@@ -48,18 +48,24 @@ actor APIClient {
         try decode(await request("GET", "/api/celebrations?\(area(areaID))&days=\(days)&\(timeZone())"))
     }
 
-    /// `here` is the device position, sent so the server can mark the visit as verified.
-    func checkIn(placeID: String, here: (lat: Double, lng: Double)?) async throws -> VisitResult {
-        var body: [String: Double] = [:]
-        if let here {
-            body = ["lat": here.lat, "lng": here.lng]
-        }
-        let data = try JSONSerialization.data(withJSONObject: body)
-        return try decode(await authed("PUT", "/api/visits/\(encode(placeID))?\(timeZone())", body: data))
+    /// One place with all of the user's visits. The distance is measured from `from` when given.
+    func place(id: String, from: (lat: Double, lng: Double)?) async throws -> Place {
+        let position = from.map { "?lat=\($0.lat)&lng=\($0.lng)" } ?? ""
+        return try decode(await authed("GET", "/api/places/\(encode(id))\(position)"))
     }
 
-    func undoCheckIn(placeID: String) async throws {
-        _ = try await authed("DELETE", "/api/visits/\(encode(placeID))")
+    /// `here` is the device position, sent so the server can mark the visit as verified.
+    func checkIn(placeID: String, here: (lat: Double, lng: Double)?) async throws -> VisitResult {
+        var body: [String: [String: Double]] = [:]
+        if let here {
+            body = ["position": ["lat": here.lat, "lng": here.lng]]
+        }
+        let data = try JSONSerialization.data(withJSONObject: body)
+        return try decode(await authed("POST", "/api/places/\(encode(placeID))/visits?\(timeZone())", body: data))
+    }
+
+    func removeVisit(id: Int) async throws {
+        _ = try await authed("DELETE", "/api/visits/\(id)")
     }
 
     /// Cities and postal codes matching what someone typed.

@@ -143,18 +143,42 @@ struct Place: Decodable, Identifiable {
     let lng: Double
     let address: String?
     let url: String?
-    /// Raw OSM opening_hours.
-    let openingHours: String?
+    let cuisine: String?
     /// Nil when the hours are unknown.
-    let openNow: Bool?
-    /// Short status line, e.g. "Open until 22:00".
-    let hoursText: String?
+    let hours: Hours?
     let countries: [String]
     let distanceM: Int
-    var visitedAt: Int?
-    var verified: Bool
+    /// Newest first. Lists of places carry only the latest visit; `APIClient.place` all of them.
+    var visits: [Visit]
 
-    var visited: Bool { visitedAt != nil }
+    /// Nil when the hours are unknown or can't be read.
+    var openNow: Bool? { hours?.status?.open }
+    /// Short status line, e.g. "Open until 22:00".
+    var hoursText: String? { hours?.status?.text }
+    var visited: Bool { !visits.isEmpty }
+    /// The latest visit was checked in on the spot.
+    var verified: Bool { visits.first?.verified ?? false }
+}
+
+struct Hours: Decodable {
+    /// OSM opening_hours syntax.
+    let raw: String
+    /// Nil when `raw` can't be parsed.
+    let status: HoursStatus?
+}
+
+struct HoursStatus: Decodable {
+    let open: Bool
+    let text: String
+}
+
+/// One check-in.
+struct Visit: Decodable, Equatable, Identifiable {
+    let id: Int
+    /// Unix seconds.
+    let at: Int
+    /// Checked in within walking distance of the place.
+    let verified: Bool
 }
 
 /// A city (every postal code in it) or a single postal code.
@@ -189,8 +213,7 @@ struct Located: Decodable {
 }
 
 struct VisitResult: Decodable {
-    let visitedAt: Int
-    let verified: Bool
+    let visit: Visit
     let profile: Profile
 }
 

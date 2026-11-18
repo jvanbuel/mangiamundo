@@ -152,19 +152,43 @@ data class Place(
     val lng: Double,
     val address: String? = null,
     val url: String? = null,
-    /** Raw OSM opening_hours. */
-    @SerialName("opening_hours") val openingHours: String? = null,
+    val cuisine: String? = null,
     /** Null when the hours are unknown. */
-    @SerialName("open_now") val openNow: Boolean? = null,
-    /** Short status line, e.g. "Open until 22:00". */
-    @SerialName("hours_text") val hoursText: String? = null,
+    val hours: Hours? = null,
     val countries: List<String> = emptyList(),
     @SerialName("distance_m") val distanceM: Int,
-    @SerialName("visited_at") val visitedAt: Long? = null,
-    val verified: Boolean = false,
+    /** Newest first. Lists of places carry only the latest visit; [ApiClient.place] all of them. */
+    val visits: List<Visit> = emptyList(),
 ) {
-    val visited: Boolean get() = visitedAt != null
+    /** Null when the hours are unknown or can't be read. */
+    val openNow: Boolean? get() = hours?.status?.open
+    /** Short status line, e.g. "Open until 22:00". */
+    val hoursText: String? get() = hours?.status?.text
+    val visited: Boolean get() = visits.isNotEmpty()
+    /** The latest visit was checked in on the spot. */
+    val verified: Boolean get() = visits.firstOrNull()?.verified == true
 }
+
+@Serializable
+data class Hours(
+    /** OSM opening_hours syntax. */
+    val raw: String,
+    /** Null when [raw] can't be parsed. */
+    val status: HoursStatus? = null,
+)
+
+@Serializable
+data class HoursStatus(val open: Boolean, val text: String)
+
+/** One check-in. */
+@Serializable
+data class Visit(
+    val id: Long,
+    /** Unix seconds. */
+    val at: Long,
+    /** Checked in within walking distance of the place. */
+    val verified: Boolean = false,
+)
 
 @Serializable
 data class Area(
@@ -198,8 +222,7 @@ data class Located(
 
 @Serializable
 data class VisitResult(
-    @SerialName("visited_at") val visitedAt: Long,
-    val verified: Boolean,
+    val visit: Visit,
     val profile: Profile,
 )
 
@@ -210,4 +233,7 @@ internal data class Session(val token: String)
 internal data class ErrorBody(val error: String? = null)
 
 @Serializable
-internal data class CheckInBody(val lat: Double? = null, val lng: Double? = null)
+internal data class CheckInBody(val position: LatLng? = null)
+
+@Serializable
+internal data class LatLng(val lat: Double, val lng: Double)

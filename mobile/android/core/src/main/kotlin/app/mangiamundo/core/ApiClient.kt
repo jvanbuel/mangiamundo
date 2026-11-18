@@ -42,14 +42,21 @@ class ApiClient(private val baseUrl: String, private val tokens: TokenStore) {
     suspend fun celebrations(areaId: String, days: Int = 60): List<Celebration> =
         json.decodeFromString(request("GET", "/api/celebrations?${area(areaId)}&days=$days&${tz()}"))
 
-    /** `here` is the device position, sent so the server can mark the visit as verified. */
-    suspend fun checkIn(placeId: String, here: Pair<Double, Double>?): VisitResult {
-        val body = json.encodeToString(CheckInBody.serializer(), CheckInBody(here?.first, here?.second))
-        return json.decodeFromString(authed("PUT", "/api/visits/${encode(placeId)}?${tz()}", body))
+    /** One place with all of the user's visits. The distance is measured from `from` (lat, lng) when given. */
+    suspend fun place(placeId: String, from: Pair<Double, Double>?): Place {
+        val position = from?.let { "?lat=${it.first}&lng=${it.second}" }.orEmpty()
+        return json.decodeFromString(authed("GET", "/api/places/${encode(placeId)}$position"))
     }
 
-    suspend fun undoCheckIn(placeId: String) {
-        authed("DELETE", "/api/visits/${encode(placeId)}")
+    /** `here` is the device position, sent so the server can mark the visit as verified. */
+    suspend fun checkIn(placeId: String, here: Pair<Double, Double>?): VisitResult {
+        val position = here?.let { LatLng(it.first, it.second) }
+        val body = json.encodeToString(CheckInBody.serializer(), CheckInBody(position))
+        return json.decodeFromString(authed("POST", "/api/places/${encode(placeId)}/visits?${tz()}", body))
+    }
+
+    suspend fun removeVisit(visitId: Long) {
+        authed("DELETE", "/api/visits/$visitId")
     }
 
     /** Cities and postal codes matching what someone typed. */
