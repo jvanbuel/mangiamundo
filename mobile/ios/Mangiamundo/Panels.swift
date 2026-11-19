@@ -1027,7 +1027,8 @@ struct AddPlaceForm: View {
                 }
                 Section {
                     if point != nil {
-                        Map(position: $camera) { UserAnnotation() }
+                        // Top-down only: with tilt, the region's centre is no longer under the pin.
+                        Map(position: $camera, interactionModes: [.pan, .zoom]) { UserAnnotation() }
                             .onMapCameraChange(frequency: .continuous) { point = $0.region.center }
                             // The pin's tip marks the map's centre.
                             .overlay {

@@ -15,8 +15,9 @@ enum LocationError: LocalizedError {
 @MainActor
 final class LocationService: NSObject, CLLocationManagerDelegate {
     private let manager = CLLocationManager()
-    private var authorization: CheckedContinuation<CLAuthorizationStatus, Never>?
-    private var fix: CheckedContinuation<CLLocation, Error>?
+    // Everyone waiting gets the answer: startup and the add form can ask at the same time.
+    private var authorizations: [CheckedContinuation<CLAuthorizationStatus, Never>] = []
+    private var fixes: [CheckedContinuation<CLLocation, Error>] = []
 
     override init() {
         super.init()
@@ -34,7 +35,7 @@ final class LocationService: NSObject, CLLocationManagerDelegate {
         var status = manager.authorizationStatus
         if status == .notDetermined {
             status = await withCheckedContinuation { continuation in
-                authorization = continuation
+                authorizations.append(continuation)
                 manager.requestWhenInUseAuthorization()
             }
         }
@@ -42,7 +43,7 @@ final class LocationService: NSObject, CLLocationManagerDelegate {
             throw LocationError.denied
         }
         return try await withCheckedThrowingContinuation { continuation in
-            fix = continuation
+            fixes.append(continuation)
             manager.requestLocation()
         }
     }
@@ -51,23 +52,26 @@ final class LocationService: NSObject, CLLocationManagerDelegate {
         let status = manager.authorizationStatus
         Task { @MainActor in
             guard status != .notDetermined else { return }
-            authorization?.resume(returning: status)
-            authorization = nil
+            let waiting = authorizations
+            authorizations = []
+            waiting.forEach { $0.resume(returning: status) }
         }
     }
 
     nonisolated func locationManager(_ manager: CLLocationManager, didUpdateLocations locations: [CLLocation]) {
         guard let location = locations.last else { return }
         Task { @MainActor in
-            fix?.resume(returning: location)
-            fix = nil
+            let waiting = fixes
+            fixes = []
+            waiting.forEach { $0.resume(returning: location) }
         }
     }
 
     nonisolated func locationManager(_ manager: CLLocationManager, didFailWithError error: Error) {
         Task { @MainActor in
-            fix?.resume(throwing: LocationError.unavailable)
-            fix = nil
+            let waiting = fixes
+            fixes = []
+            waiting.forEach { $0.resume(throwing: LocationError.unavailable) }
         }
     }
 }

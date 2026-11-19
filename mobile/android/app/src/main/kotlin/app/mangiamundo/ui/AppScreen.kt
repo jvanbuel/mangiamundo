@@ -82,11 +82,12 @@ fun AppScreen(vm: AppViewModel = viewModel()) {
             else -> vm.setReminders(true)
         }
     }
-    // The new place goes where the user stands, so the form needs location access first.
+    // The map starts at the user's position, so ask for location access first.
     val addPermission = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions(),
-    ) { granted ->
-        if (granted.values.any { it }) addOpen = true else vm.locationDenied()
+    ) { _ ->
+        // Without access the map starts at the area's centre instead.
+        addOpen = true
     }
     val openAdd = {
         // A submission still running would close a reopened form when it finishes.

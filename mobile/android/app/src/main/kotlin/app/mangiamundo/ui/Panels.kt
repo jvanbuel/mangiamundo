@@ -1094,9 +1094,10 @@ fun AddPlaceForm(
     var website by rememberSaveable { mutableStateOf("") }
     var choosing by remember { mutableStateOf(false) }
     // Where the map starts, and the point under the pin as the map moves.
-    var start by remember { mutableStateOf<Pair<Double, Double>?>(null) }
-    var point by remember { mutableStateOf<Pair<Double, Double>?>(null) }
-    LaunchedEffect(Unit) { startingPoint().let { start = it; point = it } }
+    // The point is saved (Pair is Serializable), so a rotation keeps the pin where the user put it.
+    var point by rememberSaveable { mutableStateOf<Pair<Double, Double>?>(null) }
+    var start by remember { mutableStateOf(point) }
+    LaunchedEffect(Unit) { if (start == null) startingPoint().let { start = it; point = it } }
     // Only countries with a cuisine can be the food a place serves.
     val choices = remember(countries) { countries.filter { it.cuisine != null }.sortedBy { it.name } }
     val chosen = choices.firstOrNull { it.code == country }
