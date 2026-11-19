@@ -82,11 +82,12 @@ fun AppScreen(vm: AppViewModel = viewModel()) {
             else -> vm.setReminders(true)
         }
     }
-    // The new place goes where the user stands, so the form needs location access first.
+    // The map starts at the user's position, so ask for location access first.
     val addPermission = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions(),
-    ) { granted ->
-        if (granted.values.any { it }) addOpen = true else vm.locationDenied()
+    ) { _ ->
+        // Without access the map starts at the area's centre instead.
+        addOpen = true
     }
     val openAdd = {
         // A submission still running would close a reopened form when it finishes.
@@ -265,8 +266,16 @@ fun AppScreen(vm: AppViewModel = viewModel()) {
         ModalBottomSheet(onDismissRequest = { addOpen = false }, containerColor = colors.panel) {
             Box {
                 Column(Modifier.verticalScroll(rememberScrollState()).padding(start = 16.dp, end = 16.dp, bottom = 24.dp)) {
-                    AddPlaceForm(vm.catalog?.countries.orEmpty(), vm.addingPlace, onCancel = { addOpen = false }) { name, country, address, website ->
-                        vm.addPlace(name, country, address, website) { addOpen = false }
+                    AddPlaceForm(
+                        vm.catalog?.countries.orEmpty(),
+                        vm.addingPlace,
+                        startingPoint = vm::startingPoint,
+                        onCancel = { addOpen = false },
+                    ) { name, country, lat, lng, address, website, note ->
+                        vm.addPlace(name, country, lat, lng, address, website, note) {
+                            addOpen = false
+                            if (!note) context.addInEditorApp(name, lat, lng)
+                        }
                     }
                 }
                 SnackbarHost(snackbar, Modifier.align(Alignment.TopCenter))

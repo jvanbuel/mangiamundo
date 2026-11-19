@@ -551,16 +551,22 @@ export async function reportClosed(place: Place) {
 	}
 }
 
-/** Adds a restaurant OpenStreetMap lacks, at the device's position: the user stands at
- * it, as OSM wants additions from people who know the place. True once added. */
-export async function addPlace(fields: Omit<AddPlace, 'lat' | 'lng'>): Promise<boolean> {
+/** Where the add form's pin starts: the device's position, or the area's centre without one. */
+export async function startingPoint(): Promise<{ lat: number; lng: number }> {
+	try {
+		const { coords } = await position();
+		gpsFix = { lat: coords.latitude, lng: coords.longitude, at: Date.now() };
+		return { lat: coords.latitude, lng: coords.longitude };
+	} catch {
+		return here() ?? { lat: app.location?.lat ?? 0, lng: app.location?.lng ?? 0 };
+	}
+}
+
+/** Adds a restaurant OpenStreetMap lacks, where the user put the pin. True once added. */
+export async function addPlace(fields: AddPlace): Promise<boolean> {
 	let place: Place;
 	try {
-		const { coords } = await position().catch(() => {
-			throw new Error('Allow location access and stand at the restaurant: its position is yours.');
-		});
-		gpsFix = { lat: coords.latitude, lng: coords.longitude, at: Date.now() };
-		place = await api.addPlace({ ...fields, lat: coords.latitude, lng: coords.longitude });
+		place = await api.addPlace(fields);
 	} catch (error) {
 		toast(null, 'Could not add the restaurant', message(error));
 		return false;

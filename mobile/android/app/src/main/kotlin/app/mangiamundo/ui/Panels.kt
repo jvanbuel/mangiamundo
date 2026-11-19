@@ -115,6 +115,14 @@ import app.mangiamundo.core.GroupProgress
 import app.mangiamundo.core.Place
 import app.mangiamundo.core.Status
 import kotlinx.coroutines.launch
+import androidx.compose.foundation.layout.offset
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.ui.viewinterop.AndroidView
+import org.maplibre.android.MapLibre
+import org.maplibre.android.camera.CameraPosition
+import org.maplibre.android.geometry.LatLng as MapLatLng
+import org.maplibre.android.maps.MapView
 
 private val CardShape = RoundedCornerShape(14.dp)
 
@@ -583,7 +591,15 @@ private enum class EditorApp(val scheme: String, val label: String) {
     ORGANIC_MAPS("om", "Organic Maps");
 
     /** The app's place card at the place, which shows the OSM feature there with "Edit place". `ll` must come before `n`. */
-    fun link(place: Place) = "$scheme://map?ll=${place.lat},${place.lng}&n=${Uri.encode(place.name)}"
+    fun link(place: Place) = link(place.name, place.lat, place.lng)
+
+    fun link(name: String, lat: Double, lng: Double) = "$scheme://map?ll=$lat,$lng&n=${Uri.encode(name)}"
+}
+
+/** Opens the editor app at a new place's pin, for the user to add it to OSM there. */
+fun android.content.Context.addInEditorApp(name: String, lat: Double, lng: Double) {
+    val editor = editorApp() ?: return
+    runCatching { startActivity(Intent(Intent.ACTION_VIEW, editor.link(name, lat, lng).toUri())) }
 }
 
 /** The first editor app installed, if any. Needs the schemes in `<queries>` (AndroidManifest.xml). */
@@ -1066,8 +1082,9 @@ fun BadgeGrid(badges: List<Badge>, events: List<EventProgress> = emptyList(), to
 fun AddPlaceForm(
     countries: List<Country>,
     busy: Boolean,
+    startingPoint: suspend () -> Pair<Double, Double>,
     onCancel: () -> Unit,
-    onAdd: (name: String, country: String, address: String?, website: String?) -> Unit,
+    onAdd: (name: String, country: String, lat: Double, lng: Double, address: String?, website: String?, note: Boolean) -> Unit,
 ) {
     val colors = LocalAppColors.current
     val context = LocalContext.current
@@ -1076,13 +1093,25 @@ fun AddPlaceForm(
     var address by rememberSaveable { mutableStateOf("") }
     var website by rememberSaveable { mutableStateOf("") }
     var choosing by remember { mutableStateOf(false) }
+    // Where the map starts, and the point under the pin as the map moves.
+    // The point is saved (Pair is Serializable), so a rotation keeps the pin where the user put it.
+    var point by rememberSaveable { mutableStateOf<Pair<Double, Double>?>(null) }
+    var start by remember { mutableStateOf(point) }
+    LaunchedEffect(Unit) { if (start == null) startingPoint().let { start = it; point = it } }
     // Only countries with a cuisine can be the food a place serves.
     val choices = remember(countries) { countries.filter { it.cuisine != null }.sortedBy { it.name } }
     val chosen = choices.firstOrNull { it.code == country }
+    // A maps app the user can add the place to OSM with themselves.
+    val editor = remember { context.editorApp() }
+    val ready = !busy && point != null && name.isNotBlank() && chosen != null
+    val submit = { note: Boolean ->
+        point?.let { (lat, lng) ->
+            onAdd(name.trim(), country.orEmpty(), lat, lng, address.trim().ifEmpty { null }, website.trim().ifEmpty { null }, note)
+        }
+    }
 
     Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
         Text("Add a missing restaurant", style = MaterialTheme.typography.titleLarge, color = colors.text)
-        Text("Stand at the restaurant: it goes on the map where you are.", color = colors.muted)
         OutlinedTextField(name, { name = it }, label = { Text("Name") }, singleLine = true, modifier = Modifier.fillMaxWidth())
         Box {
             OutlinedButton(onClick = { choosing = true }, modifier = Modifier.fillMaxWidth()) {
@@ -1094,6 +1123,11 @@ fun AddPlaceForm(
                 }
             }
         }
+        Text("Where is it?", color = colors.text, fontWeight = FontWeight.Bold)
+        start?.let { (lat, lng) ->
+            PinMap(lat, lng, onMove = { a, b -> point = a to b }, modifier = Modifier.fillMaxWidth().height(220.dp).clip(RoundedCornerShape(12.dp)))
+            Text("Drag the map until the pin is on the restaurant's door.", style = MaterialTheme.typography.bodySmall, color = colors.muted)
+        } ?: Text("Finding your position…", color = colors.muted)
         OutlinedTextField(address, { address = it }, label = { Text("Address (optional)") }, singleLine = true, modifier = Modifier.fillMaxWidth())
         OutlinedTextField(
             website,
@@ -1113,9 +1147,75 @@ fun AddPlaceForm(
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
             TextButton(onClick = onCancel, enabled = !busy) { Text("Cancel") }
             Button(
-                onClick = { onAdd(name.trim(), country.orEmpty(), address.trim().ifEmpty { null }, website.trim().ifEmpty { null }) },
-                enabled = !busy && name.isNotBlank() && chosen != null,
-            ) { Text(if (busy) "Adding…" else "Add it here") }
+                onClick = { submit(true) },
+                enabled = ready,
+            ) { Text(if (busy) "Adding…" else "Add it") }
         }
+        editor?.let { app ->
+            OutlinedButton(onClick = { submit(false) }, enabled = ready, modifier = Modifier.fillMaxWidth()) {
+                Text("Add it yourself in ${app.label}")
+            }
+            Text(
+                "Saves it here, then opens ${app.label} at the pin: add it there with \"Add a place to the map\", and it's on OpenStreetMap right away. No note is sent.",
+                style = MaterialTheme.typography.bodySmall,
+                color = colors.muted,
+            )
+        }
+    }
+}
+
+/** A street map with a pin fixed in its middle; `onMove` gets the point under the pin. */
+@Composable
+private fun PinMap(lat: Double, lng: Double, onMove: (Double, Double) -> Unit, modifier: Modifier = Modifier) {
+    val context = LocalContext.current
+    val lifecycle = LocalLifecycleOwner.current.lifecycle
+    val moved by rememberUpdatedState(onMove)
+    val mapView = remember {
+        MapLibre.getInstance(context)
+        MapView(context).apply {
+            onCreate(null)
+            // Drags move the map, not the scrolling sheet around it.
+            setOnTouchListener { view, _ ->
+                view.parent?.requestDisallowInterceptTouchEvent(true)
+                false
+            }
+            getMapAsync { map ->
+                // Free street tiles from OpenStreetMap data, no key needed.
+                map.setStyle("https://tiles.openfreemap.org/styles/liberty")
+                map.cameraPosition = CameraPosition.Builder().target(MapLatLng(lat, lng)).zoom(17.0).build()
+                map.uiSettings.isRotateGesturesEnabled = false
+                map.uiSettings.isTiltGesturesEnabled = false
+                map.addOnCameraMoveListener { map.cameraPosition.target?.let { moved(it.latitude, it.longitude) } }
+            }
+        }
+    }
+    // MapView follows the screen's lifecycle; adding the observer replays the events so far.
+    DisposableEffect(lifecycle) {
+        val observer = LifecycleEventObserver { _, event ->
+            when (event) {
+                Lifecycle.Event.ON_START -> mapView.onStart()
+                Lifecycle.Event.ON_RESUME -> mapView.onResume()
+                Lifecycle.Event.ON_PAUSE -> mapView.onPause()
+                Lifecycle.Event.ON_STOP -> mapView.onStop()
+                else -> Unit
+            }
+        }
+        lifecycle.addObserver(observer)
+        onDispose {
+            lifecycle.removeObserver(observer)
+            mapView.onPause()
+            mapView.onStop()
+            mapView.onDestroy()
+        }
+    }
+    Box(modifier) {
+        AndroidView({ mapView }, Modifier.fillMaxWidth().fillMaxHeight())
+        // The pin's tip marks the map's centre.
+        Icon(
+            Icons.Rounded.Place,
+            contentDescription = null,
+            tint = LocalAppColors.current.accent,
+            modifier = Modifier.align(Alignment.Center).offset(y = (-17).dp).size(34.dp),
+        )
     }
 }

@@ -64,5 +64,7 @@ dependencies {
     implementation("androidx.core:core-splashscreen:1.0.1")
     implementation("androidx.work:work-runtime-ktx:2.10.1")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.10.2")
+    // Street map for placing a new restaurant; open source, no API key.
+    implementation("org.maplibre.gl:android-sdk:11.11.0")
     testImplementation("junit:junit:4.13.2")
 }

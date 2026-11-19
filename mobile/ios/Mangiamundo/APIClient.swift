@@ -79,8 +79,9 @@ actor APIClient {
     }
 
     /// Adds a restaurant OpenStreetMap lacks. Only this user sees it until OSM has it.
-    func addPlace(name: String, country: String, lat: Double, lng: Double, address: String?, website: String?) async throws -> Place {
-        var body: [String: Any] = ["name": name, "country": country, "lat": lat, "lng": lng]
+    /// `note: false` when the user adds it to OSM themselves, so no note asks mappers to.
+    func addPlace(name: String, country: String, lat: Double, lng: Double, address: String?, website: String?, note: Bool) async throws -> Place {
+        var body: [String: Any] = ["name": name, "country": country, "lat": lat, "lng": lng, "note": note]
         body["address"] = address
         body["website"] = website
         let data = try JSONSerialization.data(withJSONObject: body)
