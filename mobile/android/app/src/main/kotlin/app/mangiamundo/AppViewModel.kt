@@ -16,6 +16,7 @@ import app.mangiamundo.core.Area
 import app.mangiamundo.core.AreaKind
 import app.mangiamundo.core.AreaProgress
 import app.mangiamundo.core.Place
+import app.mangiamundo.core.pendingText
 import app.mangiamundo.core.ProjectionKind
 import app.mangiamundo.core.ReminderPlan
 import app.mangiamundo.core.Status
