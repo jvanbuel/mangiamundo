@@ -371,3 +371,31 @@ func bonusText(_ bonus: Bonus, country: String, areaName: String?, tense: String
         return "\(continent.name) food \(tense) new\(place)"
     }
 }
+
+/// What reading a place again from OpenStreetMap changed.
+enum Refreshed: String, Decodable {
+    case updated
+    /// OpenStreetMap has the same as we do; a very recent edit may not have reached it yet.
+    case unchanged
+    /// No longer on OpenStreetMap as a restaurant: hidden now, visits kept.
+    case gone
+    /// A status from a newer server.
+    case unknown
+
+    init(from decoder: Decoder) throws {
+        self = Refreshed(rawValue: try decoder.singleValueContainer().decode(String.self)) ?? .unknown
+    }
+}
+
+/// From `POST /api/places/{id}/refresh`.
+struct RefreshResult: Decodable {
+    let status: Refreshed
+    let place: Place?
+}
+
+/// From `POST /api/places/nearby/refresh`.
+struct NearbyResult: Decodable {
+    /// Places that weren't listed before, nearest first.
+    let added: [Place]
+    let matched: Int
+}

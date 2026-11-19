@@ -88,6 +88,17 @@ actor APIClient {
         return try decode(await authed("POST", "/api/places", body: data))
     }
 
+    /// Reads a place again from OpenStreetMap, for an edit made there since the daily import.
+    func refreshPlace(id: String, from: (lat: Double, lng: Double)?) async throws -> RefreshResult {
+        let position = from.map { "?lat=\($0.lat)&lng=\($0.lng)" } ?? ""
+        return try decode(await authed("POST", "/api/places/\(encode(id))/refresh\(position)"))
+    }
+
+    /// Asks OpenStreetMap for restaurants within 150 m of a point, for one just mapped there.
+    func refreshNearby(lat: Double, lng: Double) async throws -> NearbyResult {
+        try decode(await authed("POST", "/api/places/nearby/refresh?lat=\(lat)&lng=\(lng)"))
+    }
+
     /// The restaurants this user added, newest first, with their rewards.
     func additions() async throws -> [Addition] {
         try decode(await authed("GET", "/api/additions"))

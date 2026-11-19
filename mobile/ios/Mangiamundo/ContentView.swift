@@ -55,7 +55,11 @@ struct ContentView: View {
         .overlay(alignment: .top) { if model.detail == nil { ToastStack(toasts: model.toasts) } }
         .onAppear { googleInstalled = MapsApp.googleInstalled }
         .onChange(of: scenePhase) { _, phase in
-            if phase == .active { googleInstalled = MapsApp.googleInstalled }
+            if phase == .active {
+                googleInstalled = MapsApp.googleInstalled
+                // Back from editing a place in an OpenStreetMap app: show the edit now.
+                Task { await model.onActive() }
+            }
         }
         .sheet(item: Binding(get: { model.detail }, set: { if $0 == nil { model.closePlace() } })) { place in
             ScrollView {
@@ -106,11 +110,17 @@ struct ContentView: View {
     }
 
     private var addLink: some View {
-        Button("Is a restaurant missing? Add it") { adding = true }
-            .font(Theme.font(.footnote))
-            .foregroundStyle(Theme.muted)
-            .frame(maxWidth: .infinity)
-            .padding(.top, 8)
+        VStack(spacing: 4) {
+            Button("Is a restaurant missing? Add it") { adding = true }
+            Button(model.lookingNearby ? "Looking…" : "Just added it in an OpenStreetMap app? Look again") {
+                Task { await model.lookAgainNearby() }
+            }
+            .disabled(model.lookingNearby)
+        }
+        .font(Theme.font(.footnote))
+        .foregroundStyle(Theme.muted)
+        .frame(maxWidth: .infinity)
+        .padding(.top, 8)
     }
 
     @ViewBuilder

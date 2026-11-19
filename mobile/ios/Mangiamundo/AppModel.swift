@@ -29,6 +29,12 @@ final class AppModel {
     private(set) var places: [Place] = []
     private(set) var placesLoading = false
     private(set) var busyPlace: String?
+    /// The place being read again from OpenStreetMap.
+    private(set) var refreshingPlace: String?
+    /// True while OpenStreetMap is asked for places just mapped nearby.
+    private(set) var lookingNearby = false
+    /// The place the user went to edit in an OpenStreetMap app, read again when they come back.
+    @ObservationIgnored private var editing: String?
     /// The place whose details are open: its card's data until the full place has loaded.
     private(set) var detail: Place?
     /// Whether `detail` holds all visits yet.
@@ -453,6 +459,74 @@ final class AppModel {
             if let here = location { discover = try await api.discover(areaID: here.area.id) }
         } catch {
             toast("Could not report this place: \(error.localizedDescription)")
+        }
+    }
+
+    func editingOnOsm(_ placeID: String) {
+        editing = placeID
+    }
+
+    /// Back in the app: shows an edit just made to a place on OpenStreetMap.
+    func onActive() async {
+        guard let id = editing else { return }
+        editing = nil
+        await refreshPlace(id, quiet: true)
+    }
+
+    /// Reads a place again from OpenStreetMap and says what changed. With `quiet`, a failure
+    /// isn't shown, as when it runs by itself after the user comes back from editing.
+    func refreshPlace(_ placeID: String, quiet: Bool = false) async {
+        guard refreshingPlace == nil else { return }
+        refreshingPlace = placeID
+        defer { refreshingPlace = nil }
+        let name = (detail?.id == placeID ? detail?.name : nil) ?? places.first(where: { $0.id == placeID })?.name ?? "This place"
+        do {
+            let result = try await api.refreshPlace(id: placeID, from: userPosition)
+            switch (result.status, result.place) {
+            case (.updated, let place?):
+                if detail?.id == placeID { detail = place }
+                // The card shows only the latest visit.
+                if let index = places.firstIndex(where: { $0.id == placeID }) {
+                    var card = place
+                    card.visits = Array(place.visits.prefix(1))
+                    places[index] = card
+                }
+                toast("\(place.name) updated from OpenStreetMap.")
+            case (.gone, _):
+                places.removeAll { $0.id == placeID }
+                if detail?.id == placeID { closePlace() }
+                toast("\(name) is gone from OpenStreetMap, so it's hidden now. Your visits to it are kept.")
+            default:
+                toast("No change on OpenStreetMap yet. A new edit can take a minute or two to show up there.")
+                return
+            }
+            // Its countries may have changed.
+            if let here = location, let fresh = try? await api.discover(areaID: here.area.id) { discover = fresh }
+        } catch {
+            if !quiet { toast("Could not refresh this place: \(error.localizedDescription)") }
+        }
+    }
+
+    /// Asks OpenStreetMap for restaurants just mapped around the user, for someone who added
+    /// one in an OpenStreetMap app instead of the add form.
+    func lookAgainNearby() async {
+        guard !lookingNearby else { return }
+        lookingNearby = true
+        defer { lookingNearby = false }
+        do {
+            let fix = try await locationService.current()
+            let lat = fix.coordinate.latitude, lng = fix.coordinate.longitude
+            gpsFix = (lat, lng, Date())
+            let added = try await api.refreshNearby(lat: lat, lng: lng).added
+            if added.isEmpty {
+                toast("Nothing new within 150 m yet. A place just added on OpenStreetMap can take a minute or two to show up.")
+            } else {
+                toast("Found \(added.map(\.name).joined(separator: ", ")): on the map for everyone now.")
+                // New countries, and any of the user's additions they confirmed.
+                refresh()
+            }
+        } catch {
+            toast("Could not look again: \(error.localizedDescription)")
         }
     }
 
