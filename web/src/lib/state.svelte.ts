@@ -591,6 +591,9 @@ export async function refreshPlace(id: string, quiet = false) {
 		} else {
 			// Also when unchanged: someone else's refresh may have updated it since it loaded.
 			applyRefreshed(place);
+			// Details reopened while this ran are still loading, from before the refresh was
+			// saved: load them again now, before anything else can finish first.
+			if (app.placeId === id && !app.detail) void loadPlace(id);
 			if (status === 'updated') toast(null, `${place.name} updated`, 'This is the latest from OpenStreetMap.');
 			else toast(null, 'No change on OpenStreetMap yet', 'A new edit can take a minute or two to show up there. Try again shortly.');
 		}
@@ -601,8 +604,6 @@ export async function refreshPlace(id: string, quiet = false) {
 			const discover = await api.discover(location.area.id);
 			if (app.location === location) app.discover = discover;
 		}
-		// Details reopened while this ran loaded before the refresh was saved: load them again.
-		if (place && app.placeId === id && !app.detail) void loadPlace(id);
 	} catch (error) {
 		if (!quiet) toast(null, 'Could not refresh this place', message(error));
 	} finally {
