@@ -64,6 +64,15 @@
       "title": "5 countries complete"
     },
     {
+      "description": "Add a restaurant that brings a new country to your city.",
+      "earned": false,
+      "id": "pioneer",
+      "kind": "pioneer",
+      "progress": 0,
+      "target": 1,
+      "title": "Pioneer"
+    },
+    {
       "description": "Eat from every Africa country found here.",
       "earned": false,
       "id": "continent-AF",
@@ -486,6 +495,7 @@
   "places": 106,
   "places_visited": 2,
   "profile": {
+    "added": 0,
     "countries": 1,
     "level": 1,
     "level_xp": 0,

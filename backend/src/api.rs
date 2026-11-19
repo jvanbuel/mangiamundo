@@ -63,6 +63,8 @@ fn api_router() -> (Router<AppState>, utoipa::openapi::OpenApi) {
         .routes(routes!(countries))
         .routes(routes!(discover))
         .routes(routes!(places, add_place))
+        .routes(routes!(additions))
+        .routes(routes!(mark_additions_seen))
         .routes(routes!(place))
         .routes(routes!(celebrations))
         .routes(routes!(report_closed))
@@ -749,19 +751,37 @@ fn text(value: Option<String>, field: &str, max: usize) -> Result<Option<String>
     Ok(value)
 }
 
+/// The place just added, and what it will earn.
+#[derive(Serialize, ToSchema)]
+struct AddedPlace {
+    #[serde(flatten)]
+    place: PlaceView,
+    reward: Reward,
+}
+
+/// XP for an added restaurant, granted once OpenStreetMap has it.
+#[derive(Serialize, ToSchema)]
+struct Reward {
+    xp: u32,
+    bonus: game::Bonus,
+    /// The city or postal code the bonus was judged in. `null` when none was cached.
+    #[schema(required = true)]
+    area_name: Option<String>,
+}
+
 /// Adds a restaurant missing from the map. It shows up right away, but only for whoever
 /// added it, and an OpenStreetMap note asks local mappers to add it there for everyone.
-/// At most 5 a day.
+/// At most 5 a day. Once the import finds it on OpenStreetMap it earns `reward.xp`.
 #[utoipa::path(
     post, path = "/api/places", tag = "game", request_body = AddPlace,
     security(("token" = [])),
-    responses((status = 200, body = PlaceView), (status = "default", description = "An error", body = ErrorBody)),
+    responses((status = 200, body = AddedPlace), (status = "default", description = "An error", body = ErrorBody)),
 )]
 async fn add_place(
     State(state): State<AppState>,
     User(user): User,
     JsonBody(body): JsonBody<AddPlace>,
-) -> ApiResult<PlaceView> {
+) -> ApiResult<AddedPlace> {
     let name = text(Some(body.name), "name", 100)?.ok_or(ApiError::BadRequest("name is missing".into()))?;
     let address = text(body.address, "address", 200)?;
     let url = text(body.website, "website", 300)?;
@@ -777,9 +797,11 @@ async fn add_place(
         .ok_or(ApiError::BadRequest("unknown country".into()))?;
     let now = state.now();
     let new = store::NewPlace { name, lat: body.lat, lng: body.lng, address, url, country: &country.code, cuisine };
-    let id = store::add_place(&state.db, &user, &new, now, PLACES_PER_DAY)
+    let added = store::add_place(&state.db, &user, &new, now, PLACES_PER_DAY)
         .await?
         .ok_or(ApiError::TooManyRequests("you have added 5 places today; try again tomorrow"))?;
+    let reward = Reward { xp: added.bonus.xp(), bonus: added.bonus, area_name: added.area_name };
+    let id = added.id;
 
     if let Some(notes) = state.osm_notes_url.clone().filter(|_| body.note != Some(false)) {
         let (db, id, token) = (state.db.clone(), id.clone(), state.osm_notes_token.clone());
@@ -795,7 +817,29 @@ async fn add_place(
     let mut place = store::place(&state.db, &id, Some(&user)).await?.ok_or(ApiError::NotFound("place"))?;
     let (lat, lng) = (place.lat, place.lng);
     complete(&mut place, lat, lng, now);
-    Ok(Json(place))
+    Ok(Json(AddedPlace { place, reward }))
+}
+
+/// The restaurants the user added, newest first, with their rewards. Those confirmed since
+/// the user was last told have `seen: false`, for a "now on the map" message.
+#[utoipa::path(
+    get, path = "/api/additions", tag = "game",
+    security(("token" = [])),
+    responses((status = 200, body = Vec<store::Addition>), (status = "default", description = "An error", body = ErrorBody)),
+)]
+async fn additions(State(state): State<AppState>, User(user): User) -> ApiResult<Vec<store::Addition>> {
+    Ok(Json(store::additions(&state.db, &user).await?))
+}
+
+/// The user was told about their confirmed additions: they come back with `seen: true`.
+#[utoipa::path(
+    put, path = "/api/additions/seen", tag = "game",
+    security(("token" = [])),
+    responses((status = 204, description = "Marked"), (status = "default", description = "An error", body = ErrorBody)),
+)]
+async fn mark_additions_seen(State(state): State<AppState>, User(user): User) -> Result<StatusCode, ApiError> {
+    store::mark_additions_seen(&state.db, &user).await?;
+    Ok(StatusCode::NO_CONTENT)
 }
 
 /// An OSM note mappers can act on: the tags to add, ready to copy.

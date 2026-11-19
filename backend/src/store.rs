@@ -9,7 +9,7 @@ use sqlx::sqlite::{SqliteConnectOptions, SqliteJournalMode, SqlitePoolOptions};
 use sqlx::{Row, SqlitePool};
 
 use crate::catalog;
-use crate::game::{Lifetime, PlaceRow};
+use crate::game::{Bonus, Lifetime, PlaceRow};
 use crate::geo::{self, Bbox, Shape};
 use crate::providers::{AreaInfo, AreaKind, Boundary, FoundPlace};
 
@@ -224,7 +224,20 @@ pub async fn lifetime(db: &SqlitePool, user: &str) -> sqlx::Result<Lifetime> {
     .bind(user)
     .fetch_one(db)
     .await?;
-    Ok(Lifetime { visits: visits as u32, countries: countries as u32 })
+    let (added, country_bonuses, continent_bonuses): (i64, i64, i64) = sqlx::query_as(
+        "SELECT COUNT(*), COUNT(*) FILTER (WHERE bonus != 'none'), COUNT(*) FILTER (WHERE bonus = 'continent')
+         FROM additions WHERE user_id = ? AND rewarded",
+    )
+    .bind(user)
+    .fetch_one(db)
+    .await?;
+    Ok(Lifetime {
+        visits: visits as u32,
+        countries: countries as u32,
+        added: added as u32,
+        country_bonuses: country_bonuses as u32,
+        continent_bonuses: continent_bonuses as u32,
+    })
 }
 
 /// One check-in.
@@ -535,10 +548,22 @@ pub struct NewPlace {
     pub cuisine: &'static str,
 }
 
-/// Saves a place added by `user` and puts it in the cached areas around it. Returns its id,
-/// or `None` when the user already added `limit` places in the day before `at`. Checking and
+/// A place a user just added, and the reward it earns once OpenStreetMap has it.
+pub struct AddedPlace {
+    pub id: String,
+    pub bonus: Bonus,
+    /// The area the bonus was judged in, if one was cached.
+    pub area_name: Option<String>,
+}
+
+/// Saves a place added by `user` and puts it in the cached areas around it. Returns it, or
+/// `None` when the user already added `limit` places in the day before `at`. Checking and
 /// inserting is one statement, so concurrent requests can't both take the last slot.
-pub async fn add_place(db: &SqlitePool, user: &str, place: &NewPlace, at: i64, limit: i64) -> sqlx::Result<Option<String>> {
+///
+/// Its bonus is decided now, against the places everyone sees in its city (or, without a
+/// cached city, its postal code): pending additions don't count, so a mapper adding the
+/// same cuisine while it waits doesn't take the bonus away.
+pub async fn add_place(db: &SqlitePool, user: &str, place: &NewPlace, at: i64, limit: i64) -> sqlx::Result<Option<AddedPlace>> {
     let id = format!("user-{}", uuid::Uuid::new_v4().simple());
     let mut tx = db.begin().await?;
     let added = sqlx::query(
@@ -567,25 +592,75 @@ pub async fn add_place(db: &SqlitePool, user: &str, place: &NewPlace, at: i64, l
         .execute(&mut *tx)
         .await?;
     // Areas are at most 1.5° across, so any area holding the place is centred within that.
-    let near = sqlx::query("SELECT id, shape FROM areas WHERE lat BETWEEN ? AND ? AND lng BETWEEN ? AND ?")
-        .bind(place.lat - 1.5)
-        .bind(place.lat + 1.5)
-        .bind(place.lng - 1.5)
-        .bind(place.lng + 1.5)
-        .fetch_all(&mut *tx)
-        .await?;
+    // Cities first, so the bonus is judged in the city when one is cached.
+    let near = sqlx::query(
+        "SELECT id, name, shape FROM areas WHERE lat BETWEEN ? AND ? AND lng BETWEEN ? AND ?
+         ORDER BY kind = 'city' DESC, id",
+    )
+    .bind(place.lat - 1.5)
+    .bind(place.lat + 1.5)
+    .bind(place.lng - 1.5)
+    .bind(place.lng + 1.5)
+    .fetch_all(&mut *tx)
+    .await?;
+    let mut home: Option<(String, String)> = None;
     for r in near {
         let inside = serde_json::from_str::<Shape>(r.get("shape")).is_ok_and(|s| s.contains(place.lat, place.lng));
         if inside {
+            let area_id: String = r.get("id");
             sqlx::query("INSERT INTO area_places (area_id, place_id) VALUES (?, ?)")
-                .bind(r.get::<String, _>("id"))
+                .bind(&area_id)
                 .bind(&id)
                 .execute(&mut *tx)
                 .await?;
+            home.get_or_insert((area_id, r.get("name")));
         }
     }
+    let bonus = match &home {
+        Some((area_id, _)) => {
+            let present: Vec<String> = sqlx::query_scalar(
+                "SELECT DISTINCT pc.country FROM area_places ap
+                 JOIN places p ON p.id = ap.place_id
+                 JOIN place_countries pc ON pc.place_id = p.id
+                 WHERE ap.area_id = ? AND p.added_by IS NULL
+                   AND (SELECT COUNT(*) FROM closed_reports WHERE place_id = p.id) < 2",
+            )
+            .bind(area_id)
+            .fetch_all(&mut *tx)
+            .await?;
+            bonus_for(place.country, &present)
+        }
+        None => Bonus::None,
+    };
+    let (area_id, area_name) = home.unzip();
+    sqlx::query(
+        "INSERT INTO additions (place_id, user_id, name, country, area_id, area_name, bonus, submitted_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+    )
+    .bind(&id)
+    .bind(user)
+    .bind(&place.name)
+    .bind(place.country)
+    .bind(&area_id)
+    .bind(&area_name)
+    .bind(bonus.as_str())
+    .bind(at)
+    .execute(&mut *tx)
+    .await?;
     tx.commit().await?;
-    Ok(Some(id))
+    Ok(Some(AddedPlace { id, bonus, area_name }))
+}
+
+/// The bonus for adding a place of `country` to an area serving `present`.
+fn bonus_for(country: &str, present: &[String]) -> Bonus {
+    let continent = |code: &str| catalog::country(code).map(|c| c.continent.as_str());
+    if present.iter().any(|c| c == country) {
+        Bonus::None
+    } else if present.iter().any(|c| continent(c) == continent(country)) {
+        Bonus::Country
+    } else {
+        Bonus::Continent
+    }
 }
 
 pub async fn set_osm_note(db: &SqlitePool, place_id: &str, note_id: i64) -> sqlx::Result<()> {
@@ -671,7 +746,9 @@ async fn match_pending(tx: &mut sqlx::SqliteConnection) -> sqlx::Result<usize> {
             .filter(|(d, _)| *d <= MATCH_RADIUS_M)
             .min_by(|a, b| a.0.total_cmp(&b.0));
         let Some((_, twin)) = twin else { continue };
-        upsert_place(&mut *tx, &twin, now()).await?;
+        let at = now();
+        upsert_place(&mut *tx, &twin, at).await?;
+        confirm_addition(&mut *tx, &id, &twin.id, at).await?;
         // A clash means the user already has that row for the twin; the pending copy goes with the place.
         for sql in [
             "UPDATE OR IGNORE visits SET place_id = ?1 WHERE place_id = ?2",
@@ -684,6 +761,136 @@ async fn match_pending(tx: &mut sqlx::SqliteConnection) -> sqlx::Result<usize> {
         matched += 1;
     }
     Ok(matched)
+}
+
+/// Marks an addition as confirmed and settles its reward. Only the first addition of a place
+/// earns anything. Its bonus stays unless an earlier addition in the same area, confirmed
+/// or still pending, already claims it: the same country for a country bonus, the same
+/// continent for a continent bonus.
+async fn confirm_addition(tx: &mut sqlx::SqliteConnection, id: &str, osm_id: &str, at: i64) -> sqlx::Result<()> {
+    let Some(row) = sqlx::query("SELECT country, area_id, bonus, submitted_at FROM additions WHERE place_id = ?")
+        .bind(id)
+        .fetch_optional(&mut *tx)
+        .await?
+    else {
+        return Ok(());
+    };
+    let (country, area_id, submitted_at): (String, Option<String>, i64) =
+        (row.get("country"), row.get("area_id"), row.get("submitted_at"));
+    let mut bonus = Bonus::parse(row.get("bonus"));
+    let duplicate: bool = sqlx::query_scalar("SELECT EXISTS (SELECT 1 FROM additions WHERE osm_place_id = ? AND rewarded)")
+        .bind(osm_id)
+        .fetch_one(&mut *tx)
+        .await?;
+    if bonus != Bonus::None {
+        // Claims of earlier additions that didn't turn out to be duplicates.
+        let earlier: Vec<(String, String)> = sqlx::query_as(
+            "SELECT country, bonus FROM additions
+             WHERE area_id = ?1 AND place_id != ?2 AND bonus != 'none'
+               AND (submitted_at < ?3 OR (submitted_at = ?3 AND place_id < ?2))
+               AND (confirmed_at IS NULL OR rewarded)",
+        )
+        .bind(&area_id)
+        .bind(id)
+        .bind(submitted_at)
+        .fetch_all(&mut *tx)
+        .await?;
+        let continent = |code: &str| catalog::country(code).map(|c| c.continent.clone());
+        if earlier.iter().any(|(c, _)| *c == country) {
+            bonus = Bonus::None;
+        } else if bonus == Bonus::Continent
+            && earlier.iter().any(|(c, b)| b == "continent" && continent(c) == continent(&country))
+        {
+            bonus = Bonus::Country;
+        }
+    }
+    sqlx::query("UPDATE additions SET confirmed_at = ?, osm_place_id = ?, rewarded = ?, bonus = ? WHERE place_id = ?")
+        .bind(at)
+        .bind(osm_id)
+        .bind(!duplicate)
+        .bind(bonus.as_str())
+        .bind(id)
+        .execute(&mut *tx)
+        .await?;
+    Ok(())
+}
+
+/// Where a restaurant the user added stands.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, utoipa::ToSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum AdditionStatus {
+    /// Waiting for OpenStreetMap to have it.
+    Pending,
+    /// On OpenStreetMap; the reward was granted.
+    Confirmed,
+    /// On OpenStreetMap, but someone else added it first, so it earned nothing.
+    Duplicate,
+}
+
+/// A restaurant the user added and its reward.
+#[derive(Debug, Serialize, utoipa::ToSchema)]
+pub struct Addition {
+    /// The pending place's id, or once confirmed its OpenStreetMap twin's.
+    pub place_id: String,
+    pub name: String,
+    pub country: String,
+    /// The city or postal code its bonus was judged in. `None` when none was cached.
+    #[schema(required = true)]
+    pub area_name: Option<String>,
+    pub bonus: Bonus,
+    /// What it earns once confirmed, or earned: 0 for a duplicate.
+    pub xp: u32,
+    pub status: AdditionStatus,
+    pub submitted_at: i64,
+    #[schema(required = true)]
+    pub confirmed_at: Option<i64>,
+    /// Whether the user was already told it is confirmed. Always `false` while pending.
+    pub seen: bool,
+}
+
+/// The user's additions, newest first.
+pub async fn additions(db: &SqlitePool, user: &str) -> sqlx::Result<Vec<Addition>> {
+    let rows = sqlx::query(
+        "SELECT COALESCE(osm_place_id, place_id) AS id, name, country, area_name, bonus, submitted_at,
+                confirmed_at, rewarded, seen
+         FROM additions WHERE user_id = ? ORDER BY submitted_at DESC, place_id",
+    )
+    .bind(user)
+    .fetch_all(db)
+    .await?;
+    Ok(rows
+        .iter()
+        .map(|r| {
+            let bonus = Bonus::parse(r.get("bonus"));
+            let confirmed_at: Option<i64> = r.get("confirmed_at");
+            let status = match (confirmed_at, r.get::<bool, _>("rewarded")) {
+                (None, _) => AdditionStatus::Pending,
+                (Some(_), true) => AdditionStatus::Confirmed,
+                (Some(_), false) => AdditionStatus::Duplicate,
+            };
+            Addition {
+                place_id: r.get("id"),
+                name: r.get("name"),
+                country: r.get("country"),
+                area_name: r.get("area_name"),
+                bonus,
+                xp: if status == AdditionStatus::Duplicate { 0 } else { bonus.xp() },
+                status,
+                submitted_at: r.get("submitted_at"),
+                confirmed_at,
+                seen: r.get("seen"),
+            }
+        })
+        .collect())
+}
+
+/// Marks the user's confirmed additions as told.
+pub async fn mark_additions_seen(db: &SqlitePool, user: &str) -> sqlx::Result<()> {
+    sqlx::query("UPDATE additions SET seen = 1 WHERE user_id = ? AND confirmed_at IS NOT NULL")
+        .bind(user)
+        .execute(db)
+        .await?;
+    Ok(())
 }
 
 /// The same name once case, punctuation and extra words like "Restaurant" are ignored:
@@ -787,9 +994,9 @@ mod tests {
             cuisine: "ethiopian",
         };
         let day = |d| NaiveDate::from_ymd_opt(2026, 11, d).unwrap();
-        let mine = add_place(&db, a, &new("Lalibela", 50.88, 4.7), 1000, 5).await.unwrap().unwrap();
-        let theirs = add_place(&db, b, &new("lalibela", 50.88, 4.7), 1001, 5).await.unwrap().unwrap();
-        let far = add_place(&db, a, &new("Lalibela", 50.882, 4.7), 1002, 5).await.unwrap().unwrap();
+        let mine = add_place(&db, a, &new("Lalibela", 50.88, 4.7), 1000, 5).await.unwrap().unwrap().id;
+        let theirs = add_place(&db, b, &new("lalibela", 50.88, 4.7), 1001, 5).await.unwrap().unwrap().id;
+        let far = add_place(&db, a, &new("Lalibela", 50.882, 4.7), 1002, 5).await.unwrap().unwrap().id;
         // 0.0012° of longitude is 46 m up here, past a fixed 0.001° box.
         add_place(&db, a, &new("Polar", 70.0, 20.0), 1003, 5).await.unwrap().unwrap();
 
