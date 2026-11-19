@@ -1111,7 +1111,7 @@ fun AddPlaceForm(
             modifier = Modifier.clickable { context.open("https://www.openstreetmap.org/copyright") },
         )
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
-            TextButton(onClick = onCancel) { Text("Cancel") }
+            TextButton(onClick = onCancel, enabled = !busy) { Text("Cancel") }
             Button(
                 onClick = { onAdd(name.trim(), country.orEmpty(), address.trim().ifEmpty { null }, website.trim().ifEmpty { null }) },
                 enabled = !busy && name.isNotBlank() && chosen != null,

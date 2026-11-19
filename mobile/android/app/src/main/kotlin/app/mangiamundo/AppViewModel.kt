@@ -445,7 +445,10 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
                     onAdded()
                     openPlace(place)
                     // It counts towards its country, for this user, if it lies in the area.
-                    location?.let { here -> runCatching { api.discover(here.area.id) }.onSuccess { discover = it } }
+                    // Applied only if the user hasn't moved to another area meanwhile.
+                    location?.let { here ->
+                        runCatching { api.discover(here.area.id) }.onSuccess { if (location?.area?.id == here.area.id) discover = it }
+                    }
                 }
             } catch (e: Exception) {
                 messageChannel.trySend("Could not add the restaurant: ${e.message}")

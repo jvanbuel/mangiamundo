@@ -105,6 +105,14 @@ struct ContentView: View {
         .frame(width: 150)
     }
 
+    private var addLink: some View {
+        Button("Is a restaurant missing? Add it") { adding = true }
+            .font(Theme.font(.footnote))
+            .foregroundStyle(Theme.muted)
+            .frame(maxWidth: .infinity)
+            .padding(.top, 8)
+    }
+
     @ViewBuilder
     private var content: some View {
         if model.location == nil {
@@ -129,6 +137,7 @@ struct ContentView: View {
             if discover.world.available == 0 {
                 Text("No restaurants with a national cuisine turned up in \(model.location?.area.name ?? "this area"). \(model.location?.area.kind == .postalCode ? "Try the whole city or another location." : "Try another location.")")
                     .foregroundStyle(Theme.muted)
+                addLink
             } else {
                 Passport(discover: discover)
                 if selected == nil && !model.celebrations.isEmpty {
@@ -144,11 +153,7 @@ struct ContentView: View {
                     .pickerStyle(.segmented)
                     if model.tab == 0 {
                         CountryList(discover: discover)
-                        Button("Is a restaurant missing? Add it") { adding = true }
-                            .font(Theme.font(.footnote))
-                            .foregroundStyle(Theme.muted)
-                            .frame(maxWidth: .infinity)
-                            .padding(.top, 8)
+                        addLink
                     } else {
                         BadgeGrid(badges: discover.badges, events: discover.events)
                     }

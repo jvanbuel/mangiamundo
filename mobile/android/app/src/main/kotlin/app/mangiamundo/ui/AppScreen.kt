@@ -89,7 +89,21 @@ fun AppScreen(vm: AppViewModel = viewModel()) {
         if (granted.values.any { it }) addOpen = true else vm.locationDenied()
     }
     val openAdd = {
-        if (DeviceLocation.hasPermission(context)) addOpen = true else addPermission.launch(DeviceLocation.PERMISSIONS)
+        // A submission still running would close a reopened form when it finishes.
+        when {
+            vm.addingPlace -> Unit
+            DeviceLocation.hasPermission(context) -> addOpen = true
+            else -> addPermission.launch(DeviceLocation.PERMISSIONS)
+        }
+    }
+    val addLink: @Composable () -> Unit = {
+        Text(
+            "Is a restaurant missing? Add it",
+            style = MaterialTheme.typography.bodySmall,
+            color = colors.muted,
+            textAlign = TextAlign.Center,
+            modifier = Modifier.fillMaxWidth().padding(top = 16.dp).clickable { openAdd() },
+        )
     }
     val useGps = {
         if (DeviceLocation.hasPermission(context)) vm.locate() else permission.launch(DeviceLocation.PERMISSIONS)
@@ -160,12 +174,15 @@ fun AppScreen(vm: AppViewModel = viewModel()) {
                         }
                         vm.error != null -> item { ErrorCard(vm.error.orEmpty(), vm::refresh) }
                         discover == null -> item { Note("Scouting restaurants in ${vm.location?.area?.name}…") }
-                        discover.world.available == 0 -> item {
-                            val postalCode = vm.location?.area?.kind == AreaKind.POSTAL_CODE
-                            Note(
-                                "No restaurants with a national cuisine turned up in ${vm.location?.area?.name}. " +
-                                    if (postalCode) "Try the whole city or another location." else "Try another location.",
-                            )
+                        discover.world.available == 0 -> {
+                            item {
+                                val postalCode = vm.location?.area?.kind == AreaKind.POSTAL_CODE
+                                Note(
+                                    "No restaurants with a national cuisine turned up in ${vm.location?.area?.name}. " +
+                                        if (postalCode) "Try the whole city or another location." else "Try another location.",
+                                )
+                            }
+                            item(key = "add") { addLink() }
                         }
                         else -> {
                             item { Passport(discover) }
@@ -201,15 +218,7 @@ fun AppScreen(vm: AppViewModel = viewModel()) {
                                             CountryRow(progress, vm.country(progress.code)) { vm.select(progress.code) }
                                         }
                                     }
-                                    item(key = "add") {
-                                        Text(
-                                            "Is a restaurant missing? Add it",
-                                            style = MaterialTheme.typography.bodySmall,
-                                            color = colors.muted,
-                                            textAlign = TextAlign.Center,
-                                            modifier = Modifier.fillMaxWidth().padding(top = 16.dp).clickable { openAdd() },
-                                        )
-                                    }
+                                    item(key = "add") { addLink() }
                                 } else {
                                     item(key = "badges") { BadgeGrid(discover.badges, discover.events) }
                                 }

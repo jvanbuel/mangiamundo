@@ -1013,10 +1013,12 @@ struct AddPlaceForm: View {
                     .foregroundStyle(Theme.muted)
                 }
             }
+            // Stays open until a submission finishes, so its result opens the right place.
+            .interactiveDismissDisabled(busy)
             .navigationTitle("Add a restaurant")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
-                ToolbarItem(placement: .cancellationAction) { Button("Cancel", action: onCancel) }
+                ToolbarItem(placement: .cancellationAction) { Button("Cancel", action: onCancel).disabled(busy) }
                 ToolbarItem(placement: .confirmationAction) {
                     Button(busy ? "Adding…" : "Add here") {
                         busy = true

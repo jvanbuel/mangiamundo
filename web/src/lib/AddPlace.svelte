@@ -41,7 +41,7 @@
 		<a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">Open Database License</a>.
 	</p>
 	<div class="actions">
-		<button type="button" class="cancel" onclick={onclose}>Cancel</button>
+		<button type="button" class="cancel" disabled={busy} onclick={onclose}>Cancel</button>
 		<button type="submit" class="add" disabled={busy}>{busy ? 'Adding…' : 'Add it here'}</button>
 	</div>
 </form>
