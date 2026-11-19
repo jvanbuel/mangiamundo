@@ -166,7 +166,16 @@ fn is_closed(tags: &HashMap<String, String>, today: &str) -> bool {
         .is_some_and(|h| matches!(h.trim().to_ascii_lowercase().as_str(), "closed" | "off"));
     // end_date is "2024", "2024-05" or "2024-05-31": these compare correctly as text.
     let ended = tags.get("end_date").is_some_and(|d| d.as_str() <= today);
-    hours_closed || ended
+    // A mapper marked it disused or abandoned without removing the live tags.
+    let flagged = ["disused", "abandoned"].iter().any(|key| tags.get(*key).is_some_and(|v| v == "yes"));
+    // `disused:amenity=restaurant` next to `amenity=restaurant`: closed, the old tag left
+    // behind. A different value (`was:amenity=cafe` on a restaurant) only tells what the
+    // place used to be, so it stays.
+    let amenity = tags.get("amenity");
+    let lifecycle = ["disused", "abandoned", "was", "demolished", "removed", "razed"]
+        .iter()
+        .any(|prefix| amenity.is_some() && tags.get(&format!("{prefix}:amenity")) == amenity);
+    hours_closed || ended || flagged || lifecycle
 }
 
 fn parse(body: &str) -> anyhow::Result<Vec<FoundPlace>> {
@@ -717,6 +726,16 @@ mod tests {
         assert!(is_closed(&tags(&[("end_date", "2026-11-01")]), today));
         assert!(!is_closed(&tags(&[("end_date", "2027-01")]), today));
         assert!(!is_closed(&tags(&[("opening_hours", "Mo-Fr 11:00-22:00")]), today));
+        // Disused or abandoned, with the live tags still on.
+        assert!(is_closed(&tags(&[("amenity", "fast_food"), ("disused", "yes")]), today));
+        assert!(is_closed(&tags(&[("amenity", "fast_food"), ("abandoned", "yes")]), today));
+        assert!(!is_closed(&tags(&[("amenity", "fast_food"), ("disused", "no")]), today));
+        for prefix in ["disused", "abandoned", "was"] {
+            let key = format!("{prefix}:amenity");
+            assert!(is_closed(&tags(&[("amenity", "fast_food"), (&key, "fast_food")]), today), "{key}");
+            // What it used to be, before it became what it is.
+            assert!(!is_closed(&tags(&[("amenity", "restaurant"), (&key, "cafe")]), today), "{key}");
+        }
     }
 
     #[test]
