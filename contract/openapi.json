@@ -1,6 +1,46 @@
 {
   "components": {
     "schemas": {
+      "AddPlace": {
+        "description": "A restaurant missing from the map.",
+        "properties": {
+          "address": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "country": {
+            "description": "The country whose food it serves (ISO 3166-1 alpha-2), one from `/api/countries`\nwith a cuisine.",
+            "type": "string"
+          },
+          "lat": {
+            "format": "double",
+            "type": "number"
+          },
+          "lng": {
+            "format": "double",
+            "type": "number"
+          },
+          "name": {
+            "type": "string"
+          },
+          "website": {
+            "description": "An `http` or `https` URL.",
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "name",
+          "country",
+          "lat",
+          "lng"
+        ],
+        "type": "object"
+      },
       "AreaInfo": {
         "description": "A place people pick as their location: a city or a postal code.",
         "properties": {
@@ -381,12 +421,13 @@
         "type": "object"
       },
       "ErrorCode": {
-        "description": "What went wrong, for clients that react to a specific case:\n\n- `bad_request` (400, 413, 415, 422): invalid or missing parameters, or a malformed,\n  oversized (over 2 MiB) or non-JSON body.\n- `unauthorized` (401): a missing or unknown session token.\n- `not_found` (404): an unknown place, area or `/api` path.\n- `method_not_allowed` (405): the path exists, but not with this method.\n- `upstream` (502): the places or areas provider failed.\n- `internal` (500): anything else, such as a database error.",
+        "description": "What went wrong, for clients that react to a specific case:\n\n- `bad_request` (400, 413, 415, 422): invalid or missing parameters, or a malformed,\n  oversized (over 2 MiB) or non-JSON body.\n- `unauthorized` (401): a missing or unknown session token.\n- `not_found` (404): an unknown place, area or `/api` path.\n- `method_not_allowed` (405): the path exists, but not with this method.\n- `too_many_requests` (429): a limit was reached, such as places added per day.\n- `upstream` (502): the places or areas provider failed.\n- `internal` (500): anything else, such as a database error.",
         "enum": [
           "bad_request",
           "unauthorized",
           "not_found",
           "method_not_allowed",
+          "too_many_requests",
           "upstream",
           "internal"
         ],
@@ -1451,6 +1492,49 @@
           }
         ],
         "summary": "Places in the area: open first, then closed, then unknown hours, alphabetical\nwithin each group.",
+        "tags": [
+          "game"
+        ]
+      },
+      "post": {
+        "operationId": "add_place",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AddPlace"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PlaceView"
+                }
+              }
+            }
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "An error"
+          }
+        },
+        "security": [
+          {
+            "token": []
+          }
+        ],
+        "summary": "Adds a restaurant missing from the map. It shows up right away, but only for whoever\nadded it, and an OpenStreetMap note asks local mappers to add it there for everyone.\nAt most 5 a day.",
         "tags": [
           "game"
         ]

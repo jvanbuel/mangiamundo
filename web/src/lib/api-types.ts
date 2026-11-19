@@ -159,7 +159,12 @@ export interface paths {
          */
         get: operations["places"];
         put?: never;
-        post?: never;
+        /**
+         * Adds a restaurant missing from the map. It shows up right away, but only for whoever
+         *     added it, and an OpenStreetMap note asks local mappers to add it there for everyone.
+         *     At most 5 a day.
+         */
+        post: operations["add_place"];
         delete?: never;
         options?: never;
         head?: never;
@@ -315,6 +320,22 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        /** @description A restaurant missing from the map. */
+        AddPlace: {
+            address?: string | null;
+            /**
+             * @description The country whose food it serves (ISO 3166-1 alpha-2), one from `/api/countries`
+             *     with a cuisine.
+             */
+            country: string;
+            /** Format: double */
+            lat: number;
+            /** Format: double */
+            lng: number;
+            name: string;
+            /** @description An `http` or `https` URL. */
+            website?: string | null;
+        };
         /** @description A place people pick as their location: a city or a postal code. */
         AreaInfo: {
             /** @description Where it is, to tell same-named areas apart: "Vlaams-Brabant, Belgium". */
@@ -442,11 +463,12 @@ export interface components {
          *     - `unauthorized` (401): a missing or unknown session token.
          *     - `not_found` (404): an unknown place, area or `/api` path.
          *     - `method_not_allowed` (405): the path exists, but not with this method.
+         *     - `too_many_requests` (429): a limit was reached, such as places added per day.
          *     - `upstream` (502): the places or areas provider failed.
          *     - `internal` (500): anything else, such as a database error.
          * @enum {string}
          */
-        ErrorCode: "bad_request" | "unauthorized" | "not_found" | "method_not_allowed" | "upstream" | "internal";
+        ErrorCode: "bad_request" | "unauthorized" | "not_found" | "method_not_allowed" | "too_many_requests" | "upstream" | "internal";
         /** @description A time-limited challenge, like "Japan month". Earned badges are kept for good. */
         Event: {
             countries: string[];
@@ -920,6 +942,38 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["PlaceView"][];
+                };
+            };
+            /** @description An error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    add_place: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AddPlace"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PlaceView"];
                 };
             };
             /** @description An error */
