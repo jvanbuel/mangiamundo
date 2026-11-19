@@ -291,6 +291,13 @@
           "continent": {
             "type": "string"
           },
+          "cuisine": {
+            "description": "The OpenStreetMap `cuisine` value for its food, like \"sri_lankan\"; `null` when the\ncatalog has none. Only countries with one can be picked for a new place.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
           "flag": {
             "type": "string"
           },
@@ -320,7 +327,8 @@
           "continent",
           "flag",
           "lat",
-          "lng"
+          "lng",
+          "cuisine"
         ],
         "type": "object"
       },

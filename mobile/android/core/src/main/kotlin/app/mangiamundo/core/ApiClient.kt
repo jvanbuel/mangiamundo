@@ -68,6 +68,12 @@ class ApiClient(private val baseUrl: String, private val tokens: TokenStore) {
     suspend fun areaProgress(areaId: String): AreaProgress? =
         json.decodeFromString(request("GET", "/api/areas/${encode(areaId)}/progress"))
 
+    /** Adds a restaurant OpenStreetMap lacks. Only this user sees it until OSM has it. */
+    suspend fun addPlace(name: String, country: String, lat: Double, lng: Double, address: String?, website: String?): Place {
+        val body = json.encodeToString(AddPlaceBody.serializer(), AddPlaceBody(name, country, lat, lng, address, website))
+        return json.decodeFromString(authed("POST", "/api/places", body))
+    }
+
     /** Cities and postal codes matching what someone typed. */
     suspend fun searchAreas(query: String): List<Area> =
         json.decodeFromString(request("GET", "/api/areas?q=${encode(query)}"))

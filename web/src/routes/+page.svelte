@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import { version } from '$app/env';
+	import AddPlace from '#lib/AddPlace.svelte';
 	import Badges from '#lib/Badges.svelte';
 	import CountryDetail from '#lib/CountryDetail.svelte';
 	import ComingUp from '#lib/ComingUp.svelte';
@@ -18,6 +19,7 @@
 
 	let pickerOpen = $state(false);
 	let settingsOpen = $state(false);
+	let adding = $state(false);
 
 	const selected = $derived(app.discover?.countries.find((c) => c.code === app.selected) ?? null);
 	const earned = $derived(app.discover?.badges.filter((b) => b.earned).length ?? 0);
@@ -53,6 +55,14 @@
 		}
 	}
 </script>
+
+{#snippet addEntry()}
+	{#if adding}
+		<div class="card"><AddPlace onclose={() => (adding = false)} /></div>
+	{:else}
+		<p class="muted add-place">Is a restaurant missing? <button onclick={() => (adding = true)}>Add it</button></p>
+	{/if}
+{/snippet}
 
 {#if app.areaProgress}<ProgressWheel progress={app.areaProgress} />{/if}
 <Toasts />
@@ -144,6 +154,7 @@
 					{app.location.area.kind === 'postal_code' ? 'Try the whole city or' : 'Try'} another location.
 				</p>
 			</div>
+			{@render addEntry()}
 		{:else}
 			<div class="card" class:dim={app.loading}><Passport discover={app.discover} /></div>
 
@@ -166,6 +177,7 @@
 				</div>
 				{#if app.tab === 'countries'}
 					<CountryList discover={app.discover} onselect={select} />
+					{@render addEntry()}
 				{:else}
 					<Badges badges={app.discover.badges} events={app.discover.events} />
 				{/if}
@@ -176,6 +188,16 @@
 </main>
 
 <style>
+	.add-place {
+		margin-top: 20px;
+		text-align: center;
+	}
+
+	.add-place button {
+		color: inherit;
+		text-decoration: underline;
+	}
+
 	main {
 		display: grid;
 		grid-template-columns: 400px 1fr;

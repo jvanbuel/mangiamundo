@@ -12,6 +12,8 @@ data class Country(
     val name: String,
     val continent: String,
     val flag: String,
+    /** Its food's OpenStreetMap `cuisine` value; only countries with one can be picked for a new place. */
+    val cuisine: String? = null,
 )
 
 /** From `/api/health`. An older server sends only `ok`. */
@@ -268,6 +270,16 @@ internal data class ErrorBody(val error: String? = null)
 
 @Serializable
 internal data class CheckInBody(val position: LatLng? = null)
+
+@Serializable
+internal data class AddPlaceBody(
+    val name: String,
+    val country: String,
+    val lat: Double,
+    val lng: Double,
+    val address: String? = null,
+    val website: String? = null,
+)
 
 @Serializable
 internal data class LatLng(val lat: Double, val lng: Double)

@@ -17,6 +17,7 @@ import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ModalBottomSheet
@@ -28,7 +29,9 @@ import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Tab
 import androidx.compose.material3.TabRow
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -57,6 +60,7 @@ fun AppScreen(vm: AppViewModel = viewModel()) {
     val snackbar = remember { SnackbarHostState() }
     var pickerOpen by rememberSaveable { mutableStateOf(false) }
     var settingsOpen by rememberSaveable { mutableStateOf(false) }
+    var addOpen by rememberSaveable { mutableStateOf(false) }
 
     LaunchedEffect(Unit) {
         vm.messages.collect { snackbar.showSnackbar(it) }
@@ -78,6 +82,29 @@ fun AppScreen(vm: AppViewModel = viewModel()) {
             else -> vm.setReminders(true)
         }
     }
+    // The new place goes where the user stands, so the form needs location access first.
+    val addPermission = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestMultiplePermissions(),
+    ) { granted ->
+        if (granted.values.any { it }) addOpen = true else vm.locationDenied()
+    }
+    val openAdd = {
+        // A submission still running would close a reopened form when it finishes.
+        when {
+            vm.addingPlace -> Unit
+            DeviceLocation.hasPermission(context) -> addOpen = true
+            else -> addPermission.launch(DeviceLocation.PERMISSIONS)
+        }
+    }
+    val addLink: @Composable () -> Unit = {
+        Text(
+            "Is a restaurant missing? Add it",
+            style = MaterialTheme.typography.bodySmall,
+            color = colors.muted,
+            textAlign = TextAlign.Center,
+            modifier = Modifier.fillMaxWidth().padding(top = 16.dp).clickable { openAdd() },
+        )
+    }
     val useGps = {
         if (DeviceLocation.hasPermission(context)) vm.locate() else permission.launch(DeviceLocation.PERMISSIONS)
     }
@@ -96,7 +123,7 @@ fun AppScreen(vm: AppViewModel = viewModel()) {
 
     Scaffold(
         // The place sheet covers this host, so it shows messages itself while open.
-        snackbarHost = { if (vm.detail == null) SnackbarHost(snackbar) },
+        snackbarHost = { if (vm.detail == null && !addOpen) SnackbarHost(snackbar) },
         containerColor = colors.panel,
         contentWindowInsets = WindowInsets(0, 0, 0, 0),
     ) { padding ->
@@ -147,12 +174,15 @@ fun AppScreen(vm: AppViewModel = viewModel()) {
                         }
                         vm.error != null -> item { ErrorCard(vm.error.orEmpty(), vm::refresh) }
                         discover == null -> item { Note("Scouting restaurants in ${vm.location?.area?.name}…") }
-                        discover.world.available == 0 -> item {
-                            val postalCode = vm.location?.area?.kind == AreaKind.POSTAL_CODE
-                            Note(
-                                "No restaurants with a national cuisine turned up in ${vm.location?.area?.name}. " +
-                                    if (postalCode) "Try the whole city or another location." else "Try another location.",
-                            )
+                        discover.world.available == 0 -> {
+                            item {
+                                val postalCode = vm.location?.area?.kind == AreaKind.POSTAL_CODE
+                                Note(
+                                    "No restaurants with a national cuisine turned up in ${vm.location?.area?.name}. " +
+                                        if (postalCode) "Try the whole city or another location." else "Try another location.",
+                                )
+                            }
+                            item(key = "add") { addLink() }
                         }
                         else -> {
                             item { Passport(discover) }
@@ -188,6 +218,7 @@ fun AppScreen(vm: AppViewModel = viewModel()) {
                                             CountryRow(progress, vm.country(progress.code)) { vm.select(progress.code) }
                                         }
                                     }
+                                    item(key = "add") { addLink() }
                                 } else {
                                     item(key = "badges") { BadgeGrid(discover.badges, discover.events) }
                                 }
@@ -226,6 +257,19 @@ fun AppScreen(vm: AppViewModel = viewModel()) {
         ModalBottomSheet(onDismissRequest = { pickerOpen = false }, containerColor = colors.panel) {
             Row(Modifier.padding(start = 16.dp, end = 16.dp, bottom = 24.dp)) {
                 LocationPicker(vm, useGps, onDone = { pickerOpen = false })
+            }
+        }
+    }
+
+    if (addOpen) {
+        ModalBottomSheet(onDismissRequest = { addOpen = false }, containerColor = colors.panel) {
+            Box {
+                Column(Modifier.verticalScroll(rememberScrollState()).padding(start = 16.dp, end = 16.dp, bottom = 24.dp)) {
+                    AddPlaceForm(vm.catalog?.countries.orEmpty(), vm.addingPlace, onCancel = { addOpen = false }) { name, country, address, website ->
+                        vm.addPlace(name, country, address, website) { addOpen = false }
+                    }
+                }
+                SnackbarHost(snackbar, Modifier.align(Alignment.TopCenter))
             }
         }
     }

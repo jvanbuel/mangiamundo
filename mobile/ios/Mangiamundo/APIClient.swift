@@ -78,6 +78,15 @@ actor APIClient {
         try decode(await request("GET", "/api/areas/\(encode(areaID))/progress"))
     }
 
+    /// Adds a restaurant OpenStreetMap lacks. Only this user sees it until OSM has it.
+    func addPlace(name: String, country: String, lat: Double, lng: Double, address: String?, website: String?) async throws -> Place {
+        var body: [String: Any] = ["name": name, "country": country, "lat": lat, "lng": lng]
+        body["address"] = address
+        body["website"] = website
+        let data = try JSONSerialization.data(withJSONObject: body)
+        return try decode(await authed("POST", "/api/places", body: data))
+    }
+
     /// Cities and postal codes matching what someone typed.
     func searchAreas(_ query: String) async throws -> [Area] {
         try decode(await request("GET", "/api/areas?q=\(encode(query))"))

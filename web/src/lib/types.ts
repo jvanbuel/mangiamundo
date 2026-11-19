@@ -19,6 +19,7 @@ export type AreaProgress = Schemas['LoadProgress'];
 export type Located = Schemas['Located'];
 export type Discover = Schemas['Discover'];
 export type Place = Schemas['PlaceView'];
+export type AddPlace = Schemas['AddPlace'];
 export type Visit = Schemas['Visit'];
 export type Day = Schemas['Day'];
 export type VisitResult = Schemas['VisitResult'];

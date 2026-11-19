@@ -423,6 +423,41 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    /** True while a new place is being added. */
+    var addingPlace by mutableStateOf(false); private set
+
+    /**
+     * Adds a restaurant OpenStreetMap lacks, at the device's position: the user stands at it,
+     * as OSM wants additions from people who know the place. Opens it once added.
+     */
+    fun addPlace(name: String, country: String, address: String?, website: String?, onAdded: () -> Unit) {
+        if (addingPlace) return
+        addingPlace = true
+        viewModelScope.launch {
+            try {
+                val fix = DeviceLocation.current(getApplication())
+                if (fix == null) {
+                    messageChannel.trySend("Allow location access and stand at the restaurant: its position is yours.")
+                } else {
+                    gpsFix = Triple(fix.latitude, fix.longitude, System.currentTimeMillis())
+                    val place = api.addPlace(name, country, fix.latitude, fix.longitude, address, website)
+                    messageChannel.trySend("${place.name} added. You see it right away; OpenStreetMap mappers were asked to add it for everyone.")
+                    onAdded()
+                    openPlace(place)
+                    // It counts towards its country, for this user, if it lies in the area.
+                    // Applied only if no refresh (such as a change of area) started meanwhile.
+                    val refresh = refreshes
+                    location?.let { here ->
+                        runCatching { api.discover(here.area.id) }.onSuccess { if (refresh == refreshes) discover = it }
+                    }
+                }
+            } catch (e: Exception) {
+                messageChannel.trySend("Could not add the restaurant: ${e.message}")
+            }
+            addingPlace = false
+        }
+    }
+
     /** Updates a place's visits on its card (which shows only the latest) and in its details. */
     private fun setVisits(id: String, update: (List<Visit>) -> List<Visit>) {
         places = places.map { if (it.id == id) it.copy(visits = update(it.visits).take(1)) else it }
