@@ -830,6 +830,9 @@ pub enum AdditionStatus {
 /// A restaurant the user added and its reward.
 #[derive(Debug, Serialize, utoipa::ToSchema)]
 pub struct Addition {
+    /// The addition's own id, which never changes. Two additions of the same place share
+    /// a `place_id` once confirmed, but not this.
+    pub id: String,
     /// The pending place's id, or once confirmed its OpenStreetMap twin's.
     pub place_id: String,
     pub name: String,
@@ -851,7 +854,7 @@ pub struct Addition {
 /// The user's additions, newest first.
 pub async fn additions(db: &SqlitePool, user: &str) -> sqlx::Result<Vec<Addition>> {
     let rows = sqlx::query(
-        "SELECT COALESCE(osm_place_id, place_id) AS id, name, country, area_name, bonus, submitted_at,
+        "SELECT place_id AS addition_id, COALESCE(osm_place_id, place_id) AS id, name, country, area_name, bonus, submitted_at,
                 confirmed_at, rewarded, seen
          FROM additions WHERE user_id = ? ORDER BY submitted_at DESC, place_id",
     )
@@ -869,6 +872,7 @@ pub async fn additions(db: &SqlitePool, user: &str) -> sqlx::Result<Vec<Addition
                 (Some(_), false) => AdditionStatus::Duplicate,
             };
             Addition {
+                id: r.get("addition_id"),
                 place_id: r.get("id"),
                 name: r.get("name"),
                 country: r.get("country"),
@@ -884,14 +888,11 @@ pub async fn additions(db: &SqlitePool, user: &str) -> sqlx::Result<Vec<Addition
         .collect())
 }
 
-/// Marks some of the user's confirmed additions as told, by the `place_id` that
-/// [`additions`] lists. Others stay unseen, such as one confirmed after the user was told.
-pub async fn mark_additions_seen(db: &SqlitePool, user: &str, place_ids: &[String]) -> sqlx::Result<()> {
-    for id in place_ids {
-        sqlx::query(
-            "UPDATE additions SET seen = 1
-             WHERE user_id = ? AND confirmed_at IS NOT NULL AND COALESCE(osm_place_id, place_id) = ?",
-        )
+/// Marks some of the user's confirmed additions as told, by the `id` that [`additions`]
+/// lists. Others stay unseen, such as one confirmed after the user was told.
+pub async fn mark_additions_seen(db: &SqlitePool, user: &str, ids: &[String]) -> sqlx::Result<()> {
+    for id in ids {
+        sqlx::query("UPDATE additions SET seen = 1 WHERE user_id = ? AND confirmed_at IS NOT NULL AND place_id = ?")
         .bind(user)
         .bind(id)
         .execute(db)
@@ -1065,6 +1066,36 @@ mod tests {
             settled,
             vec![("user-a".into(), "country".into(), true), ("user-b".into(), "none".into(), false)]
         );
+    }
+
+    #[tokio::test]
+    async fn two_additions_of_one_place_are_marked_seen_one_at_a_time() {
+        let db = connect("sqlite::memory:").await.unwrap();
+        let token = create_user(&db).await.unwrap();
+        let user = user_for_token(&db, &token).await.unwrap().unwrap();
+        let new = NewPlace {
+            name: "Lalibela".into(),
+            lat: 50.88,
+            lng: 4.7,
+            address: None,
+            url: None,
+            country: "ET",
+            cuisine: "ethiopian",
+        };
+        // The same user adds the same restaurant twice; the import confirms both.
+        let first = add_place(&db, &user, &new, 1000, 5).await.unwrap().unwrap().id;
+        let second = add_place(&db, &user, &new, 1001, 5).await.unwrap().unwrap().id;
+        let mut twin = place("osm-node-1", 50.88, 4.7, "ethiopian");
+        twin.name = "Lalibela".into();
+        let all = Bbox { south: -90.0, west: -180.0, north: 90.0, east: 180.0 };
+        replace_imported(&db, all, &[twin]).await.unwrap();
+        let listed = additions(&db, &user).await.unwrap();
+        assert!(listed.iter().all(|a| a.place_id == "osm-node-1"), "both are the OSM place now");
+
+        // Told about the first only: the second is still news.
+        mark_additions_seen(&db, &user, std::slice::from_ref(&first)).await.unwrap();
+        let seen: Vec<(String, bool)> = additions(&db, &user).await.unwrap().into_iter().map(|a| (a.id, a.seen)).collect();
+        assert_eq!(seen, vec![(second, false), (first, true)]);
     }
 
     #[tokio::test]

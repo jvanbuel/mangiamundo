@@ -395,6 +395,11 @@ export interface components {
             /** Format: int64 */
             confirmed_at: number | null;
             country: string;
+            /**
+             * @description The addition's own id, which never changes. Two additions of the same place share
+             *     a `place_id` once confirmed, but not this.
+             */
+            id: string;
             name: string;
             /** @description The pending place's id, or once confirmed its OpenStreetMap twin's. */
             place_id: string;
@@ -730,8 +735,8 @@ export interface components {
         };
         /** @description Additions the user was told about. */
         SeenAdditions: {
-            /** @description `place_id`s from `/api/additions`. At most 100. */
-            place_ids: string[];
+            /** @description `id`s from `/api/additions`. At most 100. */
+            ids: string[];
         };
         Session: {
             /** @description Send it as `Authorization: Bearer <token>`. */

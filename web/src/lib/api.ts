@@ -103,9 +103,8 @@ export const addPlace = (place: AddPlace) => authed<AddedPlace>('POST', '/api/pl
 /** The restaurants this user added, newest first, with their rewards. */
 export const additions = () => authed<Addition[]>('GET', '/api/additions');
 
-/** The user was told about these confirmed additions, by `place_id`. */
-export const markAdditionsSeen = (placeIds: string[]) =>
-	authed<void>('PUT', '/api/additions/seen', { place_ids: placeIds });
+/** The user was told about these confirmed additions, by `id` (at most 100). */
+export const markAdditionsSeen = (ids: string[]) => authed<void>('PUT', '/api/additions/seen', { ids });
 
 /** Cities and postal codes matching what someone typed. */
 export const searchAreas = (query: string) => raw<Area[]>('GET', `/api/areas?q=${encodeURIComponent(query)}`, null);

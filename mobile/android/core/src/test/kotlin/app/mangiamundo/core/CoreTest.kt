@@ -108,6 +108,7 @@ class CoreTest {
         val additions = json.decodeFromString<List<Addition>>(fixture("additions"))
         assertEquals(AdditionStatus.PENDING, additions[0].status)
         assertFalse(additions[0].news)
+        assertEquals("user-0123456789abcdef0123456789abcdef", additions[0].id)
     }
 
     @Test
@@ -118,7 +119,7 @@ class CoreTest {
             Reward(380, Bonus.CONTINENT, "Leuven").pendingText("NZ", catalog),
         )
         assertEquals("+30 XP once it is on OpenStreetMap.", Reward(30).pendingText("NZ", catalog))
-        val confirmed = Addition("osm-node-1", "Lalibela", "ET", "Leuven", Bonus.COUNTRY, 130, AdditionStatus.CONFIRMED, 0, 1)
+        val confirmed = Addition("user-1", "osm-node-1", "Lalibela", "ET", "Leuven", Bonus.COUNTRY, 130, AdditionStatus.CONFIRMED, 0, 1)
         assertTrue(confirmed.news)
         assertEquals("🇪🇹 Lalibela is on the map. +130 XP, and Ethiopia is new in Leuven!", confirmed.announcement(catalog))
         assertEquals(

@@ -109,6 +109,7 @@ final class ContractTests: XCTestCase {
         let additions = try decode([Addition].self, "additions")
         XCTAssertEqual(additions[0].status, .pending)
         XCTAssertFalse(additions[0].isNews)
+        XCTAssertEqual(additions[0].id, "user-0123456789abcdef0123456789abcdef")
     }
 
     func testRewardsReadAsSentences() throws {

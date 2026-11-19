@@ -93,9 +93,9 @@ actor APIClient {
         try decode(await authed("GET", "/api/additions"))
     }
 
-    /// The user was told about these confirmed additions, by `placeId`.
-    func markAdditionsSeen(placeIDs: [String]) async throws {
-        let data = try JSONSerialization.data(withJSONObject: ["place_ids": placeIDs])
+    /// The user was told about these confirmed additions, by `id` (at most 100).
+    func markAdditionsSeen(ids: [String]) async throws {
+        let data = try JSONSerialization.data(withJSONObject: ["ids": ids])
         _ = try await authed("PUT", "/api/additions/seen", body: data)
     }
 

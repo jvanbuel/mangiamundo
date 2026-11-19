@@ -81,9 +81,9 @@ class ApiClient(private val baseUrl: String, private val tokens: TokenStore) {
     /** The restaurants this user added, newest first, with their rewards. */
     suspend fun additions(): List<Addition> = json.decodeFromString(authed("GET", "/api/additions"))
 
-    /** The user was told about these confirmed additions, by `placeId`. */
-    suspend fun markAdditionsSeen(placeIds: List<String>) {
-        authed("PUT", "/api/additions/seen", json.encodeToString(SeenBody.serializer(), SeenBody(placeIds)))
+    /** The user was told about these confirmed additions, by `id` (at most 100). */
+    suspend fun markAdditionsSeen(ids: List<String>) {
+        authed("PUT", "/api/additions/seen", json.encodeToString(SeenBody.serializer(), SeenBody(ids)))
     }
 
     /** Cities and postal codes matching what someone typed. */

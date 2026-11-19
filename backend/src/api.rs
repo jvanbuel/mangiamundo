@@ -836,8 +836,8 @@ async fn additions(State(state): State<AppState>, User(user): User) -> ApiResult
 /// Additions the user was told about.
 #[derive(Deserialize, ToSchema)]
 struct SeenAdditions {
-    /// `place_id`s from `/api/additions`. At most 100.
-    place_ids: Vec<String>,
+    /// `id`s from `/api/additions`. At most 100.
+    ids: Vec<String>,
 }
 
 /// The user was told about these confirmed additions: they come back with `seen: true`.
@@ -852,10 +852,10 @@ async fn mark_additions_seen(
     User(user): User,
     JsonBody(body): JsonBody<SeenAdditions>,
 ) -> Result<StatusCode, ApiError> {
-    if body.place_ids.len() > 100 {
-        return Err(ApiError::BadRequest("at most 100 place_ids".into()));
+    if body.ids.len() > 100 {
+        return Err(ApiError::BadRequest("at most 100 ids".into()));
     }
-    store::mark_additions_seen(&state.db, &user, &body.place_ids).await?;
+    store::mark_additions_seen(&state.db, &user, &body.ids).await?;
     Ok(StatusCode::NO_CONTENT)
 }
 

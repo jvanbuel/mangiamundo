@@ -90,6 +90,10 @@
           "country": {
             "type": "string"
           },
+          "id": {
+            "description": "The addition's own id, which never changes. Two additions of the same place share\na `place_id` once confirmed, but not this.",
+            "type": "string"
+          },
           "name": {
             "type": "string"
           },
@@ -116,6 +120,7 @@
           }
         },
         "required": [
+          "id",
           "place_id",
           "name",
           "country",
@@ -1037,8 +1042,8 @@
       "SeenAdditions": {
         "description": "Additions the user was told about.",
         "properties": {
-          "place_ids": {
-            "description": "`place_id`s from `/api/additions`. At most 100.",
+          "ids": {
+            "description": "`id`s from `/api/additions`. At most 100.",
             "items": {
               "type": "string"
             },
@@ -1046,7 +1051,7 @@
           }
         },
         "required": [
-          "place_ids"
+          "ids"
         ],
         "type": "object"
       },

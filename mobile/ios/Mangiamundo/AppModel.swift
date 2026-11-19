@@ -492,9 +492,12 @@ final class AppModel {
     /// "Lalibela is on the map. +130 XP…" for each addition OpenStreetMap now has that the
     /// user wasn't told about. A failure leaves them for the next refresh.
     private func announceConfirmedAdditions() async {
-        guard let news = try? await api.additions().filter(\.isNews), !news.isEmpty else { return }
+        // A few at a time: any more wait for the next refresh.
+        guard let all = try? await api.additions() else { return }
+        let news = Array(all.filter(\.isNews).prefix(10))
+        guard !news.isEmpty else { return }
         for addition in news { toast(addition.announcement(catalog: catalog)) }
-        try? await api.markAdditionsSeen(placeIDs: news.map(\.placeId))
+        try? await api.markAdditionsSeen(ids: news.map(\.id))
     }
 
     /// Updates a place's visits on its card (which shows only the latest) and in its details.

@@ -584,7 +584,8 @@ async function announceConfirmedAdditions() {
 	if (announcing) return;
 	announcing = true;
 	try {
-		const fresh = (await api.additions()).filter((a) => a.status !== 'pending' && !a.seen);
+		// A few at a time: any more wait for the next refresh.
+		const fresh = (await api.additions()).filter((a) => a.status !== 'pending' && !a.seen).slice(0, 10);
 		if (fresh.length === 0) return;
 		for (const a of fresh) {
 			const flag = country(a.country)?.flag ?? null;
@@ -596,7 +597,7 @@ async function announceConfirmedAdditions() {
 				toast(icon, `${a.name} is on the map`, bonus ? `+${a.xp} XP, and ${bonus}!` : `+${a.xp} XP. Thanks for adding it!`);
 			}
 		}
-		await api.markAdditionsSeen(fresh.map((a) => a.place_id));
+		await api.markAdditionsSeen(fresh.map((a) => a.id));
 	} catch {
 		// Shown at the next refresh instead.
 	} finally {

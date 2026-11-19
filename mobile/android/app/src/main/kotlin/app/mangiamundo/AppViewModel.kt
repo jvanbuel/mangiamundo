@@ -471,13 +471,14 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     /** "Lalibela is on the map. +130 XP…" for each addition OpenStreetMap now has that the
      * user wasn't told about. Only those queued are marked seen; the rest wait for the next refresh. */
     private suspend fun announceConfirmedAdditions() {
-        val news = runCatching { api.additions().filter { it.news } }.getOrNull() ?: return
+        // A few at a time: any more wait for the next refresh.
+        val news = runCatching { api.additions().filter { it.news }.take(10) }.getOrNull() ?: return
         val told = mutableListOf<String>()
         try {
             // `send` waits for room, where `trySend` would drop messages past the buffer.
             for (addition in news) {
                 messageChannel.send(addition.announcement(catalog))
-                told += addition.placeId
+                told += addition.id
             }
         } finally {
             if (told.isNotEmpty()) withContext(NonCancellable) { runCatching { api.markAdditionsSeen(told) } }

@@ -307,7 +307,7 @@ data class Reward(
 )
 
 @Serializable
-internal data class SeenBody(@SerialName("place_ids") val placeIds: List<String>)
+internal data class SeenBody(val ids: List<String>)
 
 /** `POST /api/places` sends the place with its reward next to its fields. */
 @Serializable
@@ -327,6 +327,8 @@ enum class AdditionStatus {
 /** A restaurant the user added, from `/api/additions`. */
 @Serializable
 data class Addition(
+    /** The addition's own id, which never changes; `placeId` becomes the OSM place's. */
+    val id: String,
     @SerialName("place_id") val placeId: String,
     val name: String,
     val country: String,

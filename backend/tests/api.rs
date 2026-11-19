@@ -801,6 +801,7 @@ async fn writes_contract_fixtures() {
     write("added", &added);
     let mut additions = get("/api/additions".into()).await;
     additions[0]["place_id"] = added["id"].clone();
+    additions[0]["id"] = added["id"].clone();
     write("additions", &additions);
 
     // What a newer server might send: enum values this app version doesn't know.
@@ -944,10 +945,18 @@ async fn an_added_place_earns_xp_once_the_import_confirms_it() {
     assert_eq!(xp(carol.clone()).await, 30 + 130);
 
     // Only what the caller lists, and only their own.
-    let seen = |ids: &str| format!(r#"{{"place_ids":[{ids}]}}"#);
-    assert_eq!(call(&app, "PUT", "/api/additions/seen", Some(&alice), Some(&seen(r#""osm-node-2""#))).await.0, StatusCode::NO_CONTENT);
+    let seen = |ids: &[&Value]| format!(r#"{{"ids":{}}}"#, serde_json::to_string(ids).unwrap());
+    let put = |token: String, body: String| {
+        let app = app.clone();
+        async move { call(&app, "PUT", "/api/additions/seen", Some(&token), Some(&body)).await.0 }
+    };
+    let beta = &his[1]["id"];
+    assert_eq!(put(alice.clone(), seen(&[beta])).await, StatusCode::NO_CONTENT);
     assert_eq!(get("/api/additions", bob.clone()).await[1]["seen"], false, "Beta is Bob's");
     assert_eq!(get("/api/additions", alice.clone()).await[0]["seen"], false, "not listed");
-    assert_eq!(call(&app, "PUT", "/api/additions/seen", Some(&alice), Some(&seen(r#""osm-node-1""#))).await.0, StatusCode::NO_CONTENT);
+    assert_eq!(put(alice.clone(), seen(&[&mine[0]["id"]])).await, StatusCode::NO_CONTENT);
     assert_eq!(get("/api/additions", alice.clone()).await[0]["seen"], true);
+
+    let too_many: Vec<Value> = (0..101).map(|i| Value::from(format!("user-{i}"))).collect();
+    assert_eq!(put(bob.clone(), seen(&too_many.iter().collect::<Vec<_>>())).await, StatusCode::BAD_REQUEST);
 }

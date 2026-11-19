@@ -326,6 +326,8 @@ enum AdditionStatus: String, Decodable {
 
 /// A restaurant the user added, from `/api/additions`.
 struct Addition: Decodable {
+    /// The addition's own id, which never changes; `placeId` becomes the OSM place's.
+    let id: String
     let placeId: String
     let name: String
     let country: String
