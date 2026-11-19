@@ -471,12 +471,11 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
                         else "No change on OpenStreetMap yet. A new edit can take a minute or two to show up there.",
                     )
                 }
-                // Its countries may have changed. A reply for an area the user has left is dropped.
-                if (result.status != Refreshed.UNCHANGED) {
-                    val refresh = refreshes
-                    location?.let { here ->
-                        runCatching { api.discover(here.area.id) }.onSuccess { if (refresh == refreshes) discover = it }
-                    }
+                // Its countries may have changed, also with an unchanged reply when someone else's
+                // refresh changed it first. A reply for an area the user has left is dropped.
+                val refresh = refreshes
+                location?.let { here ->
+                    runCatching { api.discover(here.area.id) }.onSuccess { if (refresh == refreshes) discover = it }
                 }
             } catch (e: kotlinx.coroutines.CancellationException) {
                 throw e
@@ -521,6 +520,8 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
                         if (added.isNotEmpty()) messageChannel.trySend("Found ${added.joinToString { it.name }}: on the map for everyone now.")
                         // New countries, and any of the user's additions they confirmed.
                         refresh()
+                        // The open country's list, with the places just found.
+                        selected?.let { select(it) }
                     }
                 }
             } catch (e: Exception) {

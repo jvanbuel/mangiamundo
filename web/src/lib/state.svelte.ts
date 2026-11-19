@@ -594,14 +594,15 @@ export async function refreshPlace(id: string, quiet = false) {
 			if (status === 'updated') toast(null, `${place.name} updated`, 'This is the latest from OpenStreetMap.');
 			else toast(null, 'No change on OpenStreetMap yet', 'A new edit can take a minute or two to show up there. Try again shortly.');
 		}
-		if (status !== 'unchanged') {
-			// Its countries may have changed. A reply for an area the user has left is dropped.
-			const location = app.location;
-			if (location) {
-				const discover = await api.discover(location.area.id);
-				if (app.location === location) app.discover = discover;
-			}
+		// Its countries may have changed, also with an unchanged reply when someone else's
+		// refresh changed it first. A reply for an area the user has left is dropped.
+		const location = app.location;
+		if (location) {
+			const discover = await api.discover(location.area.id);
+			if (app.location === location) app.discover = discover;
 		}
+		// Details reopened while this ran loaded before the refresh was saved: load them again.
+		if (place && app.placeId === id && !app.detail) void loadPlace(id);
 	} catch (error) {
 		if (!quiet) toast(null, 'Could not refresh this place', message(error));
 	} finally {
@@ -641,6 +642,13 @@ export async function lookAgainNearby() {
 		}
 		// New countries, and any addition of the user's confirmed (announced by the refresh).
 		await refresh();
+		// The open country's list, with the places just found. Its details stay open.
+		const code = app.selected;
+		const location = app.location;
+		if (code && location) {
+			const list = await api.places(location.area.id, code, here());
+			if (app.selected === code && app.location === location) app.places = list;
+		}
 	} catch (error) {
 		toast(null, 'Could not look again', message(error));
 	} finally {

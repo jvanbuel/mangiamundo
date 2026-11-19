@@ -495,8 +495,9 @@ final class AppModel {
                     ? "\(place.name) updated from OpenStreetMap."
                     : "No change on OpenStreetMap yet. A new edit can take a minute or two to show up there.")
             }
-            // Its countries may have changed. A reply for an area the user has left is dropped.
-            if result.status != .unchanged, let here = location {
+            // Its countries may have changed, also with an unchanged reply when someone else's
+            // refresh changed it first. A reply for an area the user has left is dropped.
+            if let here = location {
                 let refresh = refreshes
                 if let fresh = try? await api.discover(areaID: here.area.id), refresh == refreshes { discover = fresh }
             }
@@ -548,6 +549,8 @@ final class AppModel {
                 if !added.isEmpty { toast("Found \(added.map(\.name).joined(separator: ", ")): on the map for everyone now.") }
                 // New countries, and any of the user's additions they confirmed.
                 refresh()
+                // The open country's list, with the places just found.
+                if let code = selected { select(code) }
             }
         } catch {
             toast("Could not look again: \(error.localizedDescription)")
