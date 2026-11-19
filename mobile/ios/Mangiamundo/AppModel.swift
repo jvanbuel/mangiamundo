@@ -16,6 +16,8 @@ final class AppModel {
     private(set) var location: SavedLocation?
     private(set) var discover: Discover?
     private(set) var loading = false
+    /// How far loading the area has come, while that takes long enough to show a wheel.
+    private(set) var areaProgress: AreaProgress?
     private(set) var error: String?
     /// The first data is in (or failed), so the startup loader can go.
     private(set) var ready = false
@@ -53,6 +55,8 @@ final class AppModel {
     /// The last real device position, used to verify check-ins while browsing another city.
     @ObservationIgnored private var gpsFix: (lat: Double, lng: Double, at: Date)?
     @ObservationIgnored private var refreshTask: Task<Void, Never>?
+    /// Counts refreshes, so only the latest one shows or clears the progress wheel.
+    @ObservationIgnored private var refreshes = 0
     @ObservationIgnored private var placesTask: Task<Void, Never>?
     @ObservationIgnored private var started = false
     @ObservationIgnored private let reminders = ReminderCenter()
@@ -220,11 +224,38 @@ final class AppModel {
         loadServer()
         guard let here = location else { return }
         refreshTask?.cancel()
+        refreshes += 1
+        let refresh = refreshes
         refreshTask = Task {
             loading = true
             error = nil
+            // A wheel from the previous area must not linger while this one starts.
+            areaProgress = nil
+            // A new area can take a while to load: show the server's progress after 0.3 s.
+            let poll = Task {
+                try? await Task.sleep(for: .milliseconds(300))
+                while !Task.isCancelled {
+                    // nil (not started or already done) and errors keep the last value. Only the
+                    // latest refresh shows its wheel.
+                    if let progress = try? await api.areaProgress(areaID: here.area.id), !Task.isCancelled, refresh == refreshes {
+                        areaProgress = progress
+                        // At startup the loader waits for the data: let the wheel show instead.
+                        ready = true
+                    }
+                    try? await Task.sleep(for: .milliseconds(400))
+                }
+            }
+            let fetched: Result<Discover, Error>
             do {
-                let result = try await api.discover(areaID: here.area.id)
+                fetched = .success(try await api.discover(areaID: here.area.id))
+            } catch {
+                fetched = .failure(error)
+            }
+            // The wheel is about the restaurants: it goes before celebrations and reminders load.
+            poll.cancel()
+            if refresh == refreshes { areaProgress = nil }
+            do {
+                let result = try fetched.get()
                 guard !Task.isCancelled else { return }
                 discover = result
                 ready = true

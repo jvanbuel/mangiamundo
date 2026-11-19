@@ -14,6 +14,7 @@ import app.mangiamundo.core.Country
 import app.mangiamundo.core.Discover
 import app.mangiamundo.core.Area
 import app.mangiamundo.core.AreaKind
+import app.mangiamundo.core.AreaProgress
 import app.mangiamundo.core.Place
 import app.mangiamundo.core.ProjectionKind
 import app.mangiamundo.core.ReminderPlan
@@ -23,6 +24,7 @@ import app.mangiamundo.core.World
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -40,6 +42,10 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     var discover by mutableStateOf<Discover?>(null); private set
     var loading by mutableStateOf(false); private set
     var error by mutableStateOf<String?>(null); private set
+    /** How far the server is with the area while it loads; null when there is nothing to show. */
+    var areaProgress by mutableStateOf<AreaProgress?>(null); private set
+    /** Counts refreshes, so only the latest one shows or clears the progress wheel. */
+    private var refreshes = 0
     /** The first data is in (or failed), so the startup loader can go. Read by MainActivity. */
     @Volatile var ready = false; private set
 
@@ -204,11 +210,21 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         loadServer()
         val here = location ?: return
         refreshJob?.cancel()
+        val refresh = ++refreshes
         refreshJob = viewModelScope.launch {
             loading = true
             error = null
+            // A wheel from the previous area must not linger while this one starts.
+            areaProgress = null
             try {
-                discover = api.discover(here.area.id)
+                val polling = launch { followProgress(here.area.id, refresh) }
+                discover = try {
+                    api.discover(here.area.id)
+                } finally {
+                    polling.cancel()
+                    // A cancelled older refresh can end after a newer one started: leave its wheel.
+                    if (refresh == refreshes) areaProgress = null
+                }
                 ready = true
                 pendingCountry?.let { code ->
                     pendingCountry = null
@@ -224,6 +240,27 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
                 ready = true
             }
             loading = false
+        }
+    }
+
+    /** Polls the area's loading progress, once loading has taken a moment, until cancelled.
+     * Only the latest refresh (`refresh`) shows its wheel. */
+    private suspend fun followProgress(areaId: String, refresh: Int) {
+        delay(300)
+        while (true) {
+            try {
+                // null: not started or just finished; keep what is shown.
+                api.areaProgress(areaId)?.takeIf { refresh == refreshes }?.let {
+                    areaProgress = it
+                    // At startup the loader waits for the data: let the wheel show instead.
+                    ready = true
+                }
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                // A missed poll only delays the wheel.
+            }
+            delay(400)
         }
     }
 

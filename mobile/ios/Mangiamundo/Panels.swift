@@ -18,6 +18,36 @@ struct Card<Content: View>: View {
     }
 }
 
+/// A ring filling up while an area's restaurants load, with the step below it.
+struct AreaProgressView: View {
+    let progress: AreaProgress
+
+    var body: some View {
+        VStack(spacing: 10) {
+            ZStack {
+                Circle().stroke(Theme.line, lineWidth: 8)
+                Circle()
+                    .trim(from: 0, to: CGFloat(progress.percent) / 100)
+                    .stroke(Theme.accent, style: StrokeStyle(lineWidth: 8, lineCap: .round))
+                    .rotationEffect(.degrees(-90))
+                Text("\(progress.percent)%").font(Theme.font(.title3, .extraBold))
+            }
+            .frame(width: 84, height: 84)
+            .animation(.easeOut(duration: 0.4), value: progress.percent)
+            Text(progress.text)
+                .font(Theme.font(.subheadline, .bold))
+                .foregroundStyle(Theme.muted)
+        }
+        .padding(20)
+        .background(Theme.panel, in: RoundedRectangle(cornerRadius: 14))
+        .padding(EdgeInsets(top: 2, leading: 2, bottom: 4, trailing: 2))
+        .background(Theme.line, in: RoundedRectangle(cornerRadius: 16))
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(progress.text)
+        .accessibilityValue("\(progress.percent) percent")
+    }
+}
+
 /// A solid, pressable button face on a darker lower edge; the face drops onto the edge while pressed.
 struct ChunkyButtonStyle: ButtonStyle {
     var face = Theme.accent

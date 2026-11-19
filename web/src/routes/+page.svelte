@@ -8,6 +8,7 @@
 	import LocationPicker from '#lib/LocationPicker.svelte';
 	import Passport from '#lib/Passport.svelte';
 	import PlaceDetail from '#lib/PlaceDetail.svelte';
+	import ProgressWheel from '#lib/ProgressWheel.svelte';
 	import Toasts from '#lib/Toasts.svelte';
 	import WorldMap from '#lib/WorldMap.svelte';
 	import MapPin from '@lucide/svelte/icons/map-pin';
@@ -53,6 +54,7 @@
 	}
 </script>
 
+{#if app.areaProgress}<ProgressWheel progress={app.areaProgress} />{/if}
 <Toasts />
 
 <main>

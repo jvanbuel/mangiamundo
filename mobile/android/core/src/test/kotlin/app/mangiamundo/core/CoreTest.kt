@@ -123,4 +123,10 @@ class CoreTest {
         val newer = json.decodeFromString<Area>("""{"id":"x","name":"Mitte","kind":"district","lat":52.5,"lng":13.4}""")
         assertEquals(AreaKind.CITY, newer.kind)
     }
+
+    @Test
+    fun areaProgressIsNullWhenNothingLoads() {
+        assertEquals(AreaProgress(42, "Looking for restaurants"), json.decodeFromString<AreaProgress?>("""{"percent":42,"text":"Looking for restaurants"}"""))
+        assertNull(json.decodeFromString<AreaProgress?>("null"))
+    }
 }

@@ -223,6 +223,14 @@ enum AreaKind: String, Codable {
     }
 }
 
+/// How far loading an area's restaurants has come, from `/api/areas/{id}/progress`.
+struct AreaProgress: Decodable, Equatable {
+    /// 0 to 100.
+    let percent: Int
+    /// What is happening, e.g. "Looking for restaurants".
+    let text: String
+}
+
 /// The areas a point lies in.
 struct Located: Decodable {
     let city: Area?

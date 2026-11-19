@@ -64,6 +64,9 @@ The cuisine → country table lives in `backend/src/catalog.rs`. Regional labels
 out on purpose.
 
 Results are cached per area (with its outline) and refreshed after `CACHE_TTL_DAYS`.
+Belgium and its border towns come from a local copy instead, refreshed from Overpass
+once a day with one query for the whole box; each refresh marks the cached areas there
+stale, so changes in OpenStreetMap show up within about a day.
 
 ## Celebrations and limited-time badges
 

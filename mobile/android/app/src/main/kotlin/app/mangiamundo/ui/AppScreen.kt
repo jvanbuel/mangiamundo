@@ -100,100 +100,104 @@ fun AppScreen(vm: AppViewModel = viewModel()) {
         containerColor = colors.panel,
         contentWindowInsets = WindowInsets(0, 0, 0, 0),
     ) { padding ->
-        Column(Modifier.fillMaxSize().padding(padding)) {
-            Box(Modifier.fillMaxWidth().weight(0.42f).background(colors.bg)) {
-                vm.world?.let { world ->
-                    WorldMap(
-                        world = world,
-                        statuses = statuses,
-                        selected = vm.selected,
-                        here = vm.location?.let { it.lng to it.lat },
-                        kind = vm.projection,
-                        camera = vm.camera,
-                        onCamera = { vm.camera = it },
-                        onTap = { vm.tapCountry(it.code, it.name) },
-                        modifier = Modifier.fillMaxSize(),
-                    )
-                }
-                SingleChoiceSegmentedButtonRow(
-                    Modifier
-                        .align(Alignment.TopEnd)
-                        .windowInsetsPadding(WindowInsets.statusBars)
-                        .padding(8.dp),
-                ) {
-                    val kinds = listOf(ProjectionKind.GLOBE to "Globe", ProjectionKind.FLAT to "Flat")
-                    kinds.forEachIndexed { index, (kind, label) ->
-                        SegmentedButton(
-                            selected = vm.projection == kind,
-                            onClick = { vm.changeProjection(kind) },
-                            shape = SegmentedButtonDefaults.itemShape(index, kinds.size),
-                            icon = {},
-                        ) { Text(label) }
-                    }
-                }
-                Legend(Modifier.align(Alignment.BottomStart).padding(8.dp))
-            }
-
-            LazyColumn(
-                Modifier.fillMaxWidth().weight(0.58f),
-                contentPadding = PaddingValues(16.dp),
-            ) {
-                item { Header(vm.location, onChange = { pickerOpen = true }, onSettings = { settingsOpen = true }) }
-
-                when {
-                    vm.location == null -> item {
-                        Welcome { LocationPicker(vm, useGps, onDone = {}) }
-                    }
-                    vm.error != null -> item { ErrorCard(vm.error.orEmpty(), vm::refresh) }
-                    discover == null -> item { Note("Scouting restaurants in ${vm.location?.area?.name}…") }
-                    discover.world.available == 0 -> item {
-                        val postalCode = vm.location?.area?.kind == AreaKind.POSTAL_CODE
-                        Note(
-                            "No restaurants with a national cuisine turned up in ${vm.location?.area?.name}. " +
-                                if (postalCode) "Try the whole city or another location." else "Try another location.",
+        Box(Modifier.fillMaxSize().padding(padding)) {
+            Column(Modifier.fillMaxSize()) {
+                Box(Modifier.fillMaxWidth().weight(0.42f).background(colors.bg)) {
+                    vm.world?.let { world ->
+                        WorldMap(
+                            world = world,
+                            statuses = statuses,
+                            selected = vm.selected,
+                            here = vm.location?.let { it.lng to it.lat },
+                            kind = vm.projection,
+                            camera = vm.camera,
+                            onCamera = { vm.camera = it },
+                            onTap = { vm.tapCountry(it.code, it.name) },
+                            modifier = Modifier.fillMaxSize(),
                         )
                     }
-                    else -> {
-                        item { Passport(discover) }
-                        if (selected == null && vm.celebrations.isNotEmpty()) {
-                            item { ComingUp(vm.celebrations, vm.remindersOn, toggleReminders, vm::country, onOpen = vm::select) }
+                    SingleChoiceSegmentedButtonRow(
+                        Modifier
+                            .align(Alignment.TopEnd)
+                            .windowInsetsPadding(WindowInsets.statusBars)
+                            .padding(8.dp),
+                    ) {
+                        val kinds = listOf(ProjectionKind.GLOBE to "Globe", ProjectionKind.FLAT to "Flat")
+                        kinds.forEachIndexed { index, (kind, label) ->
+                            SegmentedButton(
+                                selected = vm.projection == kind,
+                                onClick = { vm.changeProjection(kind) },
+                                shape = SegmentedButtonDefaults.itemShape(index, kinds.size),
+                                icon = {},
+                            ) { Text(label) }
                         }
-                        if (selected != null) {
-                            item { CountryHeader(selected, vm.country(selected.code), onBack = { vm.select(null) }) }
-                            if (vm.placesLoading) item { Note("Loading places…") }
-                            // The API sorts open places first, then closed, then unknown hours.
-                            val showGroups = vm.places.any { it.openNow != null }
-                            for ((openNow, group) in vm.places.groupBy { it.openNow }) {
-                                if (showGroups) item(key = "group-$openNow") { PlaceGroupHeader(openNow) }
-                                items(group, key = { it.id }) { place ->
-                                    PlaceRow(place, busy = vm.busyPlace != null, onOpen = { vm.openPlace(place) }) { vm.toggleVisit(place) }
-                                }
+                    }
+                    Legend(Modifier.align(Alignment.BottomStart).padding(8.dp))
+                }
+
+                LazyColumn(
+                    Modifier.fillMaxWidth().weight(0.58f),
+                    contentPadding = PaddingValues(16.dp),
+                ) {
+                    item { Header(vm.location, onChange = { pickerOpen = true }, onSettings = { settingsOpen = true }) }
+
+                    when {
+                        vm.location == null -> item {
+                            Welcome { LocationPicker(vm, useGps, onDone = {}) }
+                        }
+                        vm.error != null -> item { ErrorCard(vm.error.orEmpty(), vm::refresh) }
+                        discover == null -> item { Note("Scouting restaurants in ${vm.location?.area?.name}…") }
+                        discover.world.available == 0 -> item {
+                            val postalCode = vm.location?.area?.kind == AreaKind.POSTAL_CODE
+                            Note(
+                                "No restaurants with a national cuisine turned up in ${vm.location?.area?.name}. " +
+                                    if (postalCode) "Try the whole city or another location." else "Try another location.",
+                            )
+                        }
+                        else -> {
+                            item { Passport(discover) }
+                            if (selected == null && vm.celebrations.isNotEmpty()) {
+                                item { ComingUp(vm.celebrations, vm.remindersOn, toggleReminders, vm::country, onOpen = vm::select) }
                             }
-                        } else {
-                            item {
-                                TabRow(selectedTabIndex = vm.tab, containerColor = colors.panel) {
-                                    Tab(vm.tab == 0, { vm.tab = 0 }, text = { Text("Countries ${discover.world.available}") })
-                                    val earned = discover.badges.count { it.earned }
-                                    Tab(vm.tab == 1, { vm.tab = 1 }, text = { Text("Badges $earned/${discover.badges.size}") })
-                                }
-                            }
-                            if (vm.tab == 0) {
-                                for (continent in discover.continents.filter { it.available > 0 }) {
-                                    item(key = "c-${continent.code}") { ContinentHeader(continent) }
-                                    val rows = discover.countries
-                                        .filter { it.continent == continent.code }
-                                        .sortedBy { vm.country(it.code)?.name ?: it.code }
-                                    items(rows, key = { it.code }) { progress ->
-                                        CountryRow(progress, vm.country(progress.code)) { vm.select(progress.code) }
+                            if (selected != null) {
+                                item { CountryHeader(selected, vm.country(selected.code), onBack = { vm.select(null) }) }
+                                if (vm.placesLoading) item { Note("Loading places…") }
+                                // The API sorts open places first, then closed, then unknown hours.
+                                val showGroups = vm.places.any { it.openNow != null }
+                                for ((openNow, group) in vm.places.groupBy { it.openNow }) {
+                                    if (showGroups) item(key = "group-$openNow") { PlaceGroupHeader(openNow) }
+                                    items(group, key = { it.id }) { place ->
+                                        PlaceRow(place, busy = vm.busyPlace != null, onOpen = { vm.openPlace(place) }) { vm.toggleVisit(place) }
                                     }
                                 }
                             } else {
-                                item(key = "badges") { BadgeGrid(discover.badges, discover.events) }
+                                item {
+                                    TabRow(selectedTabIndex = vm.tab, containerColor = colors.panel) {
+                                        Tab(vm.tab == 0, { vm.tab = 0 }, text = { Text("Countries ${discover.world.available}") })
+                                        val earned = discover.badges.count { it.earned }
+                                        Tab(vm.tab == 1, { vm.tab = 1 }, text = { Text("Badges $earned/${discover.badges.size}") })
+                                    }
+                                }
+                                if (vm.tab == 0) {
+                                    for (continent in discover.continents.filter { it.available > 0 }) {
+                                        item(key = "c-${continent.code}") { ContinentHeader(continent) }
+                                        val rows = discover.countries
+                                            .filter { it.continent == continent.code }
+                                            .sortedBy { vm.country(it.code)?.name ?: it.code }
+                                        items(rows, key = { it.code }) { progress ->
+                                            CountryRow(progress, vm.country(progress.code)) { vm.select(progress.code) }
+                                        }
+                                    }
+                                } else {
+                                    item(key = "badges") { BadgeGrid(discover.badges, discover.events) }
+                                }
                             }
                         }
                     }
                 }
             }
+            // While a city's restaurants load (slow outside the Belgium copy), show how far it is.
+            vm.areaProgress?.let { LoadingWheel(it, Modifier.align(Alignment.Center)) }
         }
     }
 

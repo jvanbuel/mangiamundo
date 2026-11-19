@@ -55,6 +55,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/areas/{area_id}/progress": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * How far loading an area's restaurants has come, for a progress wheel while `/api/discover`
+         *     or `/api/places` waits on it. `null` when the area isn't loading.
+         */
+        get: operations["area_progress"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/celebrations": {
         parameters: {
             query?: never;
@@ -511,6 +531,15 @@ export interface components {
             /** Format: double */
             lng: number;
         };
+        LoadProgress: {
+            /**
+             * Format: int32
+             * @description 0 to 100.
+             */
+            percent: number;
+            /** @description What is happening, e.g. "Looking for restaurants". */
+            text: string;
+        };
         /** @description The areas a point lies in. */
         Located: {
             city: components["schemas"]["AreaInfo"] | null;
@@ -715,6 +744,37 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["AreaInfo"][];
+                };
+            };
+            /** @description An error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    area_progress: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description An area id. */
+                area_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LoadProgress"] | null;
                 };
             };
             /** @description An error */

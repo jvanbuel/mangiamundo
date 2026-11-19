@@ -9,6 +9,7 @@ import {
 	type Catalog,
 	type Country,
 	type Area,
+	type AreaProgress,
 	type Discover,
 	type Located,
 	type Location,
@@ -48,6 +49,8 @@ export const app = $state({
 	location: null as Location | null,
 	discover: null as Discover | null,
 	loading: false,
+	/** How far the area's restaurants have loaded, while that takes a while. */
+	areaProgress: null as AreaProgress | null,
 	error: null as string | null,
 	/** Code of the country whose places are shown. */
 	selected: null as string | null,
@@ -374,6 +377,9 @@ export async function refresh() {
 	const id = ++requestId;
 	app.loading = true;
 	app.error = null;
+	// A wheel from the previous area must not linger while this one starts.
+	app.areaProgress = null;
+	const stopProgress = watchProgress(location.area.id, id);
 	try {
 		const result = await api.discover(location.area.id);
 		if (id === requestId) app.discover = result;
@@ -383,8 +389,33 @@ export async function refresh() {
 			app.discover = null;
 		}
 	} finally {
+		stopProgress();
 		if (id === requestId) app.loading = false;
 	}
+}
+
+/** Polls an area's load progress while discover waits on it, one request at a time. Shown
+ * only after 300 ms, so areas that answer quickly don't flash it, and only for the latest
+ * refresh (`id`). Returns a function that stops and hides it. */
+function watchProgress(areaId: string, id: number): () => void {
+	const started = Date.now();
+	let stopped = false;
+	void (async () => {
+		while (!stopped) {
+			await new Promise((resolve) => setTimeout(resolve, 400));
+			if (stopped) return;
+			const progress = await api.areaProgress(areaId).catch(() => null);
+			// null between steps or before the server starts: keep what is shown.
+			if (stopped || id !== requestId || !progress || Date.now() - started < 300) continue;
+			app.areaProgress = progress;
+			// At startup the splash waits for the data: let the wheel show instead.
+			void hideSplash();
+		}
+	})();
+	return () => {
+		stopped = true;
+		if (id === requestId) app.areaProgress = null;
+	};
 }
 
 export async function select(code: string | null) {

@@ -150,7 +150,7 @@ impl PlacesProvider for Demo {
         "demo"
     }
 
-    async fn search(&self, area: &Boundary) -> anyhow::Result<Vec<FoundPlace>> {
+    async fn search(&self, area: &Boundary, _on_next_server: &(dyn Fn() + Send + Sync)) -> anyhow::Result<Vec<FoundPlace>> {
         let Some(city) = city_of(&area.info.id) else { return Ok(Vec::new()) };
         Ok(city.places().into_iter().filter(|p| area.shape.contains(p.lat, p.lng)).collect())
     }
@@ -190,8 +190,8 @@ mod tests {
         let city = Demo.boundary("demo-leuven").await.unwrap().unwrap();
         let west = Demo.boundary("demo-leuven-3000").await.unwrap().unwrap();
         let east = Demo.boundary("demo-leuven-3010").await.unwrap().unwrap();
-        let all = PlacesProvider::search(&Demo, &city).await.unwrap();
-        let (w, e) = (PlacesProvider::search(&Demo, &west).await.unwrap(), PlacesProvider::search(&Demo, &east).await.unwrap());
+        let all = PlacesProvider::search(&Demo, &city, &|| ()).await.unwrap();
+        let (w, e) = (PlacesProvider::search(&Demo, &west, &|| ()).await.unwrap(), PlacesProvider::search(&Demo, &east, &|| ()).await.unwrap());
         assert!(all.len() > 20);
         assert_eq!(w.len() + e.len(), all.len());
         assert!(w.iter().all(|p| all.contains(p)), "same ids in the city and its postal codes");

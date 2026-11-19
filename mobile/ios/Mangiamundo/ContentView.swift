@@ -48,6 +48,7 @@ struct ContentView: View {
         .background(Theme.bg.ignoresSafeArea())
         .foregroundStyle(Theme.text)
         .font(Theme.font(.body))
+        .overlay { if let progress = model.areaProgress { AreaProgressView(progress: progress) } }
         .overlay(alignment: .top) { if model.detail == nil { ToastStack(toasts: model.toasts) } }
         .onAppear { googleInstalled = MapsApp.googleInstalled }
         .onChange(of: scenePhase) { _, phase in

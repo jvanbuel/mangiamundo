@@ -73,6 +73,11 @@ actor APIClient {
         _ = try await authed("PUT", "/api/places/\(encode(placeID))/closed")
     }
 
+    /// How far loading the area has come; nil when it isn't loading.
+    func areaProgress(areaID: String) async throws -> AreaProgress? {
+        try decode(await request("GET", "/api/areas/\(encode(areaID))/progress"))
+    }
+
     /// Cities and postal codes matching what someone typed.
     func searchAreas(_ query: String) async throws -> [Area] {
         try decode(await request("GET", "/api/areas?q=\(encode(query))"))
