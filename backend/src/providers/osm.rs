@@ -232,7 +232,8 @@ impl PlacesProvider for Overpass {
 /// the refresh instead of breaking a user's request.
 pub async fn import(db: &SqlitePool, overpass: &Overpass) -> anyhow::Result<usize> {
     let places = overpass.fetch_any(&query(IMPORT_BBOX, 300), Duration::from_secs(330), None, &|| ()).await?;
-    store::replace_imported(db, IMPORT_BBOX, &places).await?;
+    let matched = store::replace_imported(db, IMPORT_BBOX, &places).await?;
+    tracing::info!(matched, "pending places matched to imported ones");
     store::set_setting(db, IMPORTED_AT, &store::now().to_string()).await?;
     Ok(places.len())
 }
