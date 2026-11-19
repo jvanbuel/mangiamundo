@@ -17,7 +17,7 @@ use crate::{catalog, store};
 /// Lille, Maastricht and Aachen are covered too.
 pub const IMPORT_BBOX: Bbox = Bbox { south: 49.4, west: 2.4, north: 51.6, east: 6.5 };
 /// How often the local copy is refreshed, and how soon a failed import is retried.
-const IMPORT_EVERY_SECS: i64 = 7 * 86_400;
+const IMPORT_EVERY_SECS: i64 = 86_400;
 const IMPORT_RETRY: Duration = Duration::from_secs(3600);
 const IMPORTED_AT: &str = "osm_import_at";
 
@@ -172,11 +172,11 @@ impl PlacesProvider for Overpass {
 }
 
 /// Downloads every place in [`IMPORT_BBOX`] into the local copy. One large query a
-/// week is kinder to the public servers than one per area, and a failure only delays
+/// day is kinder to the public servers than one per area, and a failure only delays
 /// the refresh instead of breaking a user's request.
 pub async fn import(db: &SqlitePool, overpass: &Overpass) -> anyhow::Result<usize> {
     let places = overpass.fetch_any(&query(IMPORT_BBOX, 300), Duration::from_secs(330)).await?;
-    store::replace_imported(db, &places).await?;
+    store::replace_imported(db, IMPORT_BBOX, &places).await?;
     store::set_setting(db, IMPORTED_AT, &store::now().to_string()).await?;
     Ok(places.len())
 }

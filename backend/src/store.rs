@@ -500,9 +500,18 @@ pub async fn place_summary(db: &SqlitePool, id: &str) -> sqlx::Result<Option<(St
     Ok(row.map(|r| (r.get("name"), r.get("lat"), r.get("lng"))))
 }
 
-/// Replaces the imported OpenStreetMap places.
-pub async fn replace_imported(db: &SqlitePool, places: &[FoundPlace]) -> sqlx::Result<()> {
+/// Replaces the imported OpenStreetMap places in `bbox`, and marks the cached areas centred
+/// in it as stale so their next request rebuilds them from the new copy.
+pub async fn replace_imported(db: &SqlitePool, bbox: Bbox, places: &[FoundPlace]) -> sqlx::Result<()> {
     let mut tx = db.begin().await?;
+    // ponytail: by centre, so an area straddling the box edge is refetched live once per import.
+    sqlx::query("UPDATE areas SET fetched_at = 0 WHERE lat BETWEEN ? AND ? AND lng BETWEEN ? AND ?")
+        .bind(bbox.south)
+        .bind(bbox.north)
+        .bind(bbox.west)
+        .bind(bbox.east)
+        .execute(&mut *tx)
+        .await?;
     sqlx::query("DELETE FROM osm_places").execute(&mut *tx).await?;
     for place in places {
         let Some(cuisine) = &place.cuisine else { continue };
@@ -576,12 +585,32 @@ mod tests {
     #[tokio::test]
     async fn imported_places_are_found_inside_a_box() {
         let db = connect("sqlite::memory:").await.unwrap();
-        replace_imported(&db, &[place("in", 50.88, 4.70, "greek"), place("out", 51.2, 4.4, "greek"), place("odd", 50.88, 4.70, "burger")])
+        let all = Bbox { south: -90.0, west: -180.0, north: 90.0, east: 180.0 };
+        replace_imported(&db, all, &[place("in", 50.88, 4.70, "greek"), place("out", 51.2, 4.4, "greek"), place("odd", 50.88, 4.70, "burger")])
             .await
             .unwrap();
         let found = imported_in(&db, Bbox { south: 50.8, west: 4.6, north: 50.9, east: 4.8 }).await.unwrap();
         assert_eq!(found.len(), 1);
         assert_eq!(found[0].id, "in");
         assert_eq!(found[0].countries, vec!["GR"]);
+    }
+
+    #[tokio::test]
+    async fn an_import_marks_the_areas_in_its_box_stale() {
+        let db = connect("sqlite::memory:").await.unwrap();
+        for (id, lat, lng) in [("leuven", 50.88, 4.70), ("paris", 48.86, 2.35)] {
+            sqlx::query("INSERT INTO areas (id, name, kind, lat, lng, shape, provider, fetched_at) VALUES (?, ?, 'city', ?, ?, '[]', 'osm', 1000)")
+                .bind(id)
+                .bind(id)
+                .bind(lat)
+                .bind(lng)
+                .execute(&db)
+                .await
+                .unwrap();
+        }
+        replace_imported(&db, Bbox { south: 49.4, west: 2.4, north: 51.6, east: 6.5 }, &[]).await.unwrap();
+        let fetched: Vec<(String, i64)> =
+            sqlx::query_as("SELECT id, fetched_at FROM areas ORDER BY id").fetch_all(&db).await.unwrap();
+        assert_eq!(fetched, vec![("leuven".into(), 0), ("paris".into(), 1000)]);
     }
 }

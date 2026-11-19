@@ -12,7 +12,7 @@ async fn main() -> anyhow::Result<()> {
     let (mut places, areas) = providers::build(&config)?;
     let db = store::connect(&config.database_url).await?;
     if config.provider == ProviderKind::Osm {
-        // Belgium comes from a weekly import, so searches there skip the slow live query.
+        // Belgium comes from a daily import, so searches there skip the slow live query.
         let http = reqwest::Client::builder().user_agent(concat!("mangiamundo/", env!("CARGO_PKG_VERSION"))).build()?;
         tokio::spawn(osm::run_imports(db.clone(), osm::Overpass::new(http, config.overpass_urls.clone())));
         places = Arc::new(osm::WithImport::new(db.clone(), places));
