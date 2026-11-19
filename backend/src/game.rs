@@ -28,7 +28,7 @@ pub struct Lifetime {
 }
 
 /// What a restaurant the user adds brings to their area, decided when they add it.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, utoipa::ToSchema)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, utoipa::ToSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum Bonus {
     None,

@@ -635,8 +635,8 @@ pub async fn add_place(db: &SqlitePool, user: &str, place: &NewPlace, at: i64, l
     };
     let (area_id, area_name) = home.unzip();
     sqlx::query(
-        "INSERT INTO additions (place_id, user_id, name, country, area_id, area_name, bonus, submitted_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+        "INSERT INTO additions (place_id, user_id, name, country, area_id, area_name, claimed_bonus, bonus, submitted_at)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?7, ?8)",
     )
     .bind(&id)
     .bind(user)
@@ -764,55 +764,77 @@ async fn match_pending(tx: &mut sqlx::SqliteConnection) -> sqlx::Result<usize> {
     Ok(matched)
 }
 
-/// Marks an addition as confirmed and settles its reward. Only the first addition of a place
-/// earns anything. Its bonus stays unless an earlier addition in the same area, confirmed
-/// or still pending, already claims it: the same country for a country bonus, the same
-/// continent for a continent bonus.
+/// Marks an addition as confirmed. Only the first addition of a place to be confirmed earns
+/// anything; later ones are duplicates. Then the bonuses of its city are settled again.
 async fn confirm_addition(tx: &mut sqlx::SqliteConnection, id: &str, osm_id: &str, at: i64) -> sqlx::Result<()> {
-    let Some(row) = sqlx::query("SELECT country, area_id, bonus, submitted_at FROM additions WHERE place_id = ?")
+    let Some(area_id) = sqlx::query_scalar::<_, Option<String>>("SELECT area_id FROM additions WHERE place_id = ?")
         .bind(id)
         .fetch_optional(&mut *tx)
         .await?
     else {
         return Ok(());
     };
-    let (country, area_id, submitted_at): (String, Option<String>, i64) =
-        (row.get("country"), row.get("area_id"), row.get("submitted_at"));
-    let mut bonus = Bonus::parse(row.get("bonus"));
     let duplicate: bool = sqlx::query_scalar("SELECT EXISTS (SELECT 1 FROM additions WHERE osm_place_id = ? AND rewarded)")
         .bind(osm_id)
         .fetch_one(&mut *tx)
         .await?;
-    if bonus != Bonus::None {
-        // Claims of earlier additions that didn't turn out to be duplicates.
-        let earlier: Vec<(String, String)> = sqlx::query_as(
-            "SELECT country, bonus FROM additions
-             WHERE area_id = ?1 AND place_id != ?2 AND bonus != 'none'
-               AND (submitted_at < ?3 OR (submitted_at = ?3 AND place_id < ?2))
-               AND (confirmed_at IS NULL OR rewarded)",
-        )
-        .bind(&area_id)
-        .bind(id)
-        .bind(submitted_at)
-        .fetch_all(&mut *tx)
-        .await?;
-        let continent = |code: &str| catalog::country(code).map(|c| c.continent.clone());
-        if earlier.iter().any(|(c, _)| *c == country) {
-            bonus = Bonus::None;
-        } else if bonus == Bonus::Continent
-            && earlier.iter().any(|(c, b)| b == "continent" && continent(c) == continent(&country))
-        {
-            bonus = Bonus::Country;
+    sqlx::query(
+        "UPDATE additions SET confirmed_at = ?, osm_place_id = ?, rewarded = ?,
+             bonus = CASE WHEN ? THEN 'none' ELSE claimed_bonus END
+         WHERE place_id = ?",
+    )
+    .bind(at)
+    .bind(osm_id)
+    .bind(!duplicate)
+    .bind(duplicate)
+    .bind(id)
+    .execute(&mut *tx)
+    .await?;
+    if let Some(area_id) = area_id {
+        settle_bonuses(&mut *tx, &area_id, id).await?;
+    }
+    Ok(())
+}
+
+/// Hands out a city's country and continent bonuses in submission order: an addition keeps
+/// the bonus it claimed unless an earlier one, pending or rewarded, holds it. Duplicates hold
+/// nothing, so a bonus whose claimant turned out to be a duplicate goes to the next in line.
+/// `just_confirmed` takes the bonus it is due; others already confirmed only ever gain, so XP
+/// that was granted and announced never goes down.
+async fn settle_bonuses(tx: &mut sqlx::SqliteConnection, area_id: &str, just_confirmed: &str) -> sqlx::Result<()> {
+    let rows: Vec<(String, String, String, String, bool)> = sqlx::query_as(
+        "SELECT place_id, country, claimed_bonus, bonus, confirmed_at IS NOT NULL FROM additions
+         WHERE area_id = ? AND (confirmed_at IS NULL OR rewarded)
+         ORDER BY submitted_at, place_id",
+    )
+    .bind(area_id)
+    .fetch_all(&mut *tx)
+    .await?;
+    let continent = |code: &str| catalog::country(code).map(|c| c.continent.as_str());
+    let (mut countries, mut continents) = (Vec::new(), Vec::new());
+    for (id, country, claimed, current, confirmed) in rows {
+        let due = match Bonus::parse(&claimed) {
+            Bonus::None => Bonus::None,
+            _ if countries.contains(&country) => Bonus::None,
+            Bonus::Continent if continents.contains(&continent(&country)) => Bonus::Country,
+            claimed => claimed,
+        };
+        let current = Bonus::parse(&current);
+        let settled = if !confirmed || id == just_confirmed { due } else { due.max(current) };
+        if settled != Bonus::None {
+            countries.push(country.clone());
+        }
+        if settled == Bonus::Continent {
+            continents.push(continent(&country));
+        }
+        if confirmed && settled != current {
+            sqlx::query("UPDATE additions SET bonus = ? WHERE place_id = ?")
+                .bind(settled.as_str())
+                .bind(&id)
+                .execute(&mut *tx)
+                .await?;
         }
     }
-    sqlx::query("UPDATE additions SET confirmed_at = ?, osm_place_id = ?, rewarded = ?, bonus = ? WHERE place_id = ?")
-        .bind(at)
-        .bind(osm_id)
-        .bind(!duplicate)
-        .bind(bonus.as_str())
-        .bind(id)
-        .execute(&mut *tx)
-        .await?;
     Ok(())
 }
 
@@ -1051,8 +1073,8 @@ mod tests {
                 "INSERT INTO places (id, name, lat, lng, cuisine, updated_at, added_by, added_at)
                  VALUES (?1, 'Lalibela', 50.88, 4.7, 'ethiopian', 1000, ?2, 1000)",
                 "INSERT INTO place_countries (place_id, country) VALUES (?1, 'ET')",
-                "INSERT INTO additions (place_id, user_id, name, country, area_id, bonus, submitted_at)
-                 VALUES (?1, ?2, 'Lalibela', 'ET', 'leuven', 'country', 1000)",
+                "INSERT INTO additions (place_id, user_id, name, country, area_id, claimed_bonus, bonus, submitted_at)
+                 VALUES (?1, ?2, 'Lalibela', 'ET', 'leuven', 'country', 'country', 1000)",
             ] {
                 sqlx::query(sql).bind(id).bind(&user).execute(&db).await.unwrap();
             }
@@ -1122,6 +1144,57 @@ mod tests {
         area("leuven", "city").execute(&db).await.unwrap();
         let added = add_place(&db, &user, &new, 1001, 5).await.unwrap().unwrap();
         assert_eq!((added.bonus, added.area_name.as_deref()), (Bonus::Continent, Some("leuven")));
+    }
+
+    #[tokio::test]
+    async fn a_bonus_held_by_an_addition_that_turns_out_a_duplicate_goes_to_the_next_in_line() {
+        let db = connect("sqlite::memory:").await.unwrap();
+        let token = create_user(&db).await.unwrap();
+        let user = user_for_token(&db, &token).await.unwrap().unwrap();
+        // Three Ethiopian additions in one city, each claiming the country bonus. Habesha is
+        // 220 m from the two Lalibelas, which are the same restaurant.
+        for (id, name, lat, at) in [
+            ("user-a", "Lalibela Original", 50.88, 1000),
+            ("user-b", "Habesha", 50.882, 1001),
+            ("user-c", "Lalibela New", 50.88, 1002),
+        ] {
+            for sql in [
+                "INSERT INTO places (id, name, lat, lng, cuisine, updated_at, added_by, added_at)
+                 VALUES (?1, ?2, ?3, 4.7, 'ethiopian', ?4, ?5, ?4)",
+                "INSERT INTO place_countries (place_id, country) VALUES (?1, 'ET')",
+                "INSERT INTO additions (place_id, user_id, name, country, area_id, claimed_bonus, bonus, submitted_at)
+                 VALUES (?1, ?5, ?2, 'ET', 'leuven', 'country', 'country', ?4)",
+            ] {
+                sqlx::query(sql).bind(id).bind(name).bind(lat).bind(at).bind(&user).execute(&db).await.unwrap();
+            }
+        }
+        let osm = |id: &str, name: &str, lat| {
+            let mut p = place(id, lat, 4.7, "ethiopian");
+            p.name = name.into();
+            p
+        };
+        let all = Bbox { south: -90.0, west: -180.0, north: 90.0, east: 180.0 };
+        let settled = || async {
+            sqlx::query_as::<_, (String, String, bool)>("SELECT place_id, bonus, rewarded FROM additions ORDER BY place_id")
+                .fetch_all(&db)
+                .await
+                .unwrap()
+        };
+        let row = |id: &str, bonus: &str, rewarded| (id.to_string(), bonus.to_string(), rewarded);
+
+        // Habesha and "Lalibela New" are mapped; "Lalibela Original" matches neither, and
+        // still holds the bonus as the earliest claim.
+        replace_imported(&db, all, &[osm("osm-node-1", "Lalibela New", 50.88), osm("osm-node-2", "Habesha", 50.882)])
+            .await
+            .unwrap();
+        assert_eq!(settled().await, vec![row("user-a", "country", false), row("user-b", "none", true), row("user-c", "none", true)]);
+
+        // The mapper renames it "Lalibela": the first addition now matches, but the place
+        // went to "Lalibela New". The bonus it held goes to Habesha, next in line.
+        replace_imported(&db, all, &[osm("osm-node-1", "Lalibela", 50.88), osm("osm-node-2", "Habesha", 50.882)])
+            .await
+            .unwrap();
+        assert_eq!(settled().await, vec![row("user-a", "none", false), row("user-b", "country", true), row("user-c", "none", true)]);
     }
 
     #[tokio::test]

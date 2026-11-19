@@ -10,7 +10,9 @@ CREATE TABLE additions (
     area_id      TEXT,
     area_name    TEXT,
     -- Decided when the place was added: was its country, or its whole continent, new there?
-    -- Lowered at confirmation when an earlier addition in the area holds the same bonus.
+    claimed_bonus TEXT NOT NULL CHECK (claimed_bonus IN ('none', 'country', 'continent')),
+    -- What it earns: the claimed bonus, less what an earlier addition in the city holds.
+    -- Settled again at each confirmation there, and never lowered once confirmed.
     bonus        TEXT NOT NULL CHECK (bonus IN ('none', 'country', 'continent')),
     submitted_at INTEGER NOT NULL,
     -- Set when the import matched it with an OpenStreetMap place.
@@ -26,8 +28,8 @@ CREATE INDEX additions_area ON additions(area_id, country);
 CREATE INDEX additions_osm_place ON additions(osm_place_id);
 
 -- Places added before rewards existed still earn the base reward.
-INSERT INTO additions (place_id, user_id, name, country, bonus, submitted_at)
-SELECT p.id, p.added_by, p.name, pc.country, 'none', p.added_at
+INSERT INTO additions (place_id, user_id, name, country, claimed_bonus, bonus, submitted_at)
+SELECT p.id, p.added_by, p.name, pc.country, 'none', 'none', p.added_at
 FROM places p JOIN place_countries pc ON pc.place_id = p.id
 WHERE p.added_by IS NOT NULL
 GROUP BY p.id;
