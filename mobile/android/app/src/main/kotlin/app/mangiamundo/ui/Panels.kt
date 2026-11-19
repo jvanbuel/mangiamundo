@@ -770,7 +770,8 @@ fun PlaceDetail(
                 "Something wrong? Edit " + (editor?.let { "in ${it.label}" } ?: "on OpenStreetMap"),
                 style = small,
                 color = colors.muted,
-                modifier = Modifier.padding(top = 4.dp).clickable { context.edit(place, editor, url) },
+                // Checked again on tap: the app may have been uninstalled since the label was drawn.
+                modifier = Modifier.padding(top = 4.dp).clickable { context.edit(place, context.editorApp(), url) },
             )
             Text(
                 "Data © OpenStreetMap contributors",
