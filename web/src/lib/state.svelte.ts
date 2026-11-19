@@ -187,7 +187,9 @@ async function followLink() {
 		if (document.visibilityState !== 'visible' || !editing) return;
 		const id = editing;
 		editing = null;
-		void refreshPlace(id, true);
+		// A refresh still running may predate the edit: this one goes after it.
+		if (app.refreshingPlace) queuedRefresh = id;
+		else void refreshPlace(id, true);
 	});
 	addEventListener('popstate', () => {
 		closing = false;
@@ -567,6 +569,8 @@ export async function reportClosed(place: Place) {
 
 /** The place whose OpenStreetMap page the user opened to edit it, read again when they come back. */
 let editing: string | null = null;
+/** A refresh waiting for the one running to finish. */
+let queuedRefresh: string | null = null;
 
 export function editingOnOsm(id: string) {
 	editing = id;
@@ -580,28 +584,42 @@ export async function refreshPlace(id: string, quiet = false) {
 	const name = app.detail?.id === id ? app.detail.name : (app.places.find((p) => p.id === id)?.name ?? 'This place');
 	try {
 		const { status, place } = await api.refreshPlace(id, here());
-		if (status === 'unchanged') {
-			toast(null, 'No change on OpenStreetMap yet', 'A new edit can take a minute or two to show up there. Try again shortly.');
-			return;
-		}
 		if (status === 'gone' || !place) {
 			app.places = app.places.filter((p) => p.id !== id);
 			if (app.placeId === id) closePlace();
 			toast(null, `${name} is gone from OpenStreetMap`, 'It is hidden now. Your visits to it are kept.');
 		} else {
-			if (app.detail?.id === id) app.detail = place;
-			// The card shows only the latest visit.
-			app.places = app.places.map((p) => (p.id === id ? { ...place, visits: place.visits.slice(0, 1) } : p));
-			toast(null, `${place.name} updated`, 'This is the latest from OpenStreetMap.');
+			// Also when unchanged: someone else's refresh may have updated it since it loaded.
+			applyRefreshed(place);
+			if (status === 'updated') toast(null, `${place.name} updated`, 'This is the latest from OpenStreetMap.');
+			else toast(null, 'No change on OpenStreetMap yet', 'A new edit can take a minute or two to show up there. Try again shortly.');
 		}
-		// Its countries may have changed.
-		const location = app.location;
-		if (location) app.discover = await api.discover(location.area.id);
+		if (status !== 'unchanged') {
+			// Its countries may have changed. A reply for an area the user has left is dropped.
+			const location = app.location;
+			if (location) {
+				const discover = await api.discover(location.area.id);
+				if (app.location === location) app.discover = discover;
+			}
+		}
 	} catch (error) {
 		if (!quiet) toast(null, 'Could not refresh this place', message(error));
 	} finally {
 		app.refreshingPlace = null;
+		const next = queuedRefresh;
+		queuedRefresh = null;
+		if (next) void refreshPlace(next, true);
 	}
+}
+
+/** Shows a place read again from OpenStreetMap. Visits stay as shown: a check-in or undo
+ * made while the refresh ran is newer than the reply. A place no longer serving the selected
+ * country's food leaves that list. */
+function applyRefreshed(place: Place) {
+	if (app.detail?.id === place.id) app.detail = { ...place, visits: app.detail.visits };
+	app.places = app.places
+		.map((p) => (p.id === place.id ? { ...place, visits: p.visits } : p))
+		.filter((p) => p.id !== place.id || !app.selected || p.countries.includes(app.selected));
 }
 
 /** Asks OpenStreetMap for restaurants just mapped around the user, for someone who added one
@@ -612,14 +630,16 @@ export async function lookAgainNearby() {
 	try {
 		const { coords } = await position();
 		gpsFix = { lat: coords.latitude, lng: coords.longitude, at: Date.now() };
-		const { added } = await api.refreshNearby({ lat: coords.latitude, lng: coords.longitude });
-		if (added.length === 0) {
+		const { added, matched } = await api.refreshNearby({ lat: coords.latitude, lng: coords.longitude });
+		if (added.length === 0 && matched === 0) {
 			toast(null, 'Nothing new within 150 m yet', 'A place just added on OpenStreetMap can take a minute or two to show up. Try again shortly.');
 			return;
 		}
-		const names = added.map((p) => p.name).join(', ');
-		toast(null, `Found ${names}`, added.length === 1 ? 'It is on the map for everyone now.' : 'They are on the map for everyone now.');
-		// New countries, and any addition of the user's they confirmed.
+		if (added.length > 0) {
+			const names = added.map((p) => p.name).join(', ');
+			toast(null, `Found ${names}`, added.length === 1 ? 'It is on the map for everyone now.' : 'They are on the map for everyone now.');
+		}
+		// New countries, and any addition of the user's confirmed (announced by the refresh).
 		await refresh();
 	} catch (error) {
 		toast(null, 'Could not look again', message(error));

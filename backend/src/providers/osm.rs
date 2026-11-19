@@ -111,6 +111,9 @@ impl Overpass {
 #[derive(Deserialize)]
 struct OverpassResponse {
     elements: Vec<Element>,
+    /// Set when the query failed on the server (a timeout, out of memory) even though the
+    /// answer is a 200 with an empty `elements`.
+    remark: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -168,6 +171,11 @@ fn is_closed(tags: &HashMap<String, String>, today: &str) -> bool {
 
 fn parse(body: &str) -> anyhow::Result<Vec<FoundPlace>> {
     let response: OverpassResponse = serde_json::from_str(body)?;
+    // An empty answer from a failed query must not read as "no restaurants": that would empty
+    // an area, or hide a refreshed place. An error lets the next server try.
+    if let Some(remark) = response.remark.as_deref().filter(|r| r.contains("error")) {
+        anyhow::bail!("overpass query failed: {remark}");
+    }
     let today = chrono::Utc::now().format("%Y-%m-%d").to_string();
     let mut places = Vec::new();
     for el in response.elements {
@@ -522,6 +530,13 @@ fn photon_areas(found: &Value) -> Vec<AreaInfo> {
 
 #[cfg(test)]
 mod tests {
+
+    #[test]
+    fn a_failed_query_is_an_error_not_an_empty_answer() {
+        let failed = r#"{"elements":[],"remark":"runtime error: Query timed out in \"query\" at line 1 after 26 seconds."}"#;
+        assert!(parse(failed).is_err());
+        assert!(parse(r#"{"elements":[]}"#).unwrap().is_empty(), "really nothing there");
+    }
 
     #[test]
     fn element_queries_take_only_osm_element_ids() {

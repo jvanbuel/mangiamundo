@@ -438,11 +438,15 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         editing = placeId
     }
 
+    /** A refresh waiting for the one running to finish. */
+    private var queuedRefresh: String? = null
+
     /** Back in the app: shows an edit just made to a place on OpenStreetMap. */
     fun onResume() {
         val id = editing ?: return
         editing = null
-        refreshPlace(id, quiet = true)
+        // A refresh still running may predate the edit: this one goes after it.
+        if (refreshingPlace != null) queuedRefresh = id else refreshPlace(id, quiet = true)
     }
 
     /** Reads a place again from OpenStreetMap and says what changed. With `quiet`, a failure
@@ -455,31 +459,47 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
             try {
                 val result = api.refreshPlace(placeId, userPosition())
                 val place = result.place
-                when {
-                    result.status == Refreshed.UNCHANGED || result.status == Refreshed.UNKNOWN ->
-                        messageChannel.trySend("No change on OpenStreetMap yet. A new edit can take a minute or two to show up there.")
-                    result.status == Refreshed.GONE || place == null -> {
-                        places = places.filter { it.id != placeId }
-                        if (detail?.id == placeId) closePlace()
-                        messageChannel.trySend("$name is gone from OpenStreetMap, so it's hidden now. Your visits to it are kept.")
-                    }
-                    else -> {
-                        val fresh = checkNotNull(place)
-                        if (detail?.id == placeId) detail = fresh
-                        // The card shows only the latest visit.
-                        places = places.map { if (it.id == placeId) fresh.copy(visits = fresh.visits.take(1)) else it }
-                        messageChannel.trySend("${fresh.name} updated from OpenStreetMap.")
+                if (result.status == Refreshed.GONE || place == null) {
+                    places = places.filter { it.id != placeId }
+                    if (detail?.id == placeId) closePlace()
+                    messageChannel.trySend("$name is gone from OpenStreetMap, so it's hidden now. Your visits to it are kept.")
+                } else {
+                    // Also when unchanged: someone else's refresh may have updated it since it loaded.
+                    applyRefreshed(place)
+                    messageChannel.trySend(
+                        if (result.status == Refreshed.UPDATED) "${place.name} updated from OpenStreetMap."
+                        else "No change on OpenStreetMap yet. A new edit can take a minute or two to show up there.",
+                    )
+                }
+                // Its countries may have changed. A reply for an area the user has left is dropped.
+                if (result.status != Refreshed.UNCHANGED) {
+                    val refresh = refreshes
+                    location?.let { here ->
+                        runCatching { api.discover(here.area.id) }.onSuccess { if (refresh == refreshes) discover = it }
                     }
                 }
-                // Its countries may have changed.
-                if (result.status == Refreshed.UPDATED || result.status == Refreshed.GONE) {
-                    location?.let { here -> runCatching { api.discover(here.area.id) }.onSuccess { discover = it } }
-                }
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
             } catch (e: Exception) {
                 if (!quiet) messageChannel.trySend("Could not refresh this place: ${e.message}")
+            } finally {
+                refreshingPlace = null
+                queuedRefresh?.let { next ->
+                    queuedRefresh = null
+                    refreshPlace(next, quiet = true)
+                }
             }
-            refreshingPlace = null
         }
+    }
+
+    /** Shows a place read again from OpenStreetMap. Visits stay as shown: a check-in or undo
+     * made while the refresh ran is newer than the reply. A place no longer serving the
+     * selected country's food leaves that list. */
+    private fun applyRefreshed(place: Place) {
+        detail?.let { if (it.id == place.id) detail = place.copy(visits = it.visits) }
+        places = places
+            .map { if (it.id == place.id) place.copy(visits = it.visits) else it }
+            .filter { it.id != place.id || selected == null || selected in it.countries }
     }
 
     /** Asks OpenStreetMap for restaurants just mapped around the user, for someone who added
@@ -494,11 +514,11 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
                     messageChannel.trySend("Could not determine your location. Try again outside, or with location turned on.")
                 } else {
                     gpsFix = Triple(fix.latitude, fix.longitude, System.currentTimeMillis())
-                    val added = api.refreshNearby(fix.latitude, fix.longitude).added
-                    if (added.isEmpty()) {
+                    val (added, matched) = api.refreshNearby(fix.latitude, fix.longitude)
+                    if (added.isEmpty() && matched == 0) {
                         messageChannel.trySend("Nothing new within 150 m yet. A place just added on OpenStreetMap can take a minute or two to show up.")
                     } else {
-                        messageChannel.trySend("Found ${added.joinToString { it.name }}: on the map for everyone now.")
+                        if (added.isNotEmpty()) messageChannel.trySend("Found ${added.joinToString { it.name }}: on the map for everyone now.")
                         // New countries, and any of the user's additions they confirmed.
                         refresh()
                     }

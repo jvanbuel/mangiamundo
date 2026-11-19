@@ -756,6 +756,8 @@ pub async fn refresh_place(db: &SqlitePool, id: &str, lookup: &Lookup, at: i64) 
             let before = snapshot(&mut tx, id).await?;
             upsert_place(&mut tx, place, at).await?;
             keep_imported(&mut tx, place).await?;
+            // It may have moved: only the areas holding its new position keep it.
+            sqlx::query("DELETE FROM area_places WHERE place_id = ?").bind(id).execute(&mut *tx).await?;
             put_in_areas(&mut tx, id, place.lat, place.lng).await?;
             let after = snapshot(&mut tx, id).await?;
             if listed && before == after { Refreshed::Unchanged } else { Refreshed::Updated }

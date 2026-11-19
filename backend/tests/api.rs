@@ -1098,6 +1098,11 @@ async fn a_place_can_be_refreshed_from_osm_before_the_next_import() {
     assert_error(&error, "too_many_requests");
     clock.fetch_add(61, Ordering::Relaxed);
 
+    // Moved out of Leuven on OSM: no longer listed there.
+    set(Lookup::Found(osm_place(42, "Lalibela", "ethiopian", 51.2194, 4.4025)));
+    assert_eq!(refresh("osm-node-42").await.1["status"], "updated");
+    assert!(!countries_here(&app, &token).await.contains(&"ET".to_string()));
+
     // Only OSM places this user can see, and OSM must answer.
     assert_eq!(call(&app, "POST", "/api/places/osm-node-42/refresh", None, None).await.0, StatusCode::UNAUTHORIZED);
     assert_eq!(refresh("user-abc").await.0, StatusCode::BAD_REQUEST);
