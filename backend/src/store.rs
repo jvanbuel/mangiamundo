@@ -654,12 +654,13 @@ async fn match_pending(tx: &mut sqlx::SqliteConnection) -> sqlx::Result<usize> {
     for p in pending {
         let (id, name, lat, lng, country): (String, String, f64, f64, String) =
             (p.get("id"), p.get("name"), p.get("lat"), p.get("lng"), p.get("country"));
-        // 0.001° is at least 70 m both ways at any inhabited latitude.
+        // 0.001° of latitude is 111 m; a degree of longitude shrinks with cos(latitude).
+        let dlng = 0.001 / lat.to_radians().cos().max(0.01);
         let near = sqlx::query("SELECT * FROM osm_places WHERE lat BETWEEN ? AND ? AND lng BETWEEN ? AND ?")
             .bind(lat - 0.001)
             .bind(lat + 0.001)
-            .bind(lng - 0.001)
-            .bind(lng + 0.001)
+            .bind(lng - dlng)
+            .bind(lng + dlng)
             .fetch_all(&mut *tx)
             .await?;
         let twin = near
@@ -770,32 +771,53 @@ mod tests {
     #[tokio::test]
     async fn an_import_swaps_pending_places_for_their_osm_twins() {
         let db = connect("sqlite::memory:").await.unwrap();
-        let token = create_user(&db).await.unwrap();
-        let user = user_for_token(&db, &token).await.unwrap().unwrap();
-        let new = |name: &str, lat| NewPlace {
+        let mut users = vec![];
+        for _ in 0..2 {
+            let token = create_user(&db).await.unwrap();
+            users.push(user_for_token(&db, &token).await.unwrap().unwrap());
+        }
+        let (a, b) = (&users[0], &users[1]);
+        let new = |name: &str, lat, lng| NewPlace {
             name: name.into(),
             lat,
-            lng: 4.7,
+            lng,
             address: None,
             url: None,
             country: "ET",
             cuisine: "ethiopian",
         };
-        let near = add_place(&db, &user, &new("Lalibela", 50.88), 1000, 5).await.unwrap().unwrap();
-        let far = add_place(&db, &user, &new("Lalibela", 50.882), 1001, 5).await.unwrap().unwrap();
-        add_visit(&db, &user, &near, true, 1000, NaiveDate::from_ymd_opt(2026, 11, 19).unwrap()).await.unwrap();
+        let day = |d| NaiveDate::from_ymd_opt(2026, 11, d).unwrap();
+        let mine = add_place(&db, a, &new("Lalibela", 50.88, 4.7), 1000, 5).await.unwrap().unwrap();
+        let theirs = add_place(&db, b, &new("lalibela", 50.88, 4.7), 1001, 5).await.unwrap().unwrap();
+        let far = add_place(&db, a, &new("Lalibela", 50.882, 4.7), 1002, 5).await.unwrap().unwrap();
+        // 0.0012° of longitude is 46 m up here, past a fixed 0.001° box.
+        add_place(&db, a, &new("Polar", 70.0, 20.0), 1003, 5).await.unwrap().unwrap();
 
+        // `a` already checked in at the OSM place on the 19th, as well as at their own copy.
         let mut twin = place("osm-node-1", 50.8801, 4.7, "ethiopian");
         twin.name = "Restaurant Lalibela".into();
+        let mut conn = db.acquire().await.unwrap();
+        upsert_place(&mut conn, &twin, 1000).await.unwrap();
+        drop(conn);
+        let at_twin = add_visit(&db, a, "osm-node-1", true, 1000, day(19)).await.unwrap();
+        add_visit(&db, a, &mine, true, 1000, day(19)).await.unwrap();
+        let mine_20th = add_visit(&db, a, &mine, true, 2000, day(20)).await.unwrap();
+        let theirs_19th = add_visit(&db, b, &theirs, true, 1000, day(19)).await.unwrap();
+
         let mut decoy = place("osm-node-2", 50.88, 4.7, "ethiopian");
         decoy.name = "Habesha".into();
+        let mut polar = place("osm-node-3", 70.0, 20.0012, "ethiopian");
+        polar.name = "Polar".into();
         let all = Bbox { south: -90.0, west: -180.0, north: 90.0, east: 180.0 };
-        assert_eq!(replace_imported(&db, all, &[decoy, twin]).await.unwrap(), 1);
+        assert_eq!(replace_imported(&db, all, &[decoy, twin, polar]).await.unwrap(), 3);
 
         let ids: Vec<String> = sqlx::query_scalar("SELECT id FROM places ORDER BY id").fetch_all(&db).await.unwrap();
-        assert_eq!(ids, vec!["osm-node-1".to_string(), far]);
-        let visited: Vec<String> = sqlx::query_scalar("SELECT place_id FROM visits").fetch_all(&db).await.unwrap();
-        assert_eq!(visited, vec!["osm-node-1"]);
+        assert_eq!(ids, vec!["osm-node-1".to_string(), "osm-node-3".into(), far]);
+        // Only the clashing visit on the 19th goes; the others keep their ids.
+        let visits: Vec<(i64, String)> =
+            sqlx::query_as("SELECT id, place_id FROM visits ORDER BY id").fetch_all(&db).await.unwrap();
+        let on_twin = |v: &Visit| (v.id, "osm-node-1".to_string());
+        assert_eq!(visits, vec![on_twin(&at_twin), on_twin(&mine_20th), on_twin(&theirs_19th)]);
         let countries: Vec<String> =
             sqlx::query_scalar("SELECT country FROM place_countries WHERE place_id = 'osm-node-1'").fetch_all(&db).await.unwrap();
         assert_eq!(countries, vec!["ET"]);
