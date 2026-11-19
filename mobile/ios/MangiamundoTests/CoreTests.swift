@@ -103,6 +103,23 @@ final class ContractTests: XCTestCase {
         XCTAssertTrue(places.allSatisfy { $0.hours?.week == nil })
         XCTAssertFalse(try decode([Area].self, "areas").isEmpty)
         XCTAssertEqual(try decode(Located.self, "located").options.count, 2)
+        let added = try decode(AddedPlace.self, "added")
+        XCTAssertEqual(added.place.name, "Kiwi")
+        XCTAssertEqual(added.reward, Reward(xp: 380, bonus: .continent, areaName: "Leuven"))
+        let additions = try decode([Addition].self, "additions")
+        XCTAssertEqual(additions[0].status, .pending)
+        XCTAssertFalse(additions[0].isNews)
+    }
+
+    func testRewardsReadAsSentences() throws {
+        let catalog = try decode(Catalog.self, "countries")
+        XCTAssertEqual(
+            Reward(xp: 380, bonus: .continent, areaName: "Leuven").pendingText(country: "NZ", catalog: catalog),
+            "+380 XP once it is on OpenStreetMap: Oceania food would be new in Leuven."
+        )
+        XCTAssertEqual(Reward(xp: 30, bonus: .none, areaName: nil).pendingText(country: "NZ", catalog: catalog), "+30 XP once it is on OpenStreetMap.")
+        let addition = try decode([Addition].self, "additions")[0]
+        XCTAssertEqual(addition.announcement(catalog: catalog), "🇳🇿 Kiwi is on the map. +380 XP, and Oceania food is new in Leuven!")
     }
 
     func testToleratesWhatANewerServerSends() throws {

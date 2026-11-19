@@ -243,6 +243,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
                     if (discover?.countries?.any { it.code == code } == true) select(code)
                 }
                 celebrations = runCatching { api.celebrations(here.area.id) }.getOrDefault(emptyList())
+                announceConfirmedAdditions()
                 rescheduleReminders()
             } catch (e: kotlinx.coroutines.CancellationException) {
                 throw e
@@ -444,10 +445,11 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         addingPlace = true
         viewModelScope.launch {
             try {
-                val place = api.addPlace(name, country, lat, lng, address, website, note)
+                val (place, reward) = api.addPlace(name, country, lat, lng, address, website, note)
+                val earns = reward.pendingText(country.uppercase(), catalog)
                 messageChannel.trySend(
-                    if (note) "${place.name} added. You see it right away; OpenStreetMap mappers were asked to add it for everyone."
-                    else "${place.name} added for you. Now add it to the map in the other app, so everyone gets it.",
+                    if (note) "${place.name} added. You see it right away. $earns"
+                    else "${place.name} added for you. Now add it to the map in the other app, so everyone gets it. $earns",
                 )
                 onAdded()
                 openPlace(place)
@@ -461,6 +463,17 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
                 messageChannel.trySend("Could not add the restaurant: ${e.message}")
             }
             addingPlace = false
+        }
+    }
+
+    /** "Lalibela is on the map. +130 XP…" for each addition OpenStreetMap now has that the
+     * user wasn't told about. A failure leaves them for the next refresh. */
+    private suspend fun announceConfirmedAdditions() {
+        runCatching {
+            val news = api.additions().filter { it.news }
+            if (news.isEmpty()) return
+            for (addition in news) messageChannel.trySend(addition.announcement(catalog))
+            api.markAdditionsSeen()
         }
     }
 

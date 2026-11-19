@@ -80,12 +80,22 @@ actor APIClient {
 
     /// Adds a restaurant OpenStreetMap lacks. Only this user sees it until OSM has it.
     /// `note: false` when the user adds it to OSM themselves, so no note asks mappers to.
-    func addPlace(name: String, country: String, lat: Double, lng: Double, address: String?, website: String?, note: Bool) async throws -> Place {
+    func addPlace(name: String, country: String, lat: Double, lng: Double, address: String?, website: String?, note: Bool) async throws -> AddedPlace {
         var body: [String: Any] = ["name": name, "country": country, "lat": lat, "lng": lng, "note": note]
         body["address"] = address
         body["website"] = website
         let data = try JSONSerialization.data(withJSONObject: body)
         return try decode(await authed("POST", "/api/places", body: data))
+    }
+
+    /// The restaurants this user added, newest first, with their rewards.
+    func additions() async throws -> [Addition] {
+        try decode(await authed("GET", "/api/additions"))
+    }
+
+    /// The user was told about their confirmed additions.
+    func markAdditionsSeen() async throws {
+        _ = try await authed("PUT", "/api/additions/seen")
     }
 
     /// Cities and postal codes matching what someone typed.

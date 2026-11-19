@@ -70,9 +70,20 @@ class ApiClient(private val baseUrl: String, private val tokens: TokenStore) {
 
     /** Adds a restaurant OpenStreetMap lacks. Only this user sees it until OSM has it. */
     /** `note = false` when the user adds it to OSM themselves, so no note asks mappers to. */
-    suspend fun addPlace(name: String, country: String, lat: Double, lng: Double, address: String?, website: String?, note: Boolean = true): Place {
+    suspend fun addPlace(name: String, country: String, lat: Double, lng: Double, address: String?, website: String?, note: Boolean = true): AddedPlace {
         val body = json.encodeToString(AddPlaceBody.serializer(), AddPlaceBody(name, country, lat, lng, address, website, note))
-        return json.decodeFromString(authed("POST", "/api/places", body))
+        return decodeAdded(authed("POST", "/api/places", body))
+    }
+
+    internal fun decodeAdded(text: String): AddedPlace =
+        AddedPlace(json.decodeFromString<Place>(text), json.decodeFromString<RewardOnly>(text).reward)
+
+    /** The restaurants this user added, newest first, with their rewards. */
+    suspend fun additions(): List<Addition> = json.decodeFromString(authed("GET", "/api/additions"))
+
+    /** The user was told about their confirmed additions. */
+    suspend fun markAdditionsSeen() {
+        authed("PUT", "/api/additions/seen")
     }
 
     /** Cities and postal codes matching what someone typed. */

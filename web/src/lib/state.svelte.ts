@@ -5,6 +5,8 @@ import { hideSplash } from './splash';
 import {
 	statusOf,
 	type AddPlace,
+	type AddedPlace,
+	type Bonus,
 	type BadgeKind,
 	type Celebration,
 	type Catalog,
@@ -412,6 +414,7 @@ export async function refresh() {
 	try {
 		const result = await api.discover(location.area.id);
 		if (id === requestId) app.discover = result;
+		void announceConfirmedAdditions();
 	} catch (error) {
 		if (id === requestId) {
 			app.error = message(error);
@@ -562,16 +565,58 @@ export async function startingPoint(): Promise<{ lat: number; lng: number }> {
 	}
 }
 
+/** What an addition brings to its area, as "Ethiopia is new in Leuven". Empty without a bonus. */
+function bonusText(bonus: Bonus, code: string, area: string | null, tense: 'is' | 'would be'): string {
+	const info = country(code);
+	const where = area ? ` in ${area}` : ' here';
+	if (bonus === 'continent' && info) {
+		const continent = app.catalog?.continents.find((c) => c.code === info.continent)?.name ?? 'Its continent';
+		return `${continent} food ${tense} new${where}`;
+	}
+	if (bonus === 'country' && info) return `${info.name} ${tense} new${where}`;
+	return '';
+}
+
+/** "Lalibela is on the map. +130 XP, and Ethiopia is new in Leuven!" for each addition
+ * OpenStreetMap now has that the user wasn't told about. Runs once at a time. */
+let announcing = false;
+async function announceConfirmedAdditions() {
+	if (announcing) return;
+	announcing = true;
+	try {
+		const fresh = (await api.additions()).filter((a) => a.status !== 'pending' && !a.seen);
+		if (fresh.length === 0) return;
+		for (const a of fresh) {
+			const flag = country(a.country)?.flag ?? null;
+			const icon = flag ? { text: flag } : null;
+			if (a.status === 'duplicate') {
+				toast(icon, `${a.name} is on the map`, 'Someone added it before you, so it earned no XP. Thanks anyway!');
+			} else {
+				const bonus = bonusText(a.bonus, a.country, a.area_name, 'is');
+				toast(icon, `${a.name} is on the map`, bonus ? `+${a.xp} XP, and ${bonus}!` : `+${a.xp} XP. Thanks for adding it!`);
+			}
+		}
+		await api.markAdditionsSeen();
+	} catch {
+		// Shown at the next refresh instead.
+	} finally {
+		announcing = false;
+	}
+}
+
 /** Adds a restaurant OpenStreetMap lacks, where the user put the pin. True once added. */
 export async function addPlace(fields: AddPlace): Promise<boolean> {
-	let place: Place;
+	let place: AddedPlace;
 	try {
 		place = await api.addPlace(fields);
 	} catch (error) {
 		toast(null, 'Could not add the restaurant', message(error));
 		return false;
 	}
-	toast(null, `${place.name} added`, 'You see it right away. OpenStreetMap mappers were asked to add it for everyone.');
+	const { xp, bonus, area_name } = place.reward;
+	const extra = bonusText(bonus, fields.country.toUpperCase(), area_name, 'would be');
+	const reward = `+${xp} XP once it is on OpenStreetMap${extra ? `: ${extra}` : ''}.`;
+	toast(null, `${place.name} added`, `You see it right away. ${reward}`);
 	// It counts towards its country, for this user, if it lies in the area. A failure here
 	// only leaves the counts behind until the next refresh.
 	const location = app.location;

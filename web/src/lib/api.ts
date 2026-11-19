@@ -1,4 +1,4 @@
-import type { AddPlace, Area, AreaProgress, Catalog, Celebration, Discover, Health, Located, Place, VisitResult } from './types';
+import type { AddPlace, AddedPlace, Addition, Area, AreaProgress, Catalog, Celebration, Discover, Health, Located, Place, VisitResult } from './types';
 
 const BASE = import.meta.env.VITE_API_BASE ?? '';
 const TOKEN_KEY = 'mangiamundo.token';
@@ -98,7 +98,13 @@ export const reportClosed = (placeId: string) =>
 	authed<void>('PUT', `/api/places/${encodeURIComponent(placeId)}/closed`);
 
 /** Adds a restaurant OpenStreetMap lacks. Only this user sees it until OSM has it. */
-export const addPlace = (place: AddPlace) => authed<Place>('POST', '/api/places', place);
+export const addPlace = (place: AddPlace) => authed<AddedPlace>('POST', '/api/places', place);
+
+/** The restaurants this user added, newest first, with their rewards. */
+export const additions = () => authed<Addition[]>('GET', '/api/additions');
+
+/** The user was told about their confirmed additions. */
+export const markAdditionsSeen = () => authed<void>('PUT', '/api/additions/seen');
 
 /** Cities and postal codes matching what someone typed. */
 export const searchAreas = (query: string) => raw<Area[]>('GET', `/api/areas?q=${encodeURIComponent(query)}`, null);

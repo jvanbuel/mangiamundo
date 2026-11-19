@@ -292,6 +292,7 @@ final class AppModel {
                     if result.countries.contains(where: { $0.code == code }) { select(code) }
                 }
                 celebrations = (try? await api.celebrations(areaID: here.area.id)) ?? []
+                await announceConfirmedAdditions()
                 await rescheduleReminders()
             } catch {
                 guard !Task.isCancelled else { return }
@@ -469,10 +470,12 @@ final class AppModel {
     /// `note: false` when the user adds it to OSM themselves, so no note asks mappers to.
     func addPlace(name: String, country: String, lat: Double, lng: Double, address: String?, website: String?, note: Bool = true) async -> Place? {
         do {
-            let place = try await api.addPlace(name: name, country: country, lat: lat, lng: lng, address: address, website: website, note: note)
+            let added = try await api.addPlace(name: name, country: country, lat: lat, lng: lng, address: address, website: website, note: note)
+            let place = added.place
+            let earns = added.reward.pendingText(country: country.uppercased(), catalog: catalog)
             toast(note
-                ? "\(place.name) added. You see it right away; OpenStreetMap mappers were asked to add it for everyone."
-                : "\(place.name) added for you. Now add it to the map in the other app, so everyone gets it.")
+                ? "\(place.name) added. You see it right away. \(earns)"
+                : "\(place.name) added for you. Now add it to the map in the other app, so everyone gets it. \(earns)")
             // It counts towards its country, for this user, if it lies in the area.
             // Applied only if no refresh (such as a change of area) started meanwhile.
             let refresh = refreshes
@@ -484,6 +487,14 @@ final class AppModel {
             toast("Could not add the restaurant: \(error.localizedDescription)")
             return nil
         }
+    }
+
+    /// "Lalibela is on the map. +130 XP…" for each addition OpenStreetMap now has that the
+    /// user wasn't told about. A failure leaves them for the next refresh.
+    private func announceConfirmedAdditions() async {
+        guard let news = try? await api.additions().filter(\.isNews), !news.isEmpty else { return }
+        for addition in news { toast(addition.announcement(catalog: catalog)) }
+        try? await api.markAdditionsSeen()
     }
 
     /// Updates a place's visits on its card (which shows only the latest) and in its details.
