@@ -232,6 +232,8 @@ final class AppModel {
                     // nil (not started or already done) and errors keep the last value.
                     if let progress = try? await api.areaProgress(areaID: here.area.id), !Task.isCancelled {
                         areaProgress = progress
+                        // At startup the loader waits for the data: let the wheel show instead.
+                        ready = true
                     }
                     try? await Task.sleep(for: .milliseconds(400))
                 }

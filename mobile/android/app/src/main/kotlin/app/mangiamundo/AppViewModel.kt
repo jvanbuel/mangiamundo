@@ -243,7 +243,11 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         while (true) {
             try {
                 // null: not started or just finished; keep what is shown.
-                api.areaProgress(areaId)?.let { areaProgress = it }
+                api.areaProgress(areaId)?.let {
+                    areaProgress = it
+                    // At startup the loader waits for the data: let the wheel show instead.
+                    ready = true
+                }
             } catch (e: kotlinx.coroutines.CancellationException) {
                 throw e
             } catch (e: Exception) {

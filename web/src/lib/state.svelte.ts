@@ -400,7 +400,11 @@ function watchProgress(areaId: string): () => void {
 	const timer = setInterval(async () => {
 		const progress = await api.areaProgress(areaId).catch(() => null);
 		// null between steps or before the server starts: keep what is shown.
-		if (!stopped && progress && Date.now() - started > 300) app.areaProgress = progress;
+		if (!stopped && progress && Date.now() - started > 300) {
+			app.areaProgress = progress;
+			// At startup the splash waits for the data: let the wheel show instead.
+			void hideSplash();
+		}
 	}, 400);
 	return () => {
 		stopped = true;
