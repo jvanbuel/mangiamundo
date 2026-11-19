@@ -426,30 +426,30 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     /** True while a new place is being added. */
     var addingPlace by mutableStateOf(false); private set
 
-    /**
-     * Adds a restaurant OpenStreetMap lacks, at the device's position: the user stands at it,
-     * as OSM wants additions from people who know the place. Opens it once added.
-     */
-    fun addPlace(name: String, country: String, address: String?, website: String?, onAdded: () -> Unit) {
+    /** Where the add form's pin starts: the device's position, or the area's centre without one. */
+    suspend fun startingPoint(): Pair<Double, Double> {
+        DeviceLocation.current(getApplication())?.let { fix ->
+            gpsFix = Triple(fix.latitude, fix.longitude, System.currentTimeMillis())
+            return fix.latitude to fix.longitude
+        }
+        return userPosition() ?: ((location?.lat ?: 0.0) to (location?.lng ?: 0.0))
+    }
+
+    /** Adds a restaurant OpenStreetMap lacks, where the user put the pin. Opens it once added. */
+    fun addPlace(name: String, country: String, lat: Double, lng: Double, address: String?, website: String?, onAdded: () -> Unit) {
         if (addingPlace) return
         addingPlace = true
         viewModelScope.launch {
             try {
-                val fix = DeviceLocation.current(getApplication())
-                if (fix == null) {
-                    messageChannel.trySend("Allow location access and stand at the restaurant: its position is yours.")
-                } else {
-                    gpsFix = Triple(fix.latitude, fix.longitude, System.currentTimeMillis())
-                    val place = api.addPlace(name, country, fix.latitude, fix.longitude, address, website)
-                    messageChannel.trySend("${place.name} added. You see it right away; OpenStreetMap mappers were asked to add it for everyone.")
-                    onAdded()
-                    openPlace(place)
-                    // It counts towards its country, for this user, if it lies in the area.
-                    // Applied only if no refresh (such as a change of area) started meanwhile.
-                    val refresh = refreshes
-                    location?.let { here ->
-                        runCatching { api.discover(here.area.id) }.onSuccess { if (refresh == refreshes) discover = it }
-                    }
+                val place = api.addPlace(name, country, lat, lng, address, website)
+                messageChannel.trySend("${place.name} added. You see it right away; OpenStreetMap mappers were asked to add it for everyone.")
+                onAdded()
+                openPlace(place)
+                // It counts towards its country, for this user, if it lies in the area.
+                // Applied only if no refresh (such as a change of area) started meanwhile.
+                val refresh = refreshes
+                location?.let { here ->
+                    runCatching { api.discover(here.area.id) }.onSuccess { if (refresh == refreshes) discover = it }
                 }
             } catch (e: Exception) {
                 messageChannel.trySend("Could not add the restaurant: ${e.message}")

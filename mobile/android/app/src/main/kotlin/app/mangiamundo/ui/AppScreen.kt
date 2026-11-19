@@ -265,8 +265,13 @@ fun AppScreen(vm: AppViewModel = viewModel()) {
         ModalBottomSheet(onDismissRequest = { addOpen = false }, containerColor = colors.panel) {
             Box {
                 Column(Modifier.verticalScroll(rememberScrollState()).padding(start = 16.dp, end = 16.dp, bottom = 24.dp)) {
-                    AddPlaceForm(vm.catalog?.countries.orEmpty(), vm.addingPlace, onCancel = { addOpen = false }) { name, country, address, website ->
-                        vm.addPlace(name, country, address, website) { addOpen = false }
+                    AddPlaceForm(
+                        vm.catalog?.countries.orEmpty(),
+                        vm.addingPlace,
+                        startingPoint = vm::startingPoint,
+                        onCancel = { addOpen = false },
+                    ) { name, country, lat, lng, address, website ->
+                        vm.addPlace(name, country, lat, lng, address, website) { addOpen = false }
                     }
                 }
                 SnackbarHost(snackbar, Modifier.align(Alignment.TopCenter))
