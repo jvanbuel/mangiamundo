@@ -342,11 +342,14 @@ pub async fn area_places(
         .collect())
 }
 
+/// Places added by users are pending: only whoever added them can see them.
+const NOT_SOMEONE_ELSES: &str = "(p.added_by IS NULL OR p.added_by = ?)";
+
 /// One place with all of the user's visits, whatever area it is in. `distance_m` and the
 /// hours status are left empty.
 pub async fn place(db: &SqlitePool, place_id: &str, user: Option<&str>) -> sqlx::Result<Option<PlaceView>> {
-    let sql = format!("SELECT {PLACE_COLUMNS} FROM places p WHERE p.id = ?");
-    let Some(row) = sqlx::query(&sql).bind(place_id).fetch_optional(db).await? else {
+    let sql = format!("SELECT {PLACE_COLUMNS} FROM places p WHERE p.id = ? AND {NOT_SOMEONE_ELSES}");
+    let Some(row) = sqlx::query(&sql).bind(place_id).bind(user).fetch_optional(db).await? else {
         return Ok(None);
     };
     let mut place = place_view(&row);
@@ -391,11 +394,6 @@ pub async fn visits_between(
         query = query.bind(country);
     }
     Ok(query.fetch_one(db).await? as u32)
-}
-
-pub async fn place_location(db: &SqlitePool, place_id: &str) -> sqlx::Result<Option<(f64, f64)>> {
-    let row = sqlx::query("SELECT lat, lng FROM places WHERE id = ?").bind(place_id).fetch_optional(db).await?;
-    Ok(row.map(|r| (r.get("lat"), r.get("lng"))))
 }
 
 /// Records a visit and returns it as stored. There is at most one visit per place per local
@@ -532,13 +530,16 @@ pub struct NewPlace {
     pub cuisine: &'static str,
 }
 
-/// Saves a place added by `user` and puts it in the cached areas around it. Returns its id.
-pub async fn add_place(db: &SqlitePool, user: &str, place: &NewPlace, at: i64) -> sqlx::Result<String> {
+/// Saves a place added by `user` and puts it in the cached areas around it. Returns its id,
+/// or `None` when the user already added `limit` places in the day before `at`. Checking and
+/// inserting is one statement, so concurrent requests can't both take the last slot.
+pub async fn add_place(db: &SqlitePool, user: &str, place: &NewPlace, at: i64, limit: i64) -> sqlx::Result<Option<String>> {
     let id = format!("user-{}", uuid::Uuid::new_v4().simple());
     let mut tx = db.begin().await?;
-    sqlx::query(
+    let added = sqlx::query(
         "INSERT INTO places (id, name, lat, lng, address, url, cuisine, updated_at, added_by, added_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+         SELECT ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?8
+         WHERE (SELECT COUNT(*) FROM places WHERE added_by = ?9 AND added_at > ?8 - 86400) < ?10",
     )
     .bind(&id)
     .bind(&place.name)
@@ -549,9 +550,12 @@ pub async fn add_place(db: &SqlitePool, user: &str, place: &NewPlace, at: i64) -
     .bind(place.cuisine)
     .bind(at)
     .bind(user)
-    .bind(at)
+    .bind(limit)
     .execute(&mut *tx)
     .await?;
+    if added.rows_affected() == 0 {
+        return Ok(None);
+    }
     sqlx::query("INSERT INTO place_countries (place_id, country) VALUES (?, ?)")
         .bind(&id)
         .bind(place.country)
@@ -576,16 +580,7 @@ pub async fn add_place(db: &SqlitePool, user: &str, place: &NewPlace, at: i64) -
         }
     }
     tx.commit().await?;
-    Ok(id)
-}
-
-/// How many places `user` added since `since`.
-pub async fn places_added_since(db: &SqlitePool, user: &str, since: i64) -> sqlx::Result<i64> {
-    sqlx::query_scalar("SELECT COUNT(*) FROM places WHERE added_by = ? AND added_at >= ?")
-        .bind(user)
-        .bind(since)
-        .fetch_one(db)
-        .await
+    Ok(Some(id))
 }
 
 pub async fn set_osm_note(db: &SqlitePool, place_id: &str, note_id: i64) -> sqlx::Result<()> {
@@ -593,9 +588,10 @@ pub async fn set_osm_note(db: &SqlitePool, place_id: &str, note_id: i64) -> sqlx
     Ok(())
 }
 
-/// Name and location of a place.
-pub async fn place_summary(db: &SqlitePool, id: &str) -> sqlx::Result<Option<(String, f64, f64)>> {
-    let row = sqlx::query("SELECT name, lat, lng FROM places WHERE id = ?").bind(id).fetch_optional(db).await?;
+/// Name and location of a place `user` can see.
+pub async fn place_summary(db: &SqlitePool, id: &str, user: &str) -> sqlx::Result<Option<(String, f64, f64)>> {
+    let sql = format!("SELECT name, lat, lng FROM places p WHERE id = ? AND {NOT_SOMEONE_ELSES}");
+    let row = sqlx::query(&sql).bind(id).bind(user).fetch_optional(db).await?;
     Ok(row.map(|r| (r.get("name"), r.get("lat"), r.get("lng"))))
 }
 

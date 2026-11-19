@@ -704,13 +704,27 @@ async fn an_added_place_shows_up_for_whoever_added_it_and_is_sent_to_osm() {
 
     assert!(countries(alice.clone()).await.contains(&"NZ".to_string()));
     assert!(!countries(bob.clone()).await.contains(&"NZ".to_string()), "pending places are only for whoever added them");
+    for token in [None, Some(bob.as_str())] {
+        assert_eq!(call(&app, "GET", &format!("/api/places/{id}"), token, None).await.0, StatusCode::NOT_FOUND);
+    }
+    assert_eq!(call(&app, "GET", &format!("/api/places/{id}"), Some(&alice), None).await.0, StatusCode::OK);
+    assert_eq!(call(&app, "POST", &format!("/api/places/{id}/visits"), Some(&bob), None).await.0, StatusCode::NOT_FOUND);
+    assert_eq!(call(&app, "PUT", &format!("/api/places/{id}/closed"), Some(&bob), None).await.0, StatusCode::NOT_FOUND);
     // A refresh of the area from the provider keeps it.
     clock.fetch_add(2 * 3600, Ordering::Relaxed);
     assert!(countries(alice.clone()).await.contains(&"NZ".to_string()));
     let (status, _) = call(&app, "POST", &format!("/api/places/{id}/visits"), Some(&alice), None).await;
     assert_eq!(status, StatusCode::OK);
 
-    tokio::time::sleep(std::time::Duration::from_millis(200)).await;
+    // The note is posted in the background; its id is kept last.
+    let note_id = || sqlx::query_scalar::<_, Option<i64>>("SELECT osm_note_id FROM places WHERE id = ?").bind(&id).fetch_one(&db);
+    for _ in 0..100 {
+        if note_id().await.unwrap().is_some() {
+            break;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+    }
+    assert_eq!(note_id().await.unwrap(), Some(7));
     {
         let notes = notes.lock().unwrap();
         assert_eq!(notes.len(), 1, "{notes:?}");
@@ -718,8 +732,6 @@ async fn an_added_place_shows_up_for_whoever_added_it_and_is_sent_to_osm() {
         assert!(notes[0].contains("amenity%3Drestaurant") && notes[0].contains("cuisine%3Dnew_zealand"), "{}", notes[0]);
         assert!(notes[0].contains("website%3Dhttps%3A%2F%2Fkiwi.example"), "{}", notes[0]);
     }
-    let note: Option<i64> = sqlx::query_scalar("SELECT osm_note_id FROM places WHERE id = ?").bind(&id).fetch_one(&db).await.unwrap();
-    assert_eq!(note, Some(7));
 
     // Five a day.
     for name in ["B", "C", "D", "E"] {

@@ -773,11 +773,10 @@ async fn add_place(
         .zip(catalog::cuisine_tag(&code))
         .ok_or(ApiError::BadRequest("unknown country".into()))?;
     let now = state.now();
-    if store::places_added_since(&state.db, &user, now - 86_400).await? >= PLACES_PER_DAY {
-        return Err(ApiError::TooManyRequests("you have added 5 places today; try again tomorrow"));
-    }
     let new = store::NewPlace { name, lat: body.lat, lng: body.lng, address, url, country: &country.code, cuisine };
-    let id = store::add_place(&state.db, &user, &new, now).await?;
+    let id = store::add_place(&state.db, &user, &new, now, PLACES_PER_DAY)
+        .await?
+        .ok_or(ApiError::TooManyRequests("you have added 5 places today; try again tomorrow"))?;
 
     if let Some(notes) = state.osm_notes_url.clone() {
         let (db, id, token) = (state.db.clone(), id.clone(), state.osm_notes_token.clone());
@@ -891,7 +890,7 @@ async fn add_visit(
     Query(query): Query<VisitQuery>,
     body: Option<JsonBody<CheckIn>>,
 ) -> ApiResult<VisitResult> {
-    let (plat, plng) = store::place_location(&state.db, &place_id)
+    let (_, plat, plng) = store::place_summary(&state.db, &place_id, &user)
         .await?
         .ok_or(ApiError::NotFound("place"))?;
     let check_in = body.map(|JsonBody(b)| b).unwrap_or_default();
@@ -931,7 +930,7 @@ async fn report_closed(
     User(user): User,
     Path(place_id): Path<String>,
 ) -> Result<StatusCode, ApiError> {
-    let (name, lat, lng) = store::place_summary(&state.db, &place_id).await?.ok_or(ApiError::NotFound("place"))?;
+    let (name, lat, lng) = store::place_summary(&state.db, &place_id, &user).await?.ok_or(ApiError::NotFound("place"))?;
     let reports = store::report_closed(&state.db, &user, &place_id, state.now()).await?;
     // Tell OSM once, when the place gets hidden for everyone, so one person cannot spam mappers.
     if let (Some(2), Some(url), Some(osm)) = (reports, &state.osm_notes_url, osm_link(&place_id)) {
