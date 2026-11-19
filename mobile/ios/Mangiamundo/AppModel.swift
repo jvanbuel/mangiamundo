@@ -468,9 +468,9 @@ final class AppModel {
             let place = try await api.addPlace(name: name, country: country, lat: lat, lng: lng, address: address, website: website)
             toast("\(place.name) added. You see it right away; OpenStreetMap mappers were asked to add it for everyone.")
             // It counts towards its country, for this user, if it lies in the area.
-            // Applied only if the user hasn't moved to another area meanwhile.
-            if let here = location, let fresh = try? await api.discover(areaID: here.area.id),
-               location?.area.id == here.area.id {
+            // Applied only if no refresh (such as a change of area) started meanwhile.
+            let refresh = refreshes
+            if let here = location, let fresh = try? await api.discover(areaID: here.area.id), refresh == refreshes {
                 discover = fresh
             }
             return place

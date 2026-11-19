@@ -445,9 +445,10 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
                     onAdded()
                     openPlace(place)
                     // It counts towards its country, for this user, if it lies in the area.
-                    // Applied only if the user hasn't moved to another area meanwhile.
+                    // Applied only if no refresh (such as a change of area) started meanwhile.
+                    val refresh = refreshes
                     location?.let { here ->
-                        runCatching { api.discover(here.area.id) }.onSuccess { if (location?.area?.id == here.area.id) discover = it }
+                        runCatching { api.discover(here.area.id) }.onSuccess { if (refresh == refreshes) discover = it }
                     }
                 }
             } catch (e: Exception) {
