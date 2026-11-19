@@ -547,6 +547,22 @@ private fun android.content.Context.directions(place: Place) =
         open("https://www.openstreetmap.org/directions?route=%3B${place.lat}%2C${place.lng}")
     }
 
+/** A maps app with an easy OpenStreetMap editor, opened by "Something wrong?" instead of openstreetmap.org. */
+private enum class EditorApp(val scheme: String, val label: String) {
+    COMAPS("cm", "CoMaps"),
+    ORGANIC_MAPS("om", "Organic Maps");
+
+    /** The app's place card at the place, which shows the OSM feature there with "Edit place". `ll` must come before `n`. */
+    fun link(place: Place) = "$scheme://map?ll=${place.lat},${place.lng}&n=${Uri.encode(place.name)}"
+}
+
+/** The first editor app installed, if any. Needs the schemes in `<queries>` (AndroidManifest.xml). */
+private fun android.content.Context.editorApp(): EditorApp? = EditorApp.entries.firstOrNull { app ->
+    // Screenshot tests have no real package manager.
+    runCatching { Intent(Intent.ACTION_VIEW, "${app.scheme}://map".toUri()).resolveActivity(packageManager) != null }
+        .getOrDefault(false)
+}
+
 @Composable
 private fun PlaceLinks(place: Place) {
     val colors = LocalAppColors.current
@@ -721,11 +737,13 @@ fun PlaceDetail(
             modifier = Modifier.padding(top = 28.dp).clickable(enabled = !busy) { confirmingClosed = true },
         )
         place.osmUrl?.let { url ->
+            // A phone-friendly OSM editor when one is installed, otherwise the website.
+            val editor = remember { context.editorApp() }
             Text(
-                "Something wrong? Edit on OpenStreetMap",
+                "Something wrong? Edit " + (editor?.let { "in ${it.label}" } ?: "on OpenStreetMap"),
                 style = small,
                 color = colors.muted,
-                modifier = Modifier.padding(top = 4.dp).clickable { context.open(url) },
+                modifier = Modifier.padding(top = 4.dp).clickable { context.open(editor?.link(place) ?: url) },
             )
             Text(
                 "Data © OpenStreetMap contributors",
