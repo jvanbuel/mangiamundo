@@ -33,6 +33,10 @@ pub trait PlacesProvider: Send + Sync {
     fn name(&self) -> &'static str;
     /// All places serving a national cuisine inside the area's outline.
     async fn search(&self, area: &Boundary) -> anyhow::Result<Vec<FoundPlace>>;
+    /// About how long `search` takes for this area, for the progress wheel.
+    fn expected_secs(&self, _area: &Boundary) -> f64 {
+        20.0
+    }
 }
 
 #[derive(Debug, Clone, Copy, Serialize, PartialEq, Eq, utoipa::ToSchema)]

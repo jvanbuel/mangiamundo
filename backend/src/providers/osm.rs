@@ -229,6 +229,11 @@ impl PlacesProvider for WithImport {
         }
         self.live.search(area).await
     }
+
+    fn expected_secs(&self, area: &Boundary) -> f64 {
+        // ponytail: assumes the local copy exists; before the first import a covered area goes live.
+        if covered(area.shape.bbox()) { 1.0 } else { self.live.expected_secs(area) }
+    }
 }
 
 /// Nominatim's usage policy allows one request per second.

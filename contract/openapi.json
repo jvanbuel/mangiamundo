@@ -610,6 +610,25 @@
         ],
         "type": "object"
       },
+      "LoadProgress": {
+        "properties": {
+          "percent": {
+            "description": "0 to 100.",
+            "format": "int32",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "text": {
+            "description": "What is happening, e.g. \"Looking for restaurants\".",
+            "type": "string"
+          }
+        },
+        "required": [
+          "percent",
+          "text"
+        ],
+        "type": "object"
+      },
       "Located": {
         "description": "The areas a point lies in.",
         "properties": {
@@ -1147,6 +1166,54 @@
           }
         },
         "summary": "Suggestions while someone types a city or postal code.",
+        "tags": [
+          "areas"
+        ]
+      }
+    },
+    "/api/areas/{area_id}/progress": {
+      "get": {
+        "operationId": "area_progress",
+        "parameters": [
+          {
+            "description": "An area id.",
+            "in": "path",
+            "name": "area_id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "oneOf": [
+                    {
+                      "$ref": "#/components/schemas/LoadProgress"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "An error"
+          }
+        },
+        "summary": "How far loading an area's restaurants has come, for a progress wheel while `/api/discover`\nor `/api/places` waits on it. `null` when the area isn't loading.",
         "tags": [
           "areas"
         ]

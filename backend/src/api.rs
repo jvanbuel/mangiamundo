@@ -21,6 +21,8 @@ use utoipa_axum::router::OpenApiRouter;
 use utoipa_axum::routes;
 
 use std::collections::HashMap;
+use std::sync::{Arc, Mutex};
+use std::time::Instant;
 
 use chrono::NaiveDate;
 use chrono_tz::Tz;
@@ -72,6 +74,7 @@ fn api_router() -> (Router<AppState>, utoipa::openapi::OpenApi) {
         .routes(routes!(search_areas))
         .routes(routes!(locate_area))
         .routes(routes!(suggest_areas))
+        .routes(routes!(area_progress))
         .split_for_parts()
 }
 
@@ -350,6 +353,50 @@ fn valid_area_id(id: &str) -> bool {
     !id.is_empty() && id.len() <= 100 && id.bytes().all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'-')
 }
 
+/// The step an area's fetch is in: it runs from `from` to `to` percent and should take
+/// about `expected_secs`.
+struct LoadStep {
+    from: f64,
+    to: f64,
+    text: &'static str,
+    started: Instant,
+    expected_secs: f64,
+}
+
+/// Areas being fetched right now, by area id. In memory: the server runs as one machine.
+#[derive(Clone, Default)]
+pub struct Loads(Arc<Mutex<HashMap<String, LoadStep>>>);
+
+impl Loads {
+    fn step(&self, id: &str, from: f64, to: f64, text: &'static str, expected_secs: f64) {
+        let step = LoadStep { from, to, text, started: Instant::now(), expected_secs };
+        self.0.lock().unwrap().insert(id.to_string(), step);
+    }
+
+    /// The percentage and what is happening, or None when the area isn't loading.
+    fn progress(&self, id: &str) -> Option<(u8, &'static str)> {
+        let loads = self.0.lock().unwrap();
+        let step = loads.get(id)?;
+        let percent = estimate(step.from, step.to, step.started.elapsed().as_secs_f64(), step.expected_secs);
+        Some((percent as u8, step.text))
+    }
+}
+
+/// Clears an area's progress when its fetch ends, also on an error.
+struct LoadDone<'a>(&'a Loads, &'a str);
+
+impl Drop for LoadDone<'_> {
+    fn drop(&mut self) {
+        self.0 .0.lock().unwrap().remove(self.1);
+    }
+}
+
+/// Progress within a step that reports none: 63% of the way after the expected time, 95%
+/// after three times that, and never the end, which only the next step reaches.
+fn estimate(from: f64, to: f64, elapsed_secs: f64, expected_secs: f64) -> f64 {
+    from + (to - from) * (1.0 - (-elapsed_secs / expected_secs.max(0.1)).exp())
+}
+
 /// Returns the cached area, asking the provider when the cache is missing or stale. A
 /// stale cache is still used when the provider is down.
 async fn resolve_area(state: &AppState, id: &str) -> Result<Area, ApiError> {
@@ -363,10 +410,12 @@ async fn resolve_area(state: &AppState, id: &str) -> Result<Area, ApiError> {
         }
     }
 
+    let _done = LoadDone(&state.loads, id);
     let boundary = match &cached {
         // The outline rarely changes; keep it for refreshes.
         Some(area) => area.boundary.clone(),
         None => {
+            state.loads.step(id, 0.0, 15.0, "Finding the area", 2.0);
             let boundary = state
                 .areas
                 .boundary(id)
@@ -383,8 +432,10 @@ async fn resolve_area(state: &AppState, id: &str) -> Result<Area, ApiError> {
             boundary
         }
     };
+    state.loads.step(id, 15.0, 95.0, "Looking for restaurants", state.places.expected_secs(&boundary));
     match state.places.search(&boundary).await {
         Ok(found) => {
+            state.loads.step(id, 95.0, 100.0, "Counting countries", 0.5);
             let area = Area { boundary, provider: state.places.name().into(), fetched_at: state.now() };
             store::save_area(&state.db, &area, &found).await?;
             tracing::info!(area = area.id(), places = found.len(), "area refreshed");
@@ -920,6 +971,24 @@ struct LocateQuery {
     lng: f64,
 }
 
+#[derive(Serialize, ToSchema)]
+struct LoadProgress {
+    /// 0 to 100.
+    percent: u8,
+    /// What is happening, e.g. "Looking for restaurants".
+    text: String,
+}
+
+/// How far loading an area's restaurants has come, for a progress wheel while `/api/discover`
+/// or `/api/places` waits on it. `null` when the area isn't loading.
+#[utoipa::path(
+    get, path = "/api/areas/{area_id}/progress", tag = "areas", params(("area_id" = String, Path, description = "An area id.")),
+    responses((status = 200, body = Option<LoadProgress>), (status = "default", description = "An error", body = ErrorBody)),
+)]
+async fn area_progress(State(state): State<AppState>, Path(area_id): Path<String>) -> Json<Option<LoadProgress>> {
+    Json(state.loads.progress(&area_id).map(|(percent, text)| LoadProgress { percent, text: text.into() }))
+}
+
 /// The city and postal code a point (usually the device's position) lies in.
 #[utoipa::path(
     get, path = "/api/areas/locate", tag = "areas", params(LocateQuery),
@@ -930,4 +999,28 @@ async fn locate_area(State(state): State<AppState>, Query(query): Query<LocateQu
         return Err(ApiError::BadRequest("lat/lng out of range".into()));
     }
     state.areas.locate(query.lat, query.lng).await.map(Json).map_err(ApiError::Upstream)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn the_estimate_slows_down_and_never_reaches_the_end_of_its_step() {
+        assert_eq!(estimate(15.0, 95.0, 0.0, 20.0), 15.0);
+        let after_expected = estimate(15.0, 95.0, 20.0, 20.0);
+        assert!((65.0..66.0).contains(&after_expected), "{after_expected}");
+        assert!(estimate(15.0, 95.0, 600.0, 20.0) < 95.0);
+    }
+
+    #[test]
+    fn progress_is_cleared_when_the_fetch_ends() {
+        let loads = Loads::default();
+        {
+            let _done = LoadDone(&loads, "leuven");
+            loads.step("leuven", 15.0, 95.0, "Looking for restaurants", 20.0);
+            assert_eq!(loads.progress("leuven"), Some((15, "Looking for restaurants")));
+        }
+        assert_eq!(loads.progress("leuven"), None);
+    }
 }
