@@ -58,6 +58,7 @@ import androidx.compose.material3.SingleChoiceSegmentedButtonRow
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -84,6 +85,9 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import app.mangiamundo.AppViewModel
 import app.mangiamundo.DetailVisits
 import java.time.LocalDate
@@ -563,6 +567,21 @@ private fun android.content.Context.editorApp(): EditorApp? = EditorApp.entries.
         .getOrDefault(false)
 }
 
+/** Preserve the editor deep link, but use the OSM page if the editor becomes unavailable. */
+private fun android.content.Context.edit(place: Place, editor: EditorApp?, url: String) {
+    if (editor == null) {
+        open(url)
+        return
+    }
+    try {
+        startActivity(Intent(Intent.ACTION_VIEW, editor.link(place).toUri()))
+    } catch (_: ActivityNotFoundException) {
+        open(url)
+    } catch (_: SecurityException) {
+        open(url)
+    }
+}
+
 @Composable
 private fun PlaceLinks(place: Place) {
     val colors = LocalAppColors.current
@@ -738,12 +757,20 @@ fun PlaceDetail(
         )
         place.osmUrl?.let { url ->
             // A phone-friendly OSM editor when one is installed, otherwise the website.
-            val editor = remember { context.editorApp() }
+            var editor by remember(context) { mutableStateOf(context.editorApp()) }
+            val lifecycleOwner = LocalLifecycleOwner.current
+            DisposableEffect(lifecycleOwner, context) {
+                val observer = LifecycleEventObserver { _, event ->
+                    if (event == Lifecycle.Event.ON_RESUME) editor = context.editorApp()
+                }
+                lifecycleOwner.lifecycle.addObserver(observer)
+                onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+            }
             Text(
                 "Something wrong? Edit " + (editor?.let { "in ${it.label}" } ?: "on OpenStreetMap"),
                 style = small,
                 color = colors.muted,
-                modifier = Modifier.padding(top = 4.dp).clickable { context.open(editor?.link(place) ?: url) },
+                modifier = Modifier.padding(top = 4.dp).clickable { context.edit(place, editor, url) },
             )
             Text(
                 "Data © OpenStreetMap contributors",
