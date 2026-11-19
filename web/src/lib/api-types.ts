@@ -389,7 +389,7 @@ export interface components {
         };
         /** @description A restaurant the user added and its reward. */
         Addition: {
-            /** @description The city or postal code its bonus was judged in. `None` when none was cached. */
+            /** @description The city its bonus was judged in. `None` when no city around it was cached. */
             area_name: string | null;
             bonus: components["schemas"]["Bonus"];
             /** Format: int64 */
@@ -727,7 +727,7 @@ export interface components {
         };
         /** @description XP for an added restaurant, granted once OpenStreetMap has it. */
         Reward: {
-            /** @description The city or postal code the bonus was judged in. `null` when none was cached. */
+            /** @description The city the bonus was judged in. `null` when no city around it was cached. */
             area_name: string | null;
             bonus: components["schemas"]["Bonus"];
             /** Format: int32 */

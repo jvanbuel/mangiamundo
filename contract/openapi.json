@@ -71,7 +71,7 @@
         "description": "A restaurant the user added and its reward.",
         "properties": {
           "area_name": {
-            "description": "The city or postal code its bonus was judged in. `None` when none was cached.",
+            "description": "The city its bonus was judged in. `None` when no city around it was cached.",
             "type": [
               "string",
               "null"
@@ -1017,7 +1017,7 @@
         "description": "XP for an added restaurant, granted once OpenStreetMap has it.",
         "properties": {
           "area_name": {
-            "description": "The city or postal code the bonus was judged in. `null` when none was cached.",
+            "description": "The city the bonus was judged in. `null` when no city around it was cached.",
             "type": [
               "string",
               "null"

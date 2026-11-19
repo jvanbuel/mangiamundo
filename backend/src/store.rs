@@ -560,9 +560,10 @@ pub struct AddedPlace {
 /// `None` when the user already added `limit` places in the day before `at`. Checking and
 /// inserting is one statement, so concurrent requests can't both take the last slot.
 ///
-/// Its bonus is decided now, against the places everyone sees in its city (or, without a
-/// cached city, its postal code): pending additions don't count, so a mapper adding the
-/// same cuisine while it waits doesn't take the bonus away.
+/// Its bonus is decided now, against the places everyone sees in its city: pending
+/// additions don't count, so a mapper adding the same cuisine while it waits doesn't take
+/// the bonus away. Only a city counts, never a postal code (which would make a "new
+/// country" easier to find); with no cached city around it there is no bonus.
 pub async fn add_place(db: &SqlitePool, user: &str, place: &NewPlace, at: i64, limit: i64) -> sqlx::Result<Option<AddedPlace>> {
     let id = format!("user-{}", uuid::Uuid::new_v4().simple());
     let mut tx = db.begin().await?;
@@ -592,10 +593,8 @@ pub async fn add_place(db: &SqlitePool, user: &str, place: &NewPlace, at: i64, l
         .execute(&mut *tx)
         .await?;
     // Areas are at most 1.5° across, so any area holding the place is centred within that.
-    // Cities first, so the bonus is judged in the city when one is cached.
     let near = sqlx::query(
-        "SELECT id, name, shape FROM areas WHERE lat BETWEEN ? AND ? AND lng BETWEEN ? AND ?
-         ORDER BY kind = 'city' DESC, id",
+        "SELECT id, name, kind, shape FROM areas WHERE lat BETWEEN ? AND ? AND lng BETWEEN ? AND ? ORDER BY id",
     )
     .bind(place.lat - 1.5)
     .bind(place.lat + 1.5)
@@ -613,7 +612,9 @@ pub async fn add_place(db: &SqlitePool, user: &str, place: &NewPlace, at: i64, l
                 .bind(&id)
                 .execute(&mut *tx)
                 .await?;
-            home.get_or_insert((area_id, r.get("name")));
+            if r.get::<String, _>("kind") == "city" {
+                home.get_or_insert((area_id, r.get("name")));
+            }
         }
     }
     let bonus = match &home {
@@ -837,7 +838,7 @@ pub struct Addition {
     pub place_id: String,
     pub name: String,
     pub country: String,
-    /// The city or postal code its bonus was judged in. `None` when none was cached.
+    /// The city its bonus was judged in. `None` when no city around it was cached.
     #[schema(required = true)]
     pub area_name: Option<String>,
     pub bonus: Bonus,
@@ -1096,6 +1097,31 @@ mod tests {
         mark_additions_seen(&db, &user, std::slice::from_ref(&first)).await.unwrap();
         let seen: Vec<(String, bool)> = additions(&db, &user).await.unwrap().into_iter().map(|a| (a.id, a.seen)).collect();
         assert_eq!(seen, vec![(second, false), (first, true)]);
+    }
+
+    #[tokio::test]
+    async fn the_bonus_is_judged_in_the_city_never_the_postal_code() {
+        let db = connect("sqlite::memory:").await.unwrap();
+        let token = create_user(&db).await.unwrap();
+        let user = user_for_token(&db, &token).await.unwrap().unwrap();
+        let shape = serde_json::to_string(&Shape::rect(Bbox { south: 50.8, west: 4.6, north: 50.95, east: 4.8 })).unwrap();
+        let area = |id: &str, kind: &str| {
+            sqlx::query("INSERT INTO areas (id, name, kind, lat, lng, shape, provider, fetched_at) VALUES (?1, ?1, ?2, 50.88, 4.7, ?3, 'osm', 1000)")
+                .bind(id.to_string())
+                .bind(kind.to_string())
+                .bind(shape.clone())
+        };
+        let new = NewPlace { name: "Lalibela".into(), lat: 50.88, lng: 4.7, address: None, url: None, country: "ET", cuisine: "ethiopian" };
+
+        // Only a postal code is cached: no bonus, though Ethiopia is new there.
+        area("3000", "postal_code").execute(&db).await.unwrap();
+        let added = add_place(&db, &user, &new, 1000, 5).await.unwrap().unwrap();
+        assert_eq!((added.bonus, added.area_name), (Bonus::None, None));
+
+        // With the city cached too, the bonus is judged there.
+        area("leuven", "city").execute(&db).await.unwrap();
+        let added = add_place(&db, &user, &new, 1001, 5).await.unwrap().unwrap();
+        assert_eq!((added.bonus, added.area_name.as_deref()), (Bonus::Continent, Some("leuven")));
     }
 
     #[tokio::test]

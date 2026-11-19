@@ -764,7 +764,7 @@ struct AddedPlace {
 struct Reward {
     xp: u32,
     bonus: game::Bonus,
-    /// The city or postal code the bonus was judged in. `null` when none was cached.
+    /// The city the bonus was judged in. `null` when no city around it was cached.
     #[schema(required = true)]
     area_name: Option<String>,
 }

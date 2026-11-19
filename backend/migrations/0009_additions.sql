@@ -6,7 +6,7 @@ CREATE TABLE additions (
     user_id      TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     name         TEXT NOT NULL,
     country      TEXT NOT NULL,
-    -- The city (or, without one, the postal code) the place lies in, when one was cached.
+    -- The city the place lies in, when one was cached. Postal codes never count.
     area_id      TEXT,
     area_name    TEXT,
     -- Decided when the place was added: was its country, or its whole continent, new there?
