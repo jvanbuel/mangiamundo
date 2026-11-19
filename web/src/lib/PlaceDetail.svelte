@@ -1,7 +1,7 @@
 <script lang="ts">
 	import ArrowLeft from '@lucide/svelte/icons/arrow-left';
 	import CheckIn from './CheckIn.svelte';
-	import { app, closePlace, country, reportClosed } from './state.svelte';
+	import { app, closePlace, country, editingOnOsm, refreshPlace, reportClosed } from './state.svelte';
 	import { directions, distance, type Place } from './types';
 
 	let { place }: { place: Place | null } = $props();
@@ -96,7 +96,12 @@
 		</p>
 		{#if place.osm_url}
 			<p>
-				Something wrong? <a href={place.osm_url} target="_blank" rel="noopener">Edit on OpenStreetMap</a>
+				Something wrong?
+				<a href={place.osm_url} target="_blank" rel="noopener" onclick={() => place && editingOnOsm(place.id)}>Edit on OpenStreetMap</a>
+				·
+				<button disabled={app.refreshingPlace !== null} onclick={() => place && refreshPlace(place.id)}>
+					{app.refreshingPlace === place.id ? 'Refreshing…' : 'Refresh from OpenStreetMap'}
+				</button>
 			</p>
 			<p>
 				Data © <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap contributors</a>

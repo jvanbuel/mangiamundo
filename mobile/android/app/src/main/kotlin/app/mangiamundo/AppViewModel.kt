@@ -16,6 +16,7 @@ import app.mangiamundo.core.Area
 import app.mangiamundo.core.AreaKind
 import app.mangiamundo.core.AreaProgress
 import app.mangiamundo.core.Place
+import app.mangiamundo.core.Refreshed
 import app.mangiamundo.core.pendingText
 import app.mangiamundo.core.ProjectionKind
 import app.mangiamundo.core.ReminderPlan
@@ -423,6 +424,89 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
                 messageChannel.trySend("Could not report this place: ${e.message}")
             }
             busyPlace = null
+        }
+    }
+
+    /** The place being read again from OpenStreetMap. */
+    var refreshingPlace by mutableStateOf<String?>(null); private set
+    /** True while OpenStreetMap is asked for places just mapped nearby. */
+    var lookingNearby by mutableStateOf(false); private set
+    /** The place the user went to edit in an OpenStreetMap app, read again when they come back. */
+    private var editing: String? = null
+
+    fun editingOnOsm(placeId: String) {
+        editing = placeId
+    }
+
+    /** Back in the app: shows an edit just made to a place on OpenStreetMap. */
+    fun onResume() {
+        val id = editing ?: return
+        editing = null
+        refreshPlace(id, quiet = true)
+    }
+
+    /** Reads a place again from OpenStreetMap and says what changed. With `quiet`, a failure
+     * isn't shown, as when it runs by itself after the user comes back from editing. */
+    fun refreshPlace(placeId: String, quiet: Boolean = false) {
+        if (refreshingPlace != null) return
+        refreshingPlace = placeId
+        val name = detail?.takeIf { it.id == placeId }?.name ?: places.firstOrNull { it.id == placeId }?.name ?: "This place"
+        viewModelScope.launch {
+            try {
+                val result = api.refreshPlace(placeId, userPosition())
+                val place = result.place
+                when {
+                    result.status == Refreshed.UNCHANGED || result.status == Refreshed.UNKNOWN ->
+                        messageChannel.trySend("No change on OpenStreetMap yet. A new edit can take a minute or two to show up there.")
+                    result.status == Refreshed.GONE || place == null -> {
+                        places = places.filter { it.id != placeId }
+                        if (detail?.id == placeId) closePlace()
+                        messageChannel.trySend("$name is gone from OpenStreetMap, so it's hidden now. Your visits to it are kept.")
+                    }
+                    else -> {
+                        val fresh = checkNotNull(place)
+                        if (detail?.id == placeId) detail = fresh
+                        // The card shows only the latest visit.
+                        places = places.map { if (it.id == placeId) fresh.copy(visits = fresh.visits.take(1)) else it }
+                        messageChannel.trySend("${fresh.name} updated from OpenStreetMap.")
+                    }
+                }
+                // Its countries may have changed.
+                if (result.status == Refreshed.UPDATED || result.status == Refreshed.GONE) {
+                    location?.let { here -> runCatching { api.discover(here.area.id) }.onSuccess { discover = it } }
+                }
+            } catch (e: Exception) {
+                if (!quiet) messageChannel.trySend("Could not refresh this place: ${e.message}")
+            }
+            refreshingPlace = null
+        }
+    }
+
+    /** Asks OpenStreetMap for restaurants just mapped around the user, for someone who added
+     * one in an OpenStreetMap app instead of the add form. */
+    fun lookAgainNearby() {
+        if (lookingNearby) return
+        lookingNearby = true
+        viewModelScope.launch {
+            try {
+                val fix = DeviceLocation.current(getApplication())
+                if (fix == null) {
+                    messageChannel.trySend("Could not determine your location. Try again outside, or with location turned on.")
+                } else {
+                    gpsFix = Triple(fix.latitude, fix.longitude, System.currentTimeMillis())
+                    val added = api.refreshNearby(fix.latitude, fix.longitude).added
+                    if (added.isEmpty()) {
+                        messageChannel.trySend("Nothing new within 150 m yet. A place just added on OpenStreetMap can take a minute or two to show up.")
+                    } else {
+                        messageChannel.trySend("Found ${added.joinToString { it.name }}: on the map for everyone now.")
+                        // New countries, and any of the user's additions they confirmed.
+                        refresh()
+                    }
+                }
+            } catch (e: Exception) {
+                messageChannel.trySend("Could not look again: ${e.message}")
+            }
+            lookingNearby = false
         }
     }
 

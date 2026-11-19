@@ -112,6 +112,19 @@ class CoreTest {
     }
 
     @Test
+    fun decodesRefreshResults() {
+        val gone = json.decodeFromString<RefreshResult>("""{"status":"gone","place":null}""")
+        assertEquals(RefreshResult(Refreshed.GONE, null), gone)
+        val updated = json.decodeFromString<RefreshResult>(
+            """{"status":"updated","place":{"id":"osm-node-1","name":"Lalibela","lat":50.88,"lng":4.7,"distance_m":0}}""",
+        )
+        assertEquals("Lalibela", updated.place?.name)
+        assertEquals(Refreshed.UNKNOWN, json.decodeFromString<RefreshResult>("""{"status":"later","place":null}""").status)
+        val nearby = json.decodeFromString<NearbyResult>("""{"added":[],"matched":1}""")
+        assertEquals(NearbyResult(emptyList(), 1), nearby)
+    }
+
+    @Test
     fun rewardsReadAsSentences() {
         val catalog = json.decodeFromString<Catalog>(fixture("countries"))
         assertEquals(

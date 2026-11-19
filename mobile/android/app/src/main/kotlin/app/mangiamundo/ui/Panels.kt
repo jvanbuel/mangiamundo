@@ -709,6 +709,9 @@ fun PlaceDetail(
     visits: DetailVisits = DetailVisits.LOADED,
     onRetry: () -> Unit = {},
     onReportClosed: () -> Unit = {},
+    refreshing: Boolean = false,
+    onRefresh: () -> Unit = {},
+    onEdit: () -> Unit = {},
     today: LocalDate = LocalDate.now(),
     onToggle: () -> Unit,
 ) {
@@ -814,7 +817,16 @@ fun PlaceDetail(
                 style = small,
                 color = colors.muted,
                 // Checked again on tap: the app may have been uninstalled since the label was drawn.
-                modifier = Modifier.padding(top = 4.dp).clickable { context.edit(place, context.editorApp(), url) },
+                modifier = Modifier.padding(top = 4.dp).clickable {
+                    onEdit()
+                    context.edit(place, context.editorApp(), url)
+                },
+            )
+            Text(
+                if (refreshing) "Refreshing from OpenStreetMap…" else "Refresh from OpenStreetMap",
+                style = small,
+                color = colors.muted,
+                modifier = Modifier.padding(top = 4.dp).clickable(enabled = !refreshing, onClick = onRefresh),
             )
             Text(
                 "Data © OpenStreetMap contributors",

@@ -33,6 +33,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -44,6 +45,9 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import app.mangiamundo.AppViewModel
 import app.mangiamundo.DeviceLocation
 import app.mangiamundo.Notifications
@@ -97,6 +101,24 @@ fun AppScreen(vm: AppViewModel = viewModel()) {
             else -> addPermission.launch(DeviceLocation.PERMISSIONS)
         }
     }
+    // "Look again" needs the device's position too.
+    val nearbyPermission = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestMultiplePermissions(),
+    ) { _ ->
+        if (DeviceLocation.hasPermission(context)) vm.lookAgainNearby()
+    }
+    val lookAgain = {
+        if (DeviceLocation.hasPermission(context)) vm.lookAgainNearby() else nearbyPermission.launch(DeviceLocation.PERMISSIONS)
+    }
+    // Back from editing a place in an OpenStreetMap app: show the edit now.
+    val lifecycleOwner = LocalLifecycleOwner.current
+    DisposableEffect(lifecycleOwner) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME) vm.onResume()
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
     val addLink: @Composable () -> Unit = {
         Text(
             "Is a restaurant missing? Add it",
@@ -104,6 +126,13 @@ fun AppScreen(vm: AppViewModel = viewModel()) {
             color = colors.muted,
             textAlign = TextAlign.Center,
             modifier = Modifier.fillMaxWidth().padding(top = 16.dp).clickable { openAdd() },
+        )
+        Text(
+            if (vm.lookingNearby) "Looking…" else "Just added it in an OpenStreetMap app? Look again",
+            style = MaterialTheme.typography.bodySmall,
+            color = colors.muted,
+            textAlign = TextAlign.Center,
+            modifier = Modifier.fillMaxWidth().padding(top = 4.dp).clickable(enabled = !vm.lookingNearby) { lookAgain() },
         )
     }
     val useGps = {
@@ -244,6 +273,9 @@ fun AppScreen(vm: AppViewModel = viewModel()) {
                         visits = vm.detailVisits,
                         onRetry = { vm.openPlace(place) },
                         onReportClosed = { vm.reportClosed(place) },
+                        refreshing = vm.refreshingPlace == place.id,
+                        onRefresh = { vm.refreshPlace(place.id) },
+                        onEdit = { vm.editingOnOsm(place.id) },
                     ) {
                         vm.toggleVisit(place)
                     }

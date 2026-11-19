@@ -69,6 +69,10 @@ export const app = $state({
 	closedPlace: null as string | null,
 	/** The place whose check-in or undo is running. One at a time, across cards and details. */
 	busyPlace: null as string | null,
+	/** The place being read again from OpenStreetMap. */
+	refreshingPlace: null as string | null,
+	/** Asking OpenStreetMap for places just mapped nearby. */
+	lookingNearby: false,
 	locating: false,
 	locateError: null as string | null,
 	projection: 'globe' as 'globe' | 'mercator',
@@ -178,6 +182,13 @@ function optionsOf(located: Located): Area[] {
 /** Opens what a link (for example from a reminder) points at: ?country=JP, ?tab=badges or
  * ?place=osm-node-123. A place link stays in the address bar while its details are open. */
 async function followLink() {
+	// Back from editing a place on OpenStreetMap: show the edit now, not after the next import.
+	document.addEventListener('visibilitychange', () => {
+		if (document.visibilityState !== 'visible' || !editing) return;
+		const id = editing;
+		editing = null;
+		void refreshPlace(id, true);
+	});
 	addEventListener('popstate', () => {
 		closing = false;
 		const id = new URLSearchParams(location.search).get('place');
@@ -551,6 +562,69 @@ export async function reportClosed(place: Place) {
 		toast(null, 'Could not report this place', message(error));
 	} finally {
 		app.busyPlace = null;
+	}
+}
+
+/** The place whose OpenStreetMap page the user opened to edit it, read again when they come back. */
+let editing: string | null = null;
+
+export function editingOnOsm(id: string) {
+	editing = id;
+}
+
+/** Reads a place again from OpenStreetMap and shows what changed. With `quiet`, a failure is
+ * not shown, as when it runs by itself after the user comes back from editing. */
+export async function refreshPlace(id: string, quiet = false) {
+	if (app.refreshingPlace) return;
+	app.refreshingPlace = id;
+	const name = app.detail?.id === id ? app.detail.name : (app.places.find((p) => p.id === id)?.name ?? 'This place');
+	try {
+		const { status, place } = await api.refreshPlace(id, here());
+		if (status === 'unchanged') {
+			toast(null, 'No change on OpenStreetMap yet', 'A new edit can take a minute or two to show up there. Try again shortly.');
+			return;
+		}
+		if (status === 'gone' || !place) {
+			app.places = app.places.filter((p) => p.id !== id);
+			if (app.placeId === id) closePlace();
+			toast(null, `${name} is gone from OpenStreetMap`, 'It is hidden now. Your visits to it are kept.');
+		} else {
+			if (app.detail?.id === id) app.detail = place;
+			// The card shows only the latest visit.
+			app.places = app.places.map((p) => (p.id === id ? { ...place, visits: place.visits.slice(0, 1) } : p));
+			toast(null, `${place.name} updated`, 'This is the latest from OpenStreetMap.');
+		}
+		// Its countries may have changed.
+		const location = app.location;
+		if (location) app.discover = await api.discover(location.area.id);
+	} catch (error) {
+		if (!quiet) toast(null, 'Could not refresh this place', message(error));
+	} finally {
+		app.refreshingPlace = null;
+	}
+}
+
+/** Asks OpenStreetMap for restaurants just mapped around the user, for someone who added one
+ * in an OpenStreetMap app instead of the add form. */
+export async function lookAgainNearby() {
+	if (app.lookingNearby) return;
+	app.lookingNearby = true;
+	try {
+		const { coords } = await position();
+		gpsFix = { lat: coords.latitude, lng: coords.longitude, at: Date.now() };
+		const { added } = await api.refreshNearby({ lat: coords.latitude, lng: coords.longitude });
+		if (added.length === 0) {
+			toast(null, 'Nothing new within 150 m yet', 'A place just added on OpenStreetMap can take a minute or two to show up. Try again shortly.');
+			return;
+		}
+		const names = added.map((p) => p.name).join(', ');
+		toast(null, `Found ${names}`, added.length === 1 ? 'It is on the map for everyone now.' : 'They are on the map for everyone now.');
+		// New countries, and any addition of the user's they confirmed.
+		await refresh();
+	} catch (error) {
+		toast(null, 'Could not look again', message(error));
+	} finally {
+		app.lookingNearby = false;
 	}
 }
 

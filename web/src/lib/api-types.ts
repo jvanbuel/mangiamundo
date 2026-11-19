@@ -213,6 +213,27 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/places/nearby/refresh": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Asks OpenStreetMap for restaurants within 150 m and adds the new ones straight away,
+         *     instead of at the next daily import: for a place someone just mapped there. Pending
+         *     additions that match one are confirmed as by the import. At most 5 an hour.
+         */
+        post: operations["refresh_nearby"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/places/{place_id}": {
         parameters: {
             query?: never;
@@ -244,6 +265,28 @@ export interface paths {
         /** "This place has closed": hides it for the reporter now, and for everyone after more reports. */
         put: operations["report_closed"];
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/places/{place_id}/refresh": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Reads one place again from OpenStreetMap and applies it straight away, instead of at the
+         *     next daily import: for an edit someone just made there. A place that is gone (deleted,
+         *     closed, or no longer serving a national cuisine) is hidden from every list. At most 5 a
+         *     minute.
+         */
+        post: operations["refresh_place"];
         delete?: never;
         options?: never;
         head?: never;
@@ -665,6 +708,16 @@ export interface components {
             /** Format: int32 */
             places: number;
         };
+        /** @description What a nearby refresh found. */
+        NearbyResult: {
+            /** @description Places that weren't listed before, nearest first. */
+            added: components["schemas"]["PlaceView"][];
+            /**
+             * Format: int32
+             * @description Pending additions, anyone's, now matched to one of the places found.
+             */
+            matched: number;
+        };
         Notification: {
             body: string;
             /** @description Collapses repeated notifications of the same thing. */
@@ -725,6 +778,16 @@ export interface components {
             /** @description The VAPID public key browsers subscribe with. */
             public_key: string;
         };
+        /** @description What a refresh from OpenStreetMap found. */
+        RefreshResult: {
+            place: components["schemas"]["PlaceView"] | null;
+            status: components["schemas"]["Refreshed"];
+        };
+        /**
+         * @description What reading a place again from OpenStreetMap changed.
+         * @enum {string}
+         */
+        Refreshed: "updated" | "unchanged" | "gone";
         /** @description XP for an added restaurant, granted once OpenStreetMap has it. */
         Reward: {
             /** @description The city the bonus was judged in. `null` when no city around it was cached. */
@@ -1157,6 +1220,38 @@ export interface operations {
             };
         };
     };
+    refresh_nearby: {
+        parameters: {
+            query: {
+                /** @description Where the user is. */
+                lat: number;
+                lng: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["NearbyResult"];
+                };
+            };
+            /** @description An error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
     place: {
         parameters: {
             query?: {
@@ -1210,6 +1305,41 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+            /** @description An error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    refresh_place: {
+        parameters: {
+            query?: {
+                /** @description Where the user is, for the distance. Without it the distance is 0. */
+                lat?: number;
+                lng?: number;
+            };
+            header?: never;
+            path: {
+                /** @description An OpenStreetMap place id, like `osm-node-123`. */
+                place_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RefreshResult"];
+                };
             };
             /** @description An error */
             default: {

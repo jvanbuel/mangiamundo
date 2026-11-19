@@ -374,3 +374,26 @@ internal fun bonusText(bonus: Bonus, country: String, areaName: String?, tense: 
         }
     }
 }
+
+/** What reading a place again from OpenStreetMap changed. */
+@Serializable
+enum class Refreshed {
+    @SerialName("updated") UPDATED,
+    /** OpenStreetMap has the same as we do; a very recent edit may not have reached it yet. */
+    @SerialName("unchanged") UNCHANGED,
+    /** No longer on OpenStreetMap as a restaurant: hidden now, visits kept. */
+    @SerialName("gone") GONE,
+    UNKNOWN,
+}
+
+/** From `POST /api/places/{id}/refresh`. */
+@Serializable
+data class RefreshResult(val status: Refreshed = Refreshed.UNKNOWN, val place: Place? = null)
+
+/** From `POST /api/places/nearby/refresh`. */
+@Serializable
+data class NearbyResult(
+    /** Places that weren't listed before, nearest first. */
+    val added: List<Place> = emptyList(),
+    val matched: Int = 0,
+)

@@ -15,7 +15,7 @@
 	import MapPin from '@lucide/svelte/icons/map-pin';
 	import Navigation from '@lucide/svelte/icons/navigation';
 	import Settings from '@lucide/svelte/icons/settings';
-	import { app, init, refresh, select, setProjection, setTheme, toast, type Theme } from '#lib/state.svelte.ts';
+	import { app, init, lookAgainNearby, refresh, select, setProjection, setTheme, toast, type Theme } from '#lib/state.svelte.ts';
 
 	let pickerOpen = $state(false);
 	let settingsOpen = $state(false);
@@ -61,6 +61,10 @@
 		<div class="card"><AddPlace onclose={() => (adding = false)} /></div>
 	{:else}
 		<p class="muted add-place">Is a restaurant missing? <button onclick={() => (adding = true)}>Add it</button></p>
+		<p class="muted add-place">
+			Just added it in an OpenStreetMap app?
+			<button disabled={app.lookingNearby} onclick={lookAgainNearby}>{app.lookingNearby ? 'Looking…' : 'Look again'}</button>
+		</p>
 	{/if}
 {/snippet}
 
@@ -196,6 +200,14 @@
 	.add-place button {
 		color: inherit;
 		text-decoration: underline;
+	}
+
+	.add-place + .add-place {
+		margin-top: 4px;
+	}
+
+	.add-place button:disabled {
+		opacity: 0.6;
 	}
 
 	main {
