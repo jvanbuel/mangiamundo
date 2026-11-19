@@ -10,7 +10,7 @@ use sqlx::{Row, SqlitePool};
 
 use crate::catalog;
 use crate::game::{Lifetime, PlaceRow};
-use crate::geo::{Bbox, Shape};
+use crate::geo::{self, Bbox, Shape};
 use crate::providers::{AreaInfo, AreaKind, Boundary, FoundPlace};
 
 pub fn now() -> i64 {
@@ -129,33 +129,7 @@ pub async fn save_area(db: &SqlitePool, area: &Area, places: &[FoundPlace]) -> s
     }
 
     for place in places {
-        sqlx::query(
-            "INSERT INTO places (id, name, lat, lng, address, url, cuisine, opening_hours, updated_at)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-             ON CONFLICT(id) DO UPDATE SET name = excluded.name, lat = excluded.lat,
-                 lng = excluded.lng, address = excluded.address, url = excluded.url,
-                 cuisine = excluded.cuisine, opening_hours = excluded.opening_hours,
-                 updated_at = excluded.updated_at",
-        )
-        .bind(&place.id)
-        .bind(&place.name)
-        .bind(place.lat)
-        .bind(place.lng)
-        .bind(&place.address)
-        .bind(&place.url)
-        .bind(&place.cuisine)
-        .bind(&place.opening_hours)
-        .bind(area.fetched_at)
-        .execute(&mut *tx)
-        .await?;
-        sqlx::query("DELETE FROM place_countries WHERE place_id = ?").bind(&place.id).execute(&mut *tx).await?;
-        for country in &place.countries {
-            sqlx::query("INSERT OR IGNORE INTO place_countries (place_id, country) VALUES (?, ?)")
-                .bind(&place.id)
-                .bind(country)
-                .execute(&mut *tx)
-                .await?;
-        }
+        upsert_place(&mut tx, place, area.fetched_at).await?;
         sqlx::query("INSERT OR IGNORE INTO area_places (area_id, place_id) VALUES (?, ?)")
             .bind(&info.id)
             .bind(&place.id)
@@ -163,6 +137,37 @@ pub async fn save_area(db: &SqlitePool, area: &Area, places: &[FoundPlace]) -> s
             .await?;
     }
     tx.commit().await
+}
+
+async fn upsert_place(tx: &mut sqlx::SqliteConnection, place: &FoundPlace, at: i64) -> sqlx::Result<()> {
+    sqlx::query(
+        "INSERT INTO places (id, name, lat, lng, address, url, cuisine, opening_hours, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+         ON CONFLICT(id) DO UPDATE SET name = excluded.name, lat = excluded.lat,
+             lng = excluded.lng, address = excluded.address, url = excluded.url,
+             cuisine = excluded.cuisine, opening_hours = excluded.opening_hours,
+             updated_at = excluded.updated_at",
+    )
+    .bind(&place.id)
+    .bind(&place.name)
+    .bind(place.lat)
+    .bind(place.lng)
+    .bind(&place.address)
+    .bind(&place.url)
+    .bind(&place.cuisine)
+    .bind(&place.opening_hours)
+    .bind(at)
+    .execute(&mut *tx)
+    .await?;
+    sqlx::query("DELETE FROM place_countries WHERE place_id = ?").bind(&place.id).execute(&mut *tx).await?;
+    for country in &place.countries {
+        sqlx::query("INSERT OR IGNORE INTO place_countries (place_id, country) VALUES (?, ?)")
+            .bind(&place.id)
+            .bind(country)
+            .execute(&mut *tx)
+            .await?;
+    }
+    Ok(())
 }
 
 pub async fn create_user(db: &SqlitePool) -> sqlx::Result<String> {
@@ -596,8 +601,9 @@ pub async fn place_summary(db: &SqlitePool, id: &str, user: &str) -> sqlx::Resul
 }
 
 /// Replaces the imported OpenStreetMap places in `bbox`, and marks the cached areas centred
-/// in it as stale so their next request rebuilds them from the new copy.
-pub async fn replace_imported(db: &SqlitePool, bbox: Bbox, places: &[FoundPlace]) -> sqlx::Result<()> {
+/// in it as stale so their next request rebuilds them from the new copy. Pending places
+/// that the import now has are swapped for it; returns how many.
+pub async fn replace_imported(db: &SqlitePool, bbox: Bbox, places: &[FoundPlace]) -> sqlx::Result<usize> {
     let mut tx = db.begin().await?;
     // ponytail: by centre, so an area straddling the box edge is refetched live once per import.
     sqlx::query("UPDATE areas SET fetched_at = 0 WHERE lat BETWEEN ? AND ? AND lng BETWEEN ? AND ?")
@@ -625,7 +631,87 @@ pub async fn replace_imported(db: &SqlitePool, bbox: Bbox, places: &[FoundPlace]
         .execute(&mut *tx)
         .await?;
     }
-    tx.commit().await
+    let matched = match_pending(&mut tx).await?;
+    tx.commit().await?;
+    Ok(matched)
+}
+
+/// How close an imported place must be to a pending one to be the same restaurant.
+const MATCH_RADIUS_M: f64 = 50.0;
+
+/// Swaps each pending place that now has an imported twin (same country, similar name,
+/// within [`MATCH_RADIUS_M`]) for that twin: its visits and areas move over and the
+/// pending row goes. Returns how many were swapped.
+async fn match_pending(tx: &mut sqlx::SqliteConnection) -> sqlx::Result<usize> {
+    let pending = sqlx::query(
+        "SELECT p.id, p.name, p.lat, p.lng, pc.country FROM places p
+         JOIN place_countries pc ON pc.place_id = p.id
+         WHERE p.added_by IS NOT NULL ORDER BY p.added_at",
+    )
+    .fetch_all(&mut *tx)
+    .await?;
+    let mut matched = 0;
+    for p in pending {
+        let (id, name, lat, lng, country): (String, String, f64, f64, String) =
+            (p.get("id"), p.get("name"), p.get("lat"), p.get("lng"), p.get("country"));
+        // 0.001° is at least 70 m both ways at any inhabited latitude.
+        let near = sqlx::query("SELECT * FROM osm_places WHERE lat BETWEEN ? AND ? AND lng BETWEEN ? AND ?")
+            .bind(lat - 0.001)
+            .bind(lat + 0.001)
+            .bind(lng - 0.001)
+            .bind(lng + 0.001)
+            .fetch_all(&mut *tx)
+            .await?;
+        let twin = near
+            .into_iter()
+            .filter_map(found)
+            .filter(|o| o.countries.contains(&country.as_str()) && similar_names(&o.name, &name))
+            .map(|o| (geo::distance_m(lat, lng, o.lat, o.lng), o))
+            .filter(|(d, _)| *d <= MATCH_RADIUS_M)
+            .min_by(|a, b| a.0.total_cmp(&b.0));
+        let Some((_, twin)) = twin else { continue };
+        upsert_place(&mut *tx, &twin, now()).await?;
+        // A clash means the user already has that row for the twin; the pending copy goes with the place.
+        for sql in [
+            "UPDATE OR IGNORE visits SET place_id = ?1 WHERE place_id = ?2",
+            "UPDATE OR IGNORE closed_reports SET place_id = ?1 WHERE place_id = ?2",
+            "INSERT OR IGNORE INTO area_places (area_id, place_id) SELECT area_id, ?1 FROM area_places WHERE place_id = ?2",
+            "DELETE FROM places WHERE id = ?2",
+        ] {
+            sqlx::query(sql).bind(&twin.id).bind(&id).execute(&mut *tx).await?;
+        }
+        matched += 1;
+    }
+    Ok(matched)
+}
+
+/// The same name once case, punctuation and extra words like "Restaurant" are ignored:
+/// one name's words all appear in the other.
+// ponytail: no accent folding or typo tolerance ("Café" ≠ "Cafe"), add if matches are missed.
+fn similar_names(a: &str, b: &str) -> bool {
+    let words = |s: &str| -> Vec<String> {
+        s.split(|c: char| !c.is_alphanumeric()).filter(|w| !w.is_empty()).map(str::to_lowercase).collect()
+    };
+    let (a, b) = (words(a), words(b));
+    let within = |x: &[String], y: &[String]| !x.is_empty() && x.iter().all(|w| y.contains(w));
+    within(&a, &b) || within(&b, &a)
+}
+
+/// An `osm_places` row, or `None` when its cuisine maps to no country.
+fn found(r: sqlx::sqlite::SqliteRow) -> Option<FoundPlace> {
+    let cuisine: String = r.get("cuisine");
+    let countries = catalog::countries_for_cuisine_tag(&cuisine);
+    (!countries.is_empty()).then(|| FoundPlace {
+        id: r.get("id"),
+        name: r.get("name"),
+        lat: r.get("lat"),
+        lng: r.get("lng"),
+        address: r.get("address"),
+        url: r.get("url"),
+        cuisine: Some(cuisine),
+        opening_hours: r.get("opening_hours"),
+        countries,
+    })
 }
 
 /// Imported places inside a box.
@@ -639,24 +725,7 @@ pub async fn imported_in(db: &SqlitePool, b: Bbox) -> sqlx::Result<Vec<FoundPlac
     .bind(b.east)
     .fetch_all(db)
     .await?;
-    Ok(rows
-        .into_iter()
-        .filter_map(|r| {
-            let cuisine: String = r.get("cuisine");
-            let countries = catalog::countries_for_cuisine_tag(&cuisine);
-            (!countries.is_empty()).then(|| FoundPlace {
-                id: r.get("id"),
-                name: r.get("name"),
-                lat: r.get("lat"),
-                lng: r.get("lng"),
-                address: r.get("address"),
-                url: r.get("url"),
-                cuisine: Some(cuisine),
-                opening_hours: r.get("opening_hours"),
-                countries,
-            })
-        })
-        .collect())
+    Ok(rows.into_iter().filter_map(found).collect())
 }
 
 #[cfg(test)]
@@ -688,6 +757,48 @@ mod tests {
         assert_eq!(found.len(), 1);
         assert_eq!(found[0].id, "in");
         assert_eq!(found[0].countries, vec!["GR"]);
+    }
+
+    #[test]
+    fn names_match_ignoring_case_punctuation_and_extra_words() {
+        assert!(similar_names("Lalibela", "Restaurant LALIBELA"));
+        assert!(similar_names("Chez Marie-Thérèse", "chez marie thérèse"));
+        assert!(!similar_names("Lalibela", "Habesha"));
+        assert!(!similar_names("", "Habesha"));
+    }
+
+    #[tokio::test]
+    async fn an_import_swaps_pending_places_for_their_osm_twins() {
+        let db = connect("sqlite::memory:").await.unwrap();
+        let token = create_user(&db).await.unwrap();
+        let user = user_for_token(&db, &token).await.unwrap().unwrap();
+        let new = |name: &str, lat| NewPlace {
+            name: name.into(),
+            lat,
+            lng: 4.7,
+            address: None,
+            url: None,
+            country: "ET",
+            cuisine: "ethiopian",
+        };
+        let near = add_place(&db, &user, &new("Lalibela", 50.88), 1000, 5).await.unwrap().unwrap();
+        let far = add_place(&db, &user, &new("Lalibela", 50.882), 1001, 5).await.unwrap().unwrap();
+        add_visit(&db, &user, &near, true, 1000, NaiveDate::from_ymd_opt(2026, 11, 19).unwrap()).await.unwrap();
+
+        let mut twin = place("osm-node-1", 50.8801, 4.7, "ethiopian");
+        twin.name = "Restaurant Lalibela".into();
+        let mut decoy = place("osm-node-2", 50.88, 4.7, "ethiopian");
+        decoy.name = "Habesha".into();
+        let all = Bbox { south: -90.0, west: -180.0, north: 90.0, east: 180.0 };
+        assert_eq!(replace_imported(&db, all, &[decoy, twin]).await.unwrap(), 1);
+
+        let ids: Vec<String> = sqlx::query_scalar("SELECT id FROM places ORDER BY id").fetch_all(&db).await.unwrap();
+        assert_eq!(ids, vec!["osm-node-1".to_string(), far]);
+        let visited: Vec<String> = sqlx::query_scalar("SELECT place_id FROM visits").fetch_all(&db).await.unwrap();
+        assert_eq!(visited, vec!["osm-node-1"]);
+        let countries: Vec<String> =
+            sqlx::query_scalar("SELECT country FROM place_countries WHERE place_id = 'osm-node-1'").fetch_all(&db).await.unwrap();
+        assert_eq!(countries, vec!["ET"]);
     }
 
     #[tokio::test]
