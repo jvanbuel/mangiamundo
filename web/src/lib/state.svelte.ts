@@ -377,7 +377,9 @@ export async function refresh() {
 	const id = ++requestId;
 	app.loading = true;
 	app.error = null;
-	const stopProgress = watchProgress(location.area.id);
+	// A wheel from the previous area must not linger while this one starts.
+	app.areaProgress = null;
+	const stopProgress = watchProgress(location.area.id, id);
 	try {
 		const result = await api.discover(location.area.id);
 		if (id === requestId) app.discover = result;
@@ -392,24 +394,27 @@ export async function refresh() {
 	}
 }
 
-/** Polls an area's load progress while discover waits on it. Shown only after 300 ms, so
- * areas that answer quickly don't flash it. Returns a function that stops and hides it. */
-function watchProgress(areaId: string): () => void {
+/** Polls an area's load progress while discover waits on it, one request at a time. Shown
+ * only after 300 ms, so areas that answer quickly don't flash it, and only for the latest
+ * refresh (`id`). Returns a function that stops and hides it. */
+function watchProgress(areaId: string, id: number): () => void {
 	const started = Date.now();
 	let stopped = false;
-	const timer = setInterval(async () => {
-		const progress = await api.areaProgress(areaId).catch(() => null);
-		// null between steps or before the server starts: keep what is shown.
-		if (!stopped && progress && Date.now() - started > 300) {
+	void (async () => {
+		while (!stopped) {
+			await new Promise((resolve) => setTimeout(resolve, 400));
+			if (stopped) return;
+			const progress = await api.areaProgress(areaId).catch(() => null);
+			// null between steps or before the server starts: keep what is shown.
+			if (stopped || id !== requestId || !progress || Date.now() - started < 300) continue;
 			app.areaProgress = progress;
 			// At startup the splash waits for the data: let the wheel show instead.
 			void hideSplash();
 		}
-	}, 400);
+	})();
 	return () => {
 		stopped = true;
-		clearInterval(timer);
-		app.areaProgress = null;
+		if (id === requestId) app.areaProgress = null;
 	};
 }
 

@@ -363,14 +363,28 @@ struct LoadStep {
     expected_secs: f64,
 }
 
+/// An area being fetched: how many requests are fetching it, and the latest step.
+#[derive(Default)]
+struct Load {
+    running: usize,
+    step: Option<LoadStep>,
+}
+
 /// Areas being fetched right now, by area id. In memory: the server runs as one machine.
 #[derive(Clone, Default)]
-pub struct Loads(Arc<Mutex<HashMap<String, LoadStep>>>);
+pub struct Loads(Arc<Mutex<HashMap<String, Load>>>);
 
 impl Loads {
+    /// Counts a fetch of the area until the returned guard drops, also on an error.
+    fn begin<'a>(&'a self, id: &'a str) -> LoadDone<'a> {
+        self.0.lock().unwrap().entry(id.to_string()).or_default().running += 1;
+        LoadDone(self, id)
+    }
+
     fn step(&self, id: &str, from: f64, to: f64, text: &'static str, expected_secs: f64) {
-        let step = LoadStep { from, to, text, started: Instant::now(), expected_secs };
-        self.0.lock().unwrap().insert(id.to_string(), step);
+        if let Some(load) = self.0.lock().unwrap().get_mut(id) {
+            load.step = Some(LoadStep { from, to, text, started: Instant::now(), expected_secs });
+        }
     }
 
     /// Starts a new stretch of the current step from where it is now, with a new text.
@@ -383,18 +397,24 @@ impl Loads {
     /// The percentage and what is happening, or None when the area isn't loading.
     fn progress(&self, id: &str) -> Option<(u8, &'static str)> {
         let loads = self.0.lock().unwrap();
-        let step = loads.get(id)?;
+        let step = loads.get(id)?.step.as_ref()?;
         let percent = estimate(step.from, step.to, step.started.elapsed().as_secs_f64(), step.expected_secs);
         Some((percent as u8, step.text))
     }
 }
 
-/// Clears an area's progress when its fetch ends, also on an error.
+/// Ends one fetch of an area; the progress goes when the last concurrent fetch ends.
 struct LoadDone<'a>(&'a Loads, &'a str);
 
 impl Drop for LoadDone<'_> {
     fn drop(&mut self) {
-        self.0 .0.lock().unwrap().remove(self.1);
+        let mut loads = self.0 .0.lock().unwrap();
+        if let Some(load) = loads.get_mut(self.1) {
+            load.running -= 1;
+            if load.running == 0 {
+                loads.remove(self.1);
+            }
+        }
     }
 }
 
@@ -417,7 +437,7 @@ async fn resolve_area(state: &AppState, id: &str) -> Result<Area, ApiError> {
         }
     }
 
-    let _done = LoadDone(&state.loads, id);
+    let _done = state.loads.begin(id);
     let boundary = match &cached {
         // The outline rarely changes; keep it for refreshes.
         Some(area) => area.boundary.clone(),
@@ -1024,13 +1044,15 @@ mod tests {
     }
 
     #[test]
-    fn progress_is_cleared_when_the_fetch_ends() {
+    fn progress_stays_until_the_last_concurrent_fetch_ends() {
         let loads = Loads::default();
-        {
-            let _done = LoadDone(&loads, "leuven");
-            loads.step("leuven", 15.0, 95.0, "Looking for restaurants", 20.0);
-            assert_eq!(loads.progress("leuven"), Some((15, "Looking for restaurants")));
-        }
+        let first = loads.begin("leuven");
+        let second = loads.begin("leuven");
+        loads.step("leuven", 15.0, 95.0, "Looking for restaurants", 20.0);
+        assert_eq!(loads.progress("leuven"), Some((15, "Looking for restaurants")));
+        drop(first);
+        assert_eq!(loads.progress("leuven"), Some((15, "Looking for restaurants")));
+        drop(second);
         assert_eq!(loads.progress("leuven"), None);
     }
 }

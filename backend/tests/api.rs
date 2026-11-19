@@ -703,10 +703,14 @@ async fn writes_contract_fixtures() {
 
 #[tokio::test]
 async fn an_area_that_is_not_loading_has_no_progress() {
-    let app = app().await;
-    let (status, body) = call(&app, "GET", "/api/areas/demo-leuven/progress", None, None).await;
-    assert_eq!(status, StatusCode::OK);
-    assert_eq!(body, Value::Null);
+    let response = app()
+        .await
+        .oneshot(Request::get("/api/areas/demo-leuven/progress").body(Body::empty()).unwrap())
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+    let body = axum::body::to_bytes(response.into_body(), usize::MAX).await.unwrap();
+    assert_eq!(&body[..], b"null");
 }
 
 /// Writes the OpenAPI document to `contract/`, so CI shows API changes in the diff.

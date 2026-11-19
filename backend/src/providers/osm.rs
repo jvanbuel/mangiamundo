@@ -23,6 +23,8 @@ const IMPORT_RETRY: Duration = Duration::from_secs(3600);
 const IMPORTED_AT: &str = "osm_import_at";
 /// For an area: how long a server gets before the next one is asked too.
 const NEXT_SERVER_AFTER: Duration = Duration::from_secs(15);
+/// At most this many area requests at once, however many servers are configured.
+const MAX_RUNNING: usize = 3;
 /// Expected time of an area query until one has been measured.
 const FIRST_GUESS_SECS: f64 = 20.0;
 
@@ -70,7 +72,8 @@ impl Overpass {
         let first = urls.next().ok_or_else(|| anyhow::anyhow!("no Overpass server configured"))?;
         running.push(ask(first));
         loop {
-            let wait = next_after.filter(|_| urls.len() > 0);
+            // Another server only while fewer than MAX_RUNNING requests are out.
+            let wait = next_after.filter(|_| urls.len() > 0 && running.len() < MAX_RUNNING);
             let next = tokio::select! {
                 Some((url, result)) = running.next() => match result {
                     Ok(places) => return Ok(places),
