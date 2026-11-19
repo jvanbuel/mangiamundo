@@ -866,7 +866,12 @@ struct PlaceDetail: View {
                 Button("Closed for good?") { confirmingClosed = true }
                     .disabled(model.busyPlace != nil)
                 if let link = place.osmUrl, let url = URL(string: link) {
-                    Button("Something wrong? Edit on OpenStreetMap") { openURL(url) }
+                    // A phone-friendly OSM editor when one is installed, otherwise the website.
+                    let editor = EditorApp.installed
+                    Button("Something wrong? Edit " + (editor.map { "in \($0.name)" } ?? "on OpenStreetMap")) {
+                        // Checked again on tap: the app may have been uninstalled since the label was drawn.
+                        openURL(EditorApp.installed?.link(name: place.name, lat: place.lat, lng: place.lng) ?? url)
+                    }
                     Button("Data © OpenStreetMap contributors") {
                         if let copyright = URL(string: "https://www.openstreetmap.org/copyright") { openURL(copyright) }
                     }

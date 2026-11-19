@@ -36,7 +36,7 @@ enum MapsApp: String, CaseIterable {
     }
 
     /// Percent-encodes a query value, including the `&`, `=`, `+` and `#` that URLComponents leaves alone.
-    private static func encode(_ value: String) -> String {
+    fileprivate static func encode(_ value: String) -> String {
         var allowed = CharacterSet.urlQueryAllowed
         allowed.remove(charactersIn: "&=+#?")
         return value.addingPercentEncoding(withAllowedCharacters: allowed) ?? value
@@ -46,6 +46,32 @@ enum MapsApp: String, CaseIterable {
     @MainActor
     static var googleInstalled: Bool {
         UIApplication.shared.canOpenURL(URL(string: "comgooglemaps://")!)
+    }
+}
+
+/// A maps app with an easy OpenStreetMap editor, opened by "Something wrong?" instead of openstreetmap.org.
+enum EditorApp: String {
+    case comaps = "cm"
+    case organicMaps = "om"
+
+    var name: String {
+        switch self {
+        case .comaps: "CoMaps"
+        case .organicMaps: "Organic Maps"
+        }
+    }
+
+    /// The app's place card at the place, which shows the OSM feature there with "Edit place".
+    /// The app wants `ll` before `n`.
+    func link(name: String, lat: Double, lng: Double) -> URL? {
+        URL(string: "\(rawValue)://map?ll=\(lat),\(lng)&n=\(MapsApp.encode(name))")
+    }
+
+    /// CoMaps first: it also claims `om` but cannot read `om://` links.
+    /// Needs `cm` and `om` in LSApplicationQueriesSchemes (project.yml).
+    @MainActor
+    static var installed: EditorApp? {
+        [.comaps, .organicMaps].first { UIApplication.shared.canOpenURL(URL(string: "\($0.rawValue)://")!) }
     }
 }
 

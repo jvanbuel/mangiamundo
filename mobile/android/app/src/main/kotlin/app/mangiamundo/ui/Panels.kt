@@ -58,6 +58,7 @@ import androidx.compose.material3.SingleChoiceSegmentedButtonRow
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -84,6 +85,9 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import app.mangiamundo.AppViewModel
 import app.mangiamundo.DetailVisits
 import java.time.LocalDate
@@ -547,6 +551,37 @@ private fun android.content.Context.directions(place: Place) =
         open("https://www.openstreetmap.org/directions?route=%3B${place.lat}%2C${place.lng}")
     }
 
+/** A maps app with an easy OpenStreetMap editor, opened by "Something wrong?" instead of openstreetmap.org. */
+private enum class EditorApp(val scheme: String, val label: String) {
+    COMAPS("cm", "CoMaps"),
+    ORGANIC_MAPS("om", "Organic Maps");
+
+    /** The app's place card at the place, which shows the OSM feature there with "Edit place". `ll` must come before `n`. */
+    fun link(place: Place) = "$scheme://map?ll=${place.lat},${place.lng}&n=${Uri.encode(place.name)}"
+}
+
+/** The first editor app installed, if any. Needs the schemes in `<queries>` (AndroidManifest.xml). */
+private fun android.content.Context.editorApp(): EditorApp? = EditorApp.entries.firstOrNull { app ->
+    // Screenshot tests have no real package manager.
+    runCatching { Intent(Intent.ACTION_VIEW, "${app.scheme}://map".toUri()).resolveActivity(packageManager) != null }
+        .getOrDefault(false)
+}
+
+/** Preserve the editor deep link, but use the OSM page if the editor becomes unavailable. */
+private fun android.content.Context.edit(place: Place, editor: EditorApp?, url: String) {
+    if (editor == null) {
+        open(url)
+        return
+    }
+    try {
+        startActivity(Intent(Intent.ACTION_VIEW, editor.link(place).toUri()))
+    } catch (_: ActivityNotFoundException) {
+        open(url)
+    } catch (_: SecurityException) {
+        open(url)
+    }
+}
+
 @Composable
 private fun PlaceLinks(place: Place) {
     val colors = LocalAppColors.current
@@ -721,11 +756,22 @@ fun PlaceDetail(
             modifier = Modifier.padding(top = 28.dp).clickable(enabled = !busy) { confirmingClosed = true },
         )
         place.osmUrl?.let { url ->
+            // A phone-friendly OSM editor when one is installed, otherwise the website.
+            var editor by remember(context) { mutableStateOf(context.editorApp()) }
+            val lifecycleOwner = LocalLifecycleOwner.current
+            DisposableEffect(lifecycleOwner, context) {
+                val observer = LifecycleEventObserver { _, event ->
+                    if (event == Lifecycle.Event.ON_RESUME) editor = context.editorApp()
+                }
+                lifecycleOwner.lifecycle.addObserver(observer)
+                onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+            }
             Text(
-                "Something wrong? Edit on OpenStreetMap",
+                "Something wrong? Edit " + (editor?.let { "in ${it.label}" } ?: "on OpenStreetMap"),
                 style = small,
                 color = colors.muted,
-                modifier = Modifier.padding(top = 4.dp).clickable { context.open(url) },
+                // Checked again on tap: the app may have been uninstalled since the label was drawn.
+                modifier = Modifier.padding(top = 4.dp).clickable { context.edit(place, context.editorApp(), url) },
             )
             Text(
                 "Data © OpenStreetMap contributors",

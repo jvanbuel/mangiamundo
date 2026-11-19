@@ -138,6 +138,17 @@ final class DirectionsTests: XCTestCase {
         )
     }
 
+    func testEditorLinksPutTheCoordinatesBeforeTheName() {
+        XCTAssertEqual(
+            EditorApp.comaps.link(name: "Fish & Chips", lat: 50.88, lng: 4.7)?.absoluteString,
+            "cm://map?ll=50.88,4.7&n=Fish%20%26%20Chips"
+        )
+        XCTAssertEqual(
+            EditorApp.organicMaps.link(name: "Lalibela", lat: 50.88, lng: 4.7)?.absoluteString,
+            "om://map?ll=50.88,4.7&n=Lalibela"
+        )
+    }
+
     func testDirectionsFallBackToAppleMapsWithoutGoogleMaps() {
         for preference in DirectionsPreference.allCases {
             XCTAssertEqual(preference.app(googleInstalled: false), .apple)
