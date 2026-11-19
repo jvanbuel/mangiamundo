@@ -355,6 +355,25 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    /** Reports a place as closed for good: it disappears from this user's lists right away. */
+    fun reportClosed(place: Place) {
+        if (busyPlace != null) return
+        busyPlace = place.id
+        viewModelScope.launch {
+            try {
+                api.reportClosed(place.id)
+                places = places.filter { it.id != place.id }
+                if (detail?.id == place.id) closePlace()
+                messageChannel.trySend("Thanks for letting us know. ${place.name} is hidden for you now.")
+                // The place no longer counts towards its countries.
+                location?.let { discover = api.discover(it.area.id) }
+            } catch (e: Exception) {
+                messageChannel.trySend("Could not report this place: ${e.message}")
+            }
+            busyPlace = null
+        }
+    }
+
     /** Updates a place's visits on its card (which shows only the latest) and in its details. */
     private fun setVisits(id: String, update: (List<Visit>) -> List<Visit>) {
         places = places.map { if (it.id == id) it.copy(visits = update(it.visits).take(1)) else it }

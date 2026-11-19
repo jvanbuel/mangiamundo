@@ -68,6 +68,11 @@ actor APIClient {
         _ = try await authed("DELETE", "/api/visits/\(id)")
     }
 
+    /// "This place has closed": hides it for this user, and for everyone after a second report.
+    func reportClosed(placeID: String) async throws {
+        _ = try await authed("PUT", "/api/places/\(encode(placeID))/closed")
+    }
+
     /// Cities and postal codes matching what someone typed.
     func searchAreas(_ query: String) async throws -> [Area] {
         try decode(await request("GET", "/api/areas?q=\(encode(query))"))

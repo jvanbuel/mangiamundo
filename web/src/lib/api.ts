@@ -93,6 +93,10 @@ export const checkIn = (placeId: string, here: { lat: number; lng: number } | nu
 
 export const removeVisit = (visitId: number) => authed<void>('DELETE', `/api/visits/${visitId}`);
 
+/** "This place has closed": hides it for this user, and for everyone after a second report. */
+export const reportClosed = (placeId: string) =>
+	authed<void>('PUT', `/api/places/${encodeURIComponent(placeId)}/closed`);
+
 /** Cities and postal codes matching what someone typed. */
 export const searchAreas = (query: string) => raw<Area[]>('GET', `/api/areas?q=${encodeURIComponent(query)}`, null);
 

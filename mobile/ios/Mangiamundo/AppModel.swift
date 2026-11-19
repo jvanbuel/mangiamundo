@@ -379,6 +379,23 @@ final class AppModel {
         }
     }
 
+    /// Reports a place as closed for good: it disappears from this user's lists right away.
+    func reportClosed(_ place: Place) async {
+        guard busyPlace == nil else { return }
+        busyPlace = place.id
+        defer { busyPlace = nil }
+        do {
+            try await api.reportClosed(placeID: place.id)
+            places.removeAll { $0.id == place.id }
+            if detail?.id == place.id { closePlace() }
+            toast("Thanks for letting us know. \(place.name) is hidden for you now.")
+            // The place no longer counts towards its countries.
+            if let here = location { discover = try await api.discover(areaID: here.area.id) }
+        } catch {
+            toast("Could not report this place: \(error.localizedDescription)")
+        }
+    }
+
     /// Updates a place's visits on its card (which shows only the latest) and in its details.
     private func setVisits(_ id: String, _ update: ([Visit]) -> [Visit]) {
         if let index = places.firstIndex(where: { $0.id == id }) {
