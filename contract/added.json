@@ -1,0 +1,21 @@
+{
+  "address": null,
+  "countries": [
+    "NZ"
+  ],
+  "cuisine": "new_zealand",
+  "distance_m": 0,
+  "hours": null,
+  "id": "user-0123456789abcdef0123456789abcdef",
+  "lat": 50.8798,
+  "lng": 4.7005,
+  "name": "Kiwi",
+  "osm_url": null,
+  "reward": {
+    "area_name": "Leuven",
+    "bonus": "continent",
+    "xp": 380
+  },
+  "url": null,
+  "visits": []
+}

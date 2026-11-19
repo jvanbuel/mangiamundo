@@ -48,6 +48,101 @@
         ],
         "type": "object"
       },
+      "AddedPlace": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/PlaceView"
+          },
+          {
+            "properties": {
+              "reward": {
+                "$ref": "#/components/schemas/Reward"
+              }
+            },
+            "required": [
+              "reward"
+            ],
+            "type": "object"
+          }
+        ],
+        "description": "The place just added, and what it will earn."
+      },
+      "Addition": {
+        "description": "A restaurant the user added and its reward.",
+        "properties": {
+          "area_name": {
+            "description": "The city its bonus was judged in. `None` when no city around it was cached.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "bonus": {
+            "$ref": "#/components/schemas/Bonus"
+          },
+          "confirmed_at": {
+            "format": "int64",
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "country": {
+            "type": "string"
+          },
+          "id": {
+            "description": "The addition's own id, which never changes. Two additions of the same place share\na `place_id` once confirmed, but not this.",
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "place_id": {
+            "description": "The pending place's id, or once confirmed its OpenStreetMap twin's.",
+            "type": "string"
+          },
+          "seen": {
+            "description": "Whether the user was already told it is confirmed. Always `false` while pending.",
+            "type": "boolean"
+          },
+          "status": {
+            "$ref": "#/components/schemas/AdditionStatus"
+          },
+          "submitted_at": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "xp": {
+            "description": "What it earns once confirmed, or earned: 0 for a duplicate.",
+            "format": "int32",
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "id",
+          "place_id",
+          "name",
+          "country",
+          "area_name",
+          "bonus",
+          "xp",
+          "status",
+          "submitted_at",
+          "confirmed_at",
+          "seen"
+        ],
+        "type": "object"
+      },
+      "AdditionStatus": {
+        "description": "Where a restaurant the user added stands.",
+        "enum": [
+          "pending",
+          "confirmed",
+          "duplicate"
+        ],
+        "type": "string"
+      },
       "AreaInfo": {
         "description": "A place people pick as their location: a city or a postal code.",
         "properties": {
@@ -163,7 +258,17 @@
           "completed",
           "continent",
           "world",
-          "everything"
+          "everything",
+          "pioneer"
+        ],
+        "type": "string"
+      },
+      "Bonus": {
+        "description": "What a restaurant the user adds brings to their area, decided when they add it.",
+        "enum": [
+          "none",
+          "country",
+          "continent"
         ],
         "type": "string"
       },
@@ -847,6 +952,12 @@
       },
       "Profile": {
         "properties": {
+          "added": {
+            "description": "Restaurants the user added that OpenStreetMap now has.",
+            "format": "int32",
+            "minimum": 0,
+            "type": "integer"
+          },
           "countries": {
             "format": "int32",
             "minimum": 0,
@@ -885,7 +996,8 @@
           "level_xp",
           "next_level_xp",
           "visits",
-          "countries"
+          "countries",
+          "added"
         ],
         "type": "object"
       },
@@ -898,6 +1010,48 @@
         },
         "required": [
           "public_key"
+        ],
+        "type": "object"
+      },
+      "Reward": {
+        "description": "XP for an added restaurant, granted once OpenStreetMap has it.",
+        "properties": {
+          "area_name": {
+            "description": "The city the bonus was judged in. `null` when no city around it was cached.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "bonus": {
+            "$ref": "#/components/schemas/Bonus"
+          },
+          "xp": {
+            "format": "int32",
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "xp",
+          "bonus",
+          "area_name"
+        ],
+        "type": "object"
+      },
+      "SeenAdditions": {
+        "description": "Additions the user was told about.",
+        "properties": {
+          "ids": {
+            "description": "`id`s from `/api/additions`. At most 100.",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "ids"
         ],
         "type": "object"
       },
@@ -1070,6 +1224,83 @@
   },
   "openapi": "3.1.0",
   "paths": {
+    "/api/additions": {
+      "get": {
+        "operationId": "additions",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/Addition"
+                  },
+                  "type": "array"
+                }
+              }
+            }
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "An error"
+          }
+        },
+        "security": [
+          {
+            "token": []
+          }
+        ],
+        "summary": "The restaurants the user added, newest first, with their rewards. Those confirmed since\nthe user was last told have `seen: false`, for a \"now on the map\" message.",
+        "tags": [
+          "game"
+        ]
+      }
+    },
+    "/api/additions/seen": {
+      "put": {
+        "operationId": "mark_additions_seen",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SeenAdditions"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": "Marked"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "An error"
+          }
+        },
+        "security": [
+          {
+            "token": []
+          }
+        ],
+        "summary": "The user was told about these confirmed additions: they come back with `seen: true`.\nPending ones, and ones not listed, are left alone.",
+        "tags": [
+          "game"
+        ]
+      }
+    },
     "/api/areas": {
       "get": {
         "operationId": "search_areas",
@@ -1528,7 +1759,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/PlaceView"
+                  "$ref": "#/components/schemas/AddedPlace"
                 }
               }
             }
@@ -1549,7 +1780,7 @@
             "token": []
           }
         ],
-        "summary": "Adds a restaurant missing from the map. It shows up right away, but only for whoever\nadded it, and an OpenStreetMap note asks local mappers to add it there for everyone.\nAt most 5 a day.",
+        "summary": "Adds a restaurant missing from the map. It shows up right away, but only for whoever\nadded it, and an OpenStreetMap note asks local mappers to add it there for everyone.\nAt most 5 a day. Once the import finds it on OpenStreetMap it earns up to `reward.xp`:\nless when an earlier addition in the area claimed the same bonus, and nothing when\nsomeone else added the same place first.",
         "tags": [
           "game"
         ]

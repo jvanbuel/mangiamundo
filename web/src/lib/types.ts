@@ -20,6 +20,10 @@ export type Located = Schemas['Located'];
 export type Discover = Schemas['Discover'];
 export type Place = Schemas['PlaceView'];
 export type AddPlace = Schemas['AddPlace'];
+/** The place just added, with the XP it earns once OpenStreetMap has it. */
+export type AddedPlace = Schemas['AddedPlace'];
+export type Bonus = Schemas['Bonus'];
+export type Addition = Schemas['Addition'];
 export type Visit = Schemas['Visit'];
 export type Day = Schemas['Day'];
 export type VisitResult = Schemas['VisitResult'];

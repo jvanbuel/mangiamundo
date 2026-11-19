@@ -1,0 +1,15 @@
+[
+  {
+    "area_name": "Leuven",
+    "bonus": "continent",
+    "confirmed_at": null,
+    "country": "NZ",
+    "id": "user-0123456789abcdef0123456789abcdef",
+    "name": "Kiwi",
+    "place_id": "user-0123456789abcdef0123456789abcdef",
+    "seen": false,
+    "status": "pending",
+    "submitted_at": 1794830400,
+    "xp": 380
+  }
+]

@@ -79,6 +79,7 @@ extension BadgeKind {
         case .continent: return "map.fill"
         case .world: return "globe.europe.africa.fill"
         case .everything: return "crown.fill"
+        case .pioneer: return "mappin.and.ellipse"
         case .unknown: return "star.fill"
         }
     }
@@ -86,7 +87,7 @@ extension BadgeKind {
     var color: Color {
         switch self {
         case .visits, .countries: return Theme.available
-        case .completed, .world: return Theme.completed
+        case .completed, .world, .pioneer: return Theme.completed
         case .continent, .everything: return Theme.discovered
         case .unknown: return Theme.muted
         }

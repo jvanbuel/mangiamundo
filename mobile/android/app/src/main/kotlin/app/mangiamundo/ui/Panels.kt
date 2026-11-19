@@ -30,6 +30,7 @@ import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
+import androidx.compose.material.icons.rounded.AddLocationAlt
 import androidx.compose.material.icons.rounded.Celebration
 import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.Close
@@ -869,6 +870,7 @@ private fun BadgeKind.icon(): ImageVector = when (this) {
     BadgeKind.COMPLETED -> Icons.Rounded.Verified
     BadgeKind.CONTINENT -> Icons.Rounded.Map
     BadgeKind.WORLD -> Icons.Rounded.Public
+    BadgeKind.PIONEER -> Icons.Rounded.AddLocationAlt
     BadgeKind.EVERYTHING, BadgeKind.UNKNOWN -> Icons.Rounded.EmojiEvents
 }
 
@@ -876,7 +878,7 @@ private fun BadgeKind.icon(): ImageVector = when (this) {
 private fun BadgeKind.color(): Color = with(LocalAppColors.current) {
     when (this@color) {
         BadgeKind.VISITS, BadgeKind.COUNTRIES -> available
-        BadgeKind.COMPLETED, BadgeKind.WORLD -> completed
+        BadgeKind.COMPLETED, BadgeKind.WORLD, BadgeKind.PIONEER -> completed
         BadgeKind.CONTINENT, BadgeKind.EVERYTHING -> discovered
         BadgeKind.UNKNOWN -> muted
     }

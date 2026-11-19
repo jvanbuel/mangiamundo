@@ -76,7 +76,8 @@ class CoreTest {
     }
 
     /** Real responses, written by the backend's `writes_contract_fixtures` test. */
-    private val json = ApiClient("http://localhost", object : TokenStore { override var token: String? = null }).json
+    private val client = ApiClient("http://localhost", object : TokenStore { override var token: String? = null })
+    private val json = client.json
     private fun fixture(name: String) = File("../../../contract/$name.json").readText()
 
     @Test
@@ -101,6 +102,30 @@ class CoreTest {
         assertTrue(json.decodeFromString<List<Area>>(fixture("areas")).isNotEmpty())
         assertEquals(2, json.decodeFromString<Located>(fixture("located")).options.size)
         assertEquals("area not found", json.decodeFromString<ErrorBody>(fixture("error")).error)
+        val added = client.decodeAdded(fixture("added"))
+        assertEquals("Kiwi", added.place.name)
+        assertEquals(Reward(380, Bonus.CONTINENT, "Leuven"), added.reward)
+        val additions = json.decodeFromString<List<Addition>>(fixture("additions"))
+        assertEquals(AdditionStatus.PENDING, additions[0].status)
+        assertFalse(additions[0].news)
+        assertEquals("user-0123456789abcdef0123456789abcdef", additions[0].id)
+    }
+
+    @Test
+    fun rewardsReadAsSentences() {
+        val catalog = json.decodeFromString<Catalog>(fixture("countries"))
+        assertEquals(
+            "+380 XP once it is on OpenStreetMap: Oceania food would be new in Leuven.",
+            Reward(380, Bonus.CONTINENT, "Leuven").pendingText("NZ", catalog),
+        )
+        assertEquals("+30 XP once it is on OpenStreetMap.", Reward(30).pendingText("NZ", catalog))
+        val confirmed = Addition("user-1", "osm-node-1", "Lalibela", "ET", "Leuven", Bonus.COUNTRY, 130, AdditionStatus.CONFIRMED, 0, 1)
+        assertTrue(confirmed.news)
+        assertEquals("🇪🇹 Lalibela is on the map. +130 XP, and Ethiopia is new in Leuven!", confirmed.announcement(catalog))
+        assertEquals(
+            "🇪🇹 Lalibela is on the map. Someone added it before you, so it earned no XP.",
+            confirmed.copy(status = AdditionStatus.DUPLICATE, xp = 0).announcement(catalog),
+        )
     }
 
     @Test

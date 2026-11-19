@@ -4,6 +4,7 @@
 	import Flag from '@lucide/svelte/icons/flag';
 	import Globe from '@lucide/svelte/icons/globe';
 	import Map from '@lucide/svelte/icons/map';
+	import MapPinPlus from '@lucide/svelte/icons/map-pin-plus';
 	import PartyPopper from '@lucide/svelte/icons/party-popper';
 	import Utensils from '@lucide/svelte/icons/utensils';
 	import type { BadgeKind } from './types';
@@ -20,6 +21,7 @@
 		continent: Map,
 		world: Globe,
 		everything: Crown,
+		pioneer: MapPinPlus,
 		event: PartyPopper
 	};
 	const COLORS: Record<MedalKind, string> = {
@@ -29,6 +31,7 @@
 		continent: 'var(--discovered)',
 		world: 'var(--completed)',
 		everything: 'var(--discovered)',
+		pioneer: 'var(--completed)',
 		event: 'var(--event)'
 	};
 	const Icon = $derived(ICONS[kind]);

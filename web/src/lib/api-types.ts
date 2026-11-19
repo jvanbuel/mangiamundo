@@ -4,6 +4,46 @@
  */
 
 export interface paths {
+    "/api/additions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * The restaurants the user added, newest first, with their rewards. Those confirmed since
+         *     the user was last told have `seen: false`, for a "now on the map" message.
+         */
+        get: operations["additions"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/additions/seen": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * The user was told about these confirmed additions: they come back with `seen: true`.
+         *     Pending ones, and ones not listed, are left alone.
+         */
+        put: operations["mark_additions_seen"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/areas": {
         parameters: {
             query?: never;
@@ -162,7 +202,9 @@ export interface paths {
         /**
          * Adds a restaurant missing from the map. It shows up right away, but only for whoever
          *     added it, and an OpenStreetMap note asks local mappers to add it there for everyone.
-         *     At most 5 a day.
+         *     At most 5 a day. Once the import finds it on OpenStreetMap it earns up to `reward.xp`:
+         *     less when an earlier addition in the area claimed the same bonus, and nothing when
+         *     someone else added the same place first.
          */
         post: operations["add_place"];
         delete?: never;
@@ -341,6 +383,42 @@ export interface components {
             /** @description An `http` or `https` URL. */
             website?: string | null;
         };
+        /** @description The place just added, and what it will earn. */
+        AddedPlace: components["schemas"]["PlaceView"] & {
+            reward: components["schemas"]["Reward"];
+        };
+        /** @description A restaurant the user added and its reward. */
+        Addition: {
+            /** @description The city its bonus was judged in. `None` when no city around it was cached. */
+            area_name: string | null;
+            bonus: components["schemas"]["Bonus"];
+            /** Format: int64 */
+            confirmed_at: number | null;
+            country: string;
+            /**
+             * @description The addition's own id, which never changes. Two additions of the same place share
+             *     a `place_id` once confirmed, but not this.
+             */
+            id: string;
+            name: string;
+            /** @description The pending place's id, or once confirmed its OpenStreetMap twin's. */
+            place_id: string;
+            /** @description Whether the user was already told it is confirmed. Always `false` while pending. */
+            seen: boolean;
+            status: components["schemas"]["AdditionStatus"];
+            /** Format: int64 */
+            submitted_at: number;
+            /**
+             * Format: int32
+             * @description What it earns once confirmed, or earned: 0 for a duplicate.
+             */
+            xp: number;
+        };
+        /**
+         * @description Where a restaurant the user added stands.
+         * @enum {string}
+         */
+        AdditionStatus: "pending" | "confirmed" | "duplicate";
         /** @description A place people pick as their location: a city or a postal code. */
         AreaInfo: {
             /** @description Where it is, to tell same-named areas apart: "Vlaams-Brabant, Belgium". */
@@ -380,7 +458,12 @@ export interface components {
          * @description What a badge rewards. Clients pick the badge's icon and colour from it.
          * @enum {string}
          */
-        BadgeKind: "visits" | "countries" | "completed" | "continent" | "world" | "everything";
+        BadgeKind: "visits" | "countries" | "completed" | "continent" | "world" | "everything" | "pioneer";
+        /**
+         * @description What a restaurant the user adds brings to their area, decided when they add it.
+         * @enum {string}
+         */
+        Bonus: "none" | "country" | "continent";
         Catalog: {
             continents: components["schemas"]["Continent"][];
             countries: components["schemas"]["Country"][];
@@ -617,6 +700,11 @@ export interface components {
             visits: components["schemas"]["Visit"][];
         };
         Profile: {
+            /**
+             * Format: int32
+             * @description Restaurants the user added that OpenStreetMap now has.
+             */
+            added: number;
             /** Format: int32 */
             countries: number;
             /** Format: int32 */
@@ -636,6 +724,19 @@ export interface components {
         PushKey: {
             /** @description The VAPID public key browsers subscribe with. */
             public_key: string;
+        };
+        /** @description XP for an added restaurant, granted once OpenStreetMap has it. */
+        Reward: {
+            /** @description The city the bonus was judged in. `null` when no city around it was cached. */
+            area_name: string | null;
+            bonus: components["schemas"]["Bonus"];
+            /** Format: int32 */
+            xp: number;
+        };
+        /** @description Additions the user was told about. */
+        SeenAdditions: {
+            /** @description `id`s from `/api/additions`. At most 100. */
+            ids: string[];
         };
         Session: {
             /** @description Send it as `Authorization: Bearer <token>`. */
@@ -693,6 +794,65 @@ export interface components {
 }
 export type $defs = Record<string, never>;
 export interface operations {
+    additions: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Addition"][];
+                };
+            };
+            /** @description An error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    mark_additions_seen: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SeenAdditions"];
+            };
+        };
+        responses: {
+            /** @description Marked */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description An error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
     search_areas: {
         parameters: {
             query: {
@@ -983,7 +1143,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["PlaceView"];
+                    "application/json": components["schemas"]["AddedPlace"];
                 };
             };
             /** @description An error */
