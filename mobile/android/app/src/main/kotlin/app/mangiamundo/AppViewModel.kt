@@ -21,6 +21,7 @@ import app.mangiamundo.core.ReminderPlan
 import app.mangiamundo.core.Status
 import app.mangiamundo.core.Visit
 import app.mangiamundo.core.World
+import app.mangiamundo.core.withRecent
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.channels.Channel
@@ -39,6 +40,8 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     var world by mutableStateOf<World?>(null); private set
     var catalog by mutableStateOf<Catalog?>(null); private set
     var location by mutableStateOf(settings.location); private set
+    /** Areas chosen recently, newest first, for the location picker. Includes the current one. */
+    var recentAreas by mutableStateOf(settings.recentAreas); private set
     var discover by mutableStateOf<Discover?>(null); private set
     var loading by mutableStateOf(false); private set
     var error by mutableStateOf<String?>(null); private set
@@ -126,6 +129,12 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         if (current.area.id != area.id) moveTo(current.copy(area = area))
     }
 
+    /** Takes an area off the recent list. */
+    fun forgetRecent(id: String) {
+        recentAreas = recentAreas.filter { it.id != id }
+        settings.recentAreas = recentAreas
+    }
+
     /** Moves a location saved before areas existed to the city at that point. */
     private suspend fun moveLegacy(lat: Double, lng: Double, fromGps: Boolean) {
         val located = runCatching { api.locateArea(lat, lng) }.getOrNull() ?: return
@@ -142,6 +151,9 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     private fun moveTo(target: SavedLocation) {
+        // The area being left too, so one saved before recents existed shows up.
+        recentAreas = withRecent(location?.let { withRecent(recentAreas, it.area) } ?: recentAreas, target.area)
+        settings.recentAreas = recentAreas
         location = target
         // The old area's countries must not show while the new area loads.
         discover = null

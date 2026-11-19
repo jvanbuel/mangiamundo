@@ -21,6 +21,9 @@ import {
 const LOCATION_KEY = 'mangiamundo.location';
 const PROJECTION_KEY = 'mangiamundo.projection';
 const THEME_KEY = 'mangiamundo.theme';
+const RECENTS_KEY = 'mangiamundo.recentAreas';
+/** Areas kept as recent, including the current one; the picker shows the others. */
+const MAX_RECENTS = 6;
 
 export type Theme = 'system' | 'light' | 'dark';
 
@@ -72,7 +75,9 @@ export const app = $state({
 	/** Web Push reminders: on, off, not possible here, or possible once installed (iPhone). */
 	reminders: 'off' as 'on' | 'off' | 'unsupported' | 'install',
 	remindersBusy: false,
-	toasts: [] as Toast[]
+	toasts: [] as Toast[],
+	/** Areas used lately, newest first, for switching back quickly. */
+	recents: [] as Area[]
 });
 
 /** The last real GPS position, used to verify check-ins even when browsing another city. */
@@ -109,6 +114,7 @@ export async function init() {
 	loadServer();
 	app.projection = load<'globe' | 'mercator'>(PROJECTION_KEY) ?? 'globe';
 	app.theme = load<Theme>(THEME_KEY) ?? 'system';
+	app.recents = load<Area[]>(RECENTS_KEY) ?? [];
 	try {
 		app.catalog = await api.catalog();
 	} catch (error) {
@@ -280,7 +286,10 @@ export function setTheme(theme: Theme) {
 }
 
 export async function setLocation(location: Location) {
+	// The area being left counts too, so a location saved before recents existed is kept.
+	const left = app.location ? remembering(app.location.area, app.recents) : app.recents;
 	app.location = location;
+	saveRecents(remembering(location.area, left));
 	app.selected = null;
 	app.places = [];
 	// The old area's countries must not show while the new area loads.
@@ -288,6 +297,25 @@ export async function setLocation(location: Location) {
 	app.celebrations = [];
 	localStorage.setItem(LOCATION_KEY, JSON.stringify(location));
 	await refresh();
+}
+
+/** `recents` with `area` in front, once, and at most MAX_RECENTS areas. */
+function remembering(area: Area, recents: Area[]): Area[] {
+	return [area, ...recents.filter((a) => a.id !== area.id)].slice(0, MAX_RECENTS);
+}
+
+function saveRecents(recents: Area[]) {
+	app.recents = recents;
+	try {
+		localStorage.setItem(RECENTS_KEY, JSON.stringify(recents));
+	} catch {
+		// Storage unavailable: recents last until the page closes.
+	}
+}
+
+/** Removes an area from the recent ones. */
+export function forgetRecent(id: string) {
+	saveRecents(app.recents.filter((a) => a.id !== id));
 }
 
 /** Picks a city or postal code from a search. */

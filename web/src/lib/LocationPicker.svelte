@@ -1,7 +1,8 @@
 <script lang="ts">
 	import Navigation from '@lucide/svelte/icons/navigation';
+	import X from '@lucide/svelte/icons/x';
 	import * as api from './api';
-	import { app, chooseArea, locate, switchArea } from './state.svelte';
+	import { app, chooseArea, forgetRecent, locate, switchArea } from './state.svelte';
 	import type { Area } from './types';
 
 	let { onclose }: { onclose?: () => void } = $props();
@@ -13,6 +14,8 @@
 	let error = $state<string | null>(null);
 
 	const kindLabel = (area: Area) => (area.kind === 'city' ? 'City' : 'Postal code');
+	/** Recent areas other than the current one. */
+	const recents = $derived(app.recents.filter((a) => a.id !== app.location?.area.id).slice(0, 5));
 
 	// Suggestions while typing. Failures are ignored: Search still works.
 	$effect(() => {
@@ -111,6 +114,23 @@
 		</ul>
 	{:else if searched && !searching}
 		<p class="muted">No city or postal code found. Try a different spelling.</p>
+	{:else if !query.trim() && recents.length}
+		<section aria-labelledby="recent-heading">
+			<h3 id="recent-heading">Recent</h3>
+			<ul>
+				{#each recents as area (area.id)}
+					<li class="recent">
+						<button onclick={() => choose(area)}>
+							<span class="name">{area.name}</span>
+							<span class="muted">{kindLabel(area)}{area.detail ? ` · ${area.detail}` : ''}</span>
+						</button>
+						<button class="forget" aria-label="Remove {area.name} from recent" onclick={() => forgetRecent(area.id)}>
+							<X size={16} strokeWidth={2.5} aria-hidden="true" />
+						</button>
+					</li>
+				{/each}
+			</ul>
+		</section>
 	{/if}
 </div>
 
@@ -195,6 +215,37 @@
 
 	li .muted {
 		font-size: 12px;
+	}
+
+	h3 {
+		margin: 4px 0 4px 10px;
+		font-size: 12px;
+		font-weight: 800;
+		text-transform: uppercase;
+		letter-spacing: 0.04em;
+		color: var(--muted);
+	}
+
+	li.recent {
+		display: flex;
+		align-items: center;
+	}
+
+	li.recent button:first-child {
+		flex: 1;
+		min-width: 0;
+	}
+
+	li button.forget {
+		width: auto;
+		display: grid;
+		place-items: center;
+		padding: 8px;
+		color: var(--muted);
+	}
+
+	li button.forget:hover {
+		color: var(--text);
 	}
 
 	.options {

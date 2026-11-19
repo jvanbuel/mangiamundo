@@ -180,3 +180,16 @@ final class VisitTests: XCTestCase {
         XCTAssertFalse(place([]).visitedToday(now: sameEvening, calendar: brussels))
     }
 }
+
+@MainActor
+final class RecentAreasTests: XCTestCase {
+    private func area(_ id: String) -> Area {
+        Area(id: id, name: id, kind: .city, detail: nil, lat: 0, lng: 0)
+    }
+
+    func testRememberingMovesRepeatsToTheFrontAndKeepsSix() {
+        let recent = ["a", "b", "c", "d", "e", "f"].map(area)
+        XCTAssertEqual(AppModel.remembering(area("c"), in: recent).map(\.id), ["c", "a", "b", "d", "e", "f"])
+        XCTAssertEqual(AppModel.remembering(area("g"), in: recent).map(\.id), ["g", "a", "b", "c", "d", "e"])
+    }
+}

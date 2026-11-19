@@ -68,6 +68,13 @@ class Settings(context: Context) : TokenStore {
             }
         }
 
+    /** Areas chosen recently, newest first, for the location picker. */
+    var recentAreas: List<Area>
+        get() = runCatching {
+            json.decodeFromString(ListSerializer(Area.serializer()), prefs.getString("recentAreas", "[]")!!)
+        }.getOrDefault(emptyList())
+        set(value) = prefs.edit { putString("recentAreas", json.encodeToString(ListSerializer(Area.serializer()), value)) }
+
     /** A location saved before areas existed (a point and a radius): (lat, lng, from GPS). */
     val legacyLocation: Triple<Double, Double, Boolean>?
         get() = if (prefs.contains("lat") && !prefs.contains("area")) {

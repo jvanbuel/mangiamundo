@@ -14,6 +14,8 @@ final class AppModel {
     private(set) var world: World?
     private(set) var catalog: Catalog?
     private(set) var location: SavedLocation?
+    /// Areas chosen before, newest first, to switch back to from the location picker.
+    private(set) var recentAreas: [Area] = []
     private(set) var discover: Discover?
     private(set) var loading = false
     /// How far loading the area has come, while that takes long enough to show a wheel.
@@ -72,6 +74,10 @@ final class AppModel {
         }
         if let raw = defaults.string(forKey: "mangiamundo.projection"), let kind = ProjectionKind(rawValue: raw) {
             projection = kind
+        }
+        if let data = defaults.data(forKey: Self.recentKey),
+           let saved = try? JSONDecoder().decode([Area].self, from: data) {
+            recentAreas = saved
         }
         if let data = defaults.data(forKey: "mangiamundo.location"),
            let saved = try? JSONDecoder().decode(SavedLocation.self, from: data) {
@@ -153,8 +159,30 @@ final class AppModel {
         return (location.lat, location.lng)
     }
 
+    private static let recentKey = "mangiamundo.recentAreas"
+
+    /// `area` at the front of `recent`, without duplicates, keeping at most 6.
+    static func remembering(_ area: Area, in recent: [Area]) -> [Area] {
+        Array(([area] + recent.filter { $0.id != area.id }).prefix(6))
+    }
+
+    func forgetRecent(_ id: String) {
+        recentAreas.removeAll { $0.id == id }
+        saveRecent()
+    }
+
+    private func saveRecent() {
+        if let data = try? JSONEncoder().encode(recentAreas) {
+            defaults.set(data, forKey: Self.recentKey)
+        }
+    }
+
     private func move(to target: SavedLocation) {
+        // The area being left counts too, so a location saved before recents existed is kept.
+        let left = location.map { Self.remembering($0.area, in: recentAreas) } ?? recentAreas
         location = target
+        recentAreas = Self.remembering(target.area, in: left)
+        saveRecent()
         // The old area's countries must not show while the new area loads.
         discover = nil
         celebrations = []

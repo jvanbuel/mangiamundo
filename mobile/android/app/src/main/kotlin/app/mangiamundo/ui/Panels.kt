@@ -31,6 +31,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.rounded.Celebration
 import androidx.compose.material.icons.rounded.Check
+import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.Notifications
 import androidx.compose.material.icons.rounded.NotificationsActive
 import androidx.compose.material.icons.rounded.EmojiEvents
@@ -391,27 +392,45 @@ fun LocationPicker(vm: AppViewModel, onUseGps: () -> Unit, onDone: () -> Unit) {
         }
         failure?.let { Text(it, color = colors.danger, fontSize = 13.sp) }
 
-        results?.let { found ->
+        // Recent areas while nothing is typed; search results once something is.
+        val recent = vm.recentAreas.filter { it.id != vm.location?.area?.id }.take(5)
+        if (query.isBlank() && recent.isNotEmpty()) {
+            Text("Recent", style = MaterialTheme.typography.titleSmall, color = colors.muted)
+            for (area in recent) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    AreaRow(area, Modifier.weight(1f)) {
+                        vm.chooseArea(area)
+                        onDone()
+                    }
+                    IconButton(onClick = { vm.forgetRecent(area.id) }) {
+                        Icon(Icons.Rounded.Close, contentDescription = "Remove ${area.name} from recent", tint = colors.muted)
+                    }
+                }
+            }
+        }
+
+        results?.takeIf { query.isNotBlank() }?.let { found ->
             if (found.isEmpty()) {
                 Text("No city or postal code found. Try a different spelling.", color = colors.muted, fontSize = 13.sp)
             }
             for (result in found) {
-                Column(
-                    Modifier
-                        .fillMaxWidth()
-                        .clip(RoundedCornerShape(8.dp))
-                        .clickable {
-                            vm.chooseArea(result)
-                            onDone()
-                        }
-                        .padding(10.dp),
-                ) {
-                    Text(result.name, color = colors.text)
-                    val kind = if (result.kind == AreaKind.CITY) "City" else "Postal code"
-                    Text(listOfNotNull(kind, result.detail).joinToString(" · "), color = colors.muted, fontSize = 12.sp)
+                AreaRow(result, Modifier.fillMaxWidth()) {
+                    vm.chooseArea(result)
+                    onDone()
                 }
             }
         }
+    }
+}
+
+/** A city or postal code in the picker: its name, then its kind and where it is. */
+@Composable
+private fun AreaRow(area: Area, modifier: Modifier, onClick: () -> Unit) {
+    val colors = LocalAppColors.current
+    Column(modifier.clip(RoundedCornerShape(8.dp)).clickable(onClick = onClick).padding(10.dp)) {
+        Text(area.name, color = colors.text)
+        val kind = if (area.kind == AreaKind.CITY) "City" else "Postal code"
+        Text(listOfNotNull(kind, area.detail).joinToString(" · "), color = colors.muted, fontSize = 12.sp)
     }
 }
 

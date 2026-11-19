@@ -499,25 +499,48 @@ struct LocationPicker: View {
                     Text("No city or postal code found. Try a different spelling.").font(Theme.font(.footnote)).foregroundStyle(Theme.muted)
                 }
                 ForEach(results) { result in
-                    Button {
-                        model.choose(result)
-                        onDone()
-                    } label: {
-                        VStack(alignment: .leading, spacing: 1) {
-                            Text(result.name)
-                            Text([result.kind == .city ? "City" : "Postal code", result.detail].compactMap { $0 }.joined(separator: " · "))
-                                .font(Theme.font(.caption))
-                                .foregroundStyle(Theme.muted)
+                    areaButton(result)
+                }
+            } else if query.trimmingCharacters(in: .whitespaces).isEmpty {
+                let recent = model.recentAreas.filter { $0.id != model.location?.area.id }.prefix(5)
+                if !recent.isEmpty {
+                    Text("Recent")
+                        .font(Theme.font(.subheadline, .extraBold))
+                        .foregroundStyle(Theme.muted)
+                        .accessibilityAddTraits(.isHeader)
+                    ForEach(recent) { area in
+                        HStack {
+                            areaButton(area)
+                            Button { model.forgetRecent(area.id) } label: {
+                                Image(systemName: "xmark").font(.caption).foregroundStyle(Theme.muted).padding(8)
+                            }
+                            .buttonStyle(.plain)
+                            .accessibilityLabel("Remove \(area.name) from recent")
                         }
-                        .multilineTextAlignment(.leading)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .padding(.vertical, 8)
-                        .contentShape(Rectangle())
                     }
-                    .buttonStyle(.plain)
                 }
             }
         }
+    }
+
+    /// A city or postal code to move to, as in search results and recent areas.
+    private func areaButton(_ area: Area) -> some View {
+        Button {
+            model.choose(area)
+            onDone()
+        } label: {
+            VStack(alignment: .leading, spacing: 1) {
+                Text(area.name)
+                Text([area.kind == .city ? "City" : "Postal code", area.detail].compactMap { $0 }.joined(separator: " · "))
+                    .font(Theme.font(.caption))
+                    .foregroundStyle(Theme.muted)
+            }
+            .multilineTextAlignment(.leading)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.vertical, 8)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
     }
 
     /// Suggestions while typing. Failures are ignored: Search still works.
