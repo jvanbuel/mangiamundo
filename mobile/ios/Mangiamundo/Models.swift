@@ -5,6 +5,8 @@ struct Country: Decodable {
     let name: String
     let continent: String
     let flag: String
+    /// Its food's OpenStreetMap `cuisine` value; only countries with one can be picked for a new place.
+    var cuisine: String? = nil
 }
 
 /// From `/api/health`. An older server sends only `ok`.

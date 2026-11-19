@@ -455,6 +455,27 @@ final class AppModel {
         }
     }
 
+    /// Adds a restaurant OpenStreetMap lacks, at the device's position: the user stands at
+    /// it, as OSM wants additions from people who know the place. The place, once added.
+    func addPlace(name: String, country: String, address: String?, website: String?) async -> Place? {
+        do {
+            guard let fix = try? await locationService.current() else {
+                toast("Allow location access and stand at the restaurant: its position is yours.")
+                return nil
+            }
+            let lat = fix.coordinate.latitude, lng = fix.coordinate.longitude
+            gpsFix = (lat, lng, Date())
+            let place = try await api.addPlace(name: name, country: country, lat: lat, lng: lng, address: address, website: website)
+            toast("\(place.name) added. You see it right away; OpenStreetMap mappers were asked to add it for everyone.")
+            // It counts towards its country, for this user, if it lies in the area.
+            if let here = location, let fresh = try? await api.discover(areaID: here.area.id) { discover = fresh }
+            return place
+        } catch {
+            toast("Could not add the restaurant: \(error.localizedDescription)")
+            return nil
+        }
+    }
+
     /// Updates a place's visits on its card (which shows only the latest) and in its details.
     private func setVisits(_ id: String, _ update: ([Visit]) -> [Visit]) {
         if let index = places.firstIndex(where: { $0.id == id }) {

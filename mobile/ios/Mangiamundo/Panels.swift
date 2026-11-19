@@ -961,3 +961,79 @@ struct PlaceDetail: View {
 func distance(_ meters: Int) -> String {
     meters < 1000 ? "\(meters / 10 * 10) m" : String(format: "%.1f km", Double(meters) / 1000)
 }
+
+/// "Add a missing restaurant": it goes on the map where the user stands.
+struct AddPlaceForm: View {
+    @Environment(AppModel.self) private var model
+    @Environment(\.openURL) private var openURL
+    let onCancel: () -> Void
+    let onAdded: (Place) -> Void
+
+    @State private var name = ""
+    @State private var country = ""
+    @State private var address = ""
+    @State private var website = ""
+    @State private var busy = false
+
+    /// Only countries with a cuisine can be the food a place serves.
+    private var countries: [Country] {
+        (model.catalog?.countries ?? []).filter { $0.cuisine != nil }.sorted { $0.name < $1.name }
+    }
+
+    private func trimmed(_ text: String) -> String? {
+        let value = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        return value.isEmpty ? nil : value
+    }
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                Section {
+                    TextField("Name", text: $name)
+                    Picker("Food from", selection: $country) {
+                        Text("Choose a country").tag("")
+                        ForEach(countries, id: \.code) { Text("\($0.flag) \($0.name)").tag($0.code) }
+                    }
+                } footer: {
+                    Text("Stand at the restaurant: it goes on the map where you are.")
+                }
+                Section("Optional") {
+                    TextField("Address", text: $address).textContentType(.fullStreetAddress)
+                    TextField("Website", text: $website)
+                        .keyboardType(.URL)
+                        .textInputAutocapitalization(.never)
+                        .autocorrectionDisabled()
+                }
+                Section {
+                    Button("Only you see it until it is on OpenStreetMap. We ask its mappers to add it by posting a note, shared under the Open Database License.") {
+                        if let url = URL(string: "https://www.openstreetmap.org/copyright") { openURL(url) }
+                    }
+                    .buttonStyle(.plain)
+                    .font(Theme.font(.caption))
+                    .foregroundStyle(Theme.muted)
+                }
+            }
+            .navigationTitle("Add a restaurant")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) { Button("Cancel", action: onCancel) }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button(busy ? "Adding…" : "Add here") {
+                        busy = true
+                        Task {
+                            let place = await model.addPlace(
+                                name: name.trimmingCharacters(in: .whitespacesAndNewlines),
+                                country: country,
+                                address: trimmed(address),
+                                website: trimmed(website)
+                            )
+                            busy = false
+                            if let place { onAdded(place) }
+                        }
+                    }
+                    .disabled(busy || trimmed(name) == nil || country.isEmpty)
+                }
+            }
+        }
+    }
+}

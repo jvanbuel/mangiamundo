@@ -17,6 +17,11 @@ pub struct Country {
     pub flag: String,
     pub lat: f64,
     pub lng: f64,
+    /// The OpenStreetMap `cuisine` value for its food, like "sri_lankan"; `null` when the
+    /// catalog has none. Only countries with one can be picked for a new place.
+    #[serde(default)]
+    #[schema(required = true)]
+    pub cuisine: Option<&'static str>,
 }
 
 pub const CONTINENTS: &[(&str, &str)] = &[
@@ -31,8 +36,12 @@ pub const CONTINENTS: &[(&str, &str)] = &[
 pub fn countries() -> &'static [Country] {
     static DATA: OnceLock<Vec<Country>> = OnceLock::new();
     DATA.get_or_init(|| {
-        serde_json::from_str(include_str!("../data/countries.json"))
-            .expect("data/countries.json is valid")
+        let mut all: Vec<Country> =
+            serde_json::from_str(include_str!("../data/countries.json")).expect("data/countries.json is valid");
+        for c in &mut all {
+            c.cuisine = cuisine_tag(&c.code);
+        }
+        all
     })
 }
 

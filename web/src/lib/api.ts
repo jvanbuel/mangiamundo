@@ -1,4 +1,4 @@
-import type { Area, AreaProgress, Catalog, Celebration, Discover, Health, Located, Place, VisitResult } from './types';
+import type { AddPlace, Area, AreaProgress, Catalog, Celebration, Discover, Health, Located, Place, VisitResult } from './types';
 
 const BASE = import.meta.env.VITE_API_BASE ?? '';
 const TOKEN_KEY = 'mangiamundo.token';
@@ -96,6 +96,9 @@ export const removeVisit = (visitId: number) => authed<void>('DELETE', `/api/vis
 /** "This place has closed": hides it for this user, and for everyone after a second report. */
 export const reportClosed = (placeId: string) =>
 	authed<void>('PUT', `/api/places/${encodeURIComponent(placeId)}/closed`);
+
+/** Adds a restaurant OpenStreetMap lacks. Only this user sees it until OSM has it. */
+export const addPlace = (place: AddPlace) => authed<Place>('POST', '/api/places', place);
 
 /** Cities and postal codes matching what someone typed. */
 export const searchAreas = (query: string) => raw<Area[]>('GET', `/api/areas?q=${encodeURIComponent(query)}`, null);

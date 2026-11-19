@@ -5,6 +5,9 @@ struct ContentView: View {
     @Environment(\.scenePhase) private var scenePhase
     @State private var pickerOpen = false
     @State private var settingsOpen = false
+    @State private var adding = false
+    /// Opened once the add form has closed: one sheet at a time.
+    @State private var added: Place?
     /// Whether "Directions with" is a choice to make. Checked again on return to the foreground,
     /// since Google Maps may have been installed or removed in the meantime.
     @State private var googleInstalled = false
@@ -70,6 +73,13 @@ struct ContentView: View {
             .presentationDetents([.medium, .large])
             .presentationBackground(Theme.panel)
         }
+        .sheet(isPresented: $adding, onDismiss: {
+            if let place = added { model.openPlace(place) }
+            added = nil
+        }) {
+            AddPlaceForm(onCancel: { adding = false }, onAdded: { added = $0; adding = false })
+                .overlay(alignment: .top) { ToastStack(toasts: model.toasts) }
+        }
         .sheet(isPresented: $settingsOpen) {
             SettingsSheet(googleInstalled: googleInstalled)
                 .padding(20)
@@ -134,6 +144,11 @@ struct ContentView: View {
                     .pickerStyle(.segmented)
                     if model.tab == 0 {
                         CountryList(discover: discover)
+                        Button("Is a restaurant missing? Add it") { adding = true }
+                            .font(Theme.font(.footnote))
+                            .foregroundStyle(Theme.muted)
+                            .frame(maxWidth: .infinity)
+                            .padding(.top, 8)
                     } else {
                         BadgeGrid(badges: discover.badges, events: discover.events)
                     }

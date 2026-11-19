@@ -25,6 +25,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.material.icons.Icons
@@ -45,6 +46,8 @@ import androidx.compose.material.icons.rounded.Settings
 import androidx.compose.material.icons.rounded.Verified
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -1055,5 +1058,64 @@ fun BadgeGrid(badges: List<Badge>, events: List<EventProgress> = emptyList(), to
         }
         // Keep the last row's medals the same width as the others.
         repeat((3 - tiles.size % 3) % 3) { Spacer(Modifier.weight(1f)) }
+    }
+}
+
+/** "Add a missing restaurant": it goes on the map where the user stands. */
+@Composable
+fun AddPlaceForm(
+    countries: List<Country>,
+    busy: Boolean,
+    onCancel: () -> Unit,
+    onAdd: (name: String, country: String, address: String?, website: String?) -> Unit,
+) {
+    val colors = LocalAppColors.current
+    val context = LocalContext.current
+    var name by rememberSaveable { mutableStateOf("") }
+    var country by rememberSaveable { mutableStateOf<String?>(null) }
+    var address by rememberSaveable { mutableStateOf("") }
+    var website by rememberSaveable { mutableStateOf("") }
+    var choosing by remember { mutableStateOf(false) }
+    // Only countries with a cuisine can be the food a place serves.
+    val choices = remember(countries) { countries.filter { it.cuisine != null }.sortedBy { it.name } }
+    val chosen = choices.firstOrNull { it.code == country }
+
+    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        Text("Add a missing restaurant", style = MaterialTheme.typography.titleLarge, color = colors.text)
+        Text("Stand at the restaurant: it goes on the map where you are.", color = colors.muted)
+        OutlinedTextField(name, { name = it }, label = { Text("Name") }, singleLine = true, modifier = Modifier.fillMaxWidth())
+        Box {
+            OutlinedButton(onClick = { choosing = true }, modifier = Modifier.fillMaxWidth()) {
+                Text(chosen?.let { "Food from ${it.flag} ${it.name}" } ?: "Food from… choose a country")
+            }
+            DropdownMenu(expanded = choosing, onDismissRequest = { choosing = false }) {
+                for (c in choices) {
+                    DropdownMenuItem(text = { Text("${c.flag} ${c.name}") }, onClick = { country = c.code; choosing = false })
+                }
+            }
+        }
+        OutlinedTextField(address, { address = it }, label = { Text("Address (optional)") }, singleLine = true, modifier = Modifier.fillMaxWidth())
+        OutlinedTextField(
+            website,
+            { website = it },
+            label = { Text("Website (optional)") },
+            placeholder = { Text("https://") },
+            singleLine = true,
+            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri),
+            modifier = Modifier.fillMaxWidth(),
+        )
+        Text(
+            "Only you see it until it is on OpenStreetMap. We ask its mappers to add it by posting a note, shared under the Open Database License.",
+            style = MaterialTheme.typography.bodySmall,
+            color = colors.muted,
+            modifier = Modifier.clickable { context.open("https://www.openstreetmap.org/copyright") },
+        )
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+            TextButton(onClick = onCancel) { Text("Cancel") }
+            Button(
+                onClick = { onAdd(name.trim(), country.orEmpty(), address.trim().ifEmpty { null }, website.trim().ifEmpty { null }) },
+                enabled = !busy && name.isNotBlank() && chosen != null,
+            ) { Text(if (busy) "Adding…" else "Add it here") }
+        }
     }
 }

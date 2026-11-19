@@ -4,6 +4,7 @@ import * as push from './push';
 import { hideSplash } from './splash';
 import {
 	statusOf,
+	type AddPlace,
 	type BadgeKind,
 	type Celebration,
 	type Catalog,
@@ -547,6 +548,27 @@ export async function reportClosed(place: Place) {
 		toast(null, 'Could not report this place', message(error));
 	} finally {
 		app.busyPlace = null;
+	}
+}
+
+/** Adds a restaurant OpenStreetMap lacks, at the device's position: the user stands at
+ * it, as OSM wants additions from people who know the place. True once added. */
+export async function addPlace(fields: Omit<AddPlace, 'lat' | 'lng'>): Promise<boolean> {
+	try {
+		const { coords } = await position().catch(() => {
+			throw new Error('Allow location access and stand at the restaurant: its position is yours.');
+		});
+		gpsFix = { lat: coords.latitude, lng: coords.longitude, at: Date.now() };
+		const place = await api.addPlace({ ...fields, lat: coords.latitude, lng: coords.longitude });
+		toast(null, `${place.name} added`, 'You see it right away. OpenStreetMap mappers were asked to add it for everyone.');
+		// It counts towards its country, for this user, if it lies in the area.
+		const location = app.location;
+		if (location) app.discover = await api.discover(location.area.id);
+		await openPlace(place.id);
+		return true;
+	} catch (error) {
+		toast(null, 'Could not add the restaurant', message(error));
+		return false;
 	}
 }
 
