@@ -2,11 +2,12 @@
 //! boundaries). No API key needed.
 
 use async_trait::async_trait;
+use futures::stream::{FuturesUnordered, StreamExt};
 use serde::Deserialize;
 use serde_json::Value;
 use sqlx::SqlitePool;
 use std::collections::HashMap;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use super::{AreaDirectory, AreaInfo, AreaKind, Boundary, FoundPlace, Located, PlacesProvider};
@@ -20,15 +21,21 @@ pub const IMPORT_BBOX: Bbox = Bbox { south: 49.4, west: 2.4, north: 51.6, east: 
 const IMPORT_EVERY_SECS: i64 = 86_400;
 const IMPORT_RETRY: Duration = Duration::from_secs(3600);
 const IMPORTED_AT: &str = "osm_import_at";
+/// For an area: how long a server gets before the next one is asked too.
+const NEXT_SERVER_AFTER: Duration = Duration::from_secs(15);
+/// Expected time of an area query until one has been measured.
+const FIRST_GUESS_SECS: f64 = 20.0;
 
 pub struct Overpass {
     http: reqwest::Client,
     urls: Vec<String>,
+    /// Running average of how long successful area queries took, in seconds.
+    usual_secs: Mutex<f64>,
 }
 
 impl Overpass {
     pub fn new(http: reqwest::Client, urls: Vec<String>) -> Self {
-        Self { http, urls }
+        Self { http, urls, usual_secs: Mutex::new(FIRST_GUESS_SECS) }
     }
 
     async fn fetch(&self, url: &str, query: &str, timeout: Duration) -> anyhow::Result<Vec<FoundPlace>> {
@@ -45,19 +52,56 @@ impl Overpass {
         parse(&body)
     }
 
-    /// Asks each server in turn until one answers.
-    async fn fetch_any(&self, query: &str, timeout: Duration) -> anyhow::Result<Vec<FoundPlace>> {
+    /// Asks the servers in order and returns the first answer. With `next_after`, the next
+    /// server is also asked when the current one fails or hasn't answered in that time; the
+    /// earlier requests keep running, as a slow server may still answer first. Without it, one
+    /// server at a time, so a heavy query never runs twice.
+    async fn fetch_any<'a>(
+        &'a self,
+        query: &'a str,
+        timeout: Duration,
+        next_after: Option<Duration>,
+        on_next_server: &(dyn Fn() + Send + Sync),
+    ) -> anyhow::Result<Vec<FoundPlace>> {
         let mut last_error = anyhow::anyhow!("no Overpass server configured");
-        for url in &self.urls {
-            match self.fetch(url, query, timeout).await {
-                Ok(places) => return Ok(places),
-                Err(error) => {
-                    tracing::warn!(url, error = format!("{error:#}"), "overpass server failed, trying the next");
-                    last_error = error;
+        let mut urls = self.urls.iter();
+        let ask = |url: &'a str| async move { (url, self.fetch(url, query, timeout).await) };
+        let mut running = FuturesUnordered::new();
+        let first = urls.next().ok_or_else(|| anyhow::anyhow!("no Overpass server configured"))?;
+        running.push(ask(first));
+        loop {
+            let wait = next_after.filter(|_| urls.len() > 0);
+            let next = tokio::select! {
+                Some((url, result)) = running.next() => match result {
+                    Ok(places) => return Ok(places),
+                    Err(error) => {
+                        tracing::warn!(url, error = format!("{error:#}"), "overpass server failed, trying the next");
+                        last_error = error;
+                        true
+                    }
+                },
+                _ = tokio::time::sleep(wait.unwrap_or_default()), if wait.is_some() => {
+                    tracing::info!("overpass server slow, asking the next one too");
+                    true
+                }
+            };
+            if next {
+                match urls.next() {
+                    Some(url) => {
+                        on_next_server();
+                        running.push(ask(url));
+                    }
+                    None if running.is_empty() => return Err(last_error),
+                    None => {}
                 }
             }
         }
-        Err(last_error)
+    }
+
+    /// Remembers how long a successful area query took.
+    fn measured(&self, secs: f64) {
+        let mut usual = self.usual_secs.lock().unwrap();
+        *usual = 0.7 * *usual + 0.3 * secs;
     }
 }
 
@@ -164,10 +208,19 @@ impl PlacesProvider for Overpass {
         "osm"
     }
 
-    async fn search(&self, area: &Boundary) -> anyhow::Result<Vec<FoundPlace>> {
-        let mut places = self.fetch_any(&query(area.shape.bbox(), 60), Duration::from_secs(75)).await?;
+    async fn search(&self, area: &Boundary, on_next_server: &(dyn Fn() + Send + Sync)) -> anyhow::Result<Vec<FoundPlace>> {
+        let started = Instant::now();
+        let query = query(area.shape.bbox(), 60);
+        let mut places = self.fetch_any(&query, Duration::from_secs(75), Some(NEXT_SERVER_AFTER), on_next_server).await?;
+        let secs = started.elapsed().as_secs_f64();
+        tracing::info!(secs, places = places.len(), "overpass area query");
+        self.measured(secs);
         places.retain(|p| area.shape.contains(p.lat, p.lng));
         Ok(places)
+    }
+
+    fn expected_secs(&self, _area: &Boundary) -> f64 {
+        *self.usual_secs.lock().unwrap()
     }
 }
 
@@ -175,7 +228,7 @@ impl PlacesProvider for Overpass {
 /// day is kinder to the public servers than one per area, and a failure only delays
 /// the refresh instead of breaking a user's request.
 pub async fn import(db: &SqlitePool, overpass: &Overpass) -> anyhow::Result<usize> {
-    let places = overpass.fetch_any(&query(IMPORT_BBOX, 300), Duration::from_secs(330)).await?;
+    let places = overpass.fetch_any(&query(IMPORT_BBOX, 300), Duration::from_secs(330), None, &|| ()).await?;
     store::replace_imported(db, IMPORT_BBOX, &places).await?;
     store::set_setting(db, IMPORTED_AT, &store::now().to_string()).await?;
     Ok(places.len())
@@ -220,14 +273,14 @@ impl PlacesProvider for WithImport {
         self.live.name()
     }
 
-    async fn search(&self, area: &Boundary) -> anyhow::Result<Vec<FoundPlace>> {
+    async fn search(&self, area: &Boundary, on_next_server: &(dyn Fn() + Send + Sync)) -> anyhow::Result<Vec<FoundPlace>> {
         let bbox = area.shape.bbox();
         if covered(bbox) && store::setting(&self.db, IMPORTED_AT).await?.is_some() {
             let mut places = store::imported_in(&self.db, bbox).await?;
             places.retain(|p| area.shape.contains(p.lat, p.lng));
             return Ok(places);
         }
-        self.live.search(area).await
+        self.live.search(area, on_next_server).await
     }
 
     fn expected_secs(&self, area: &Boundary) -> f64 {
@@ -430,6 +483,67 @@ fn photon_areas(found: &Value) -> Vec<AreaInfo> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A fake Overpass server: answers with `status` and one restaurant after `delay`.
+    async fn fake_server(status: u16, delay: Duration) -> String {
+        use axum::http::StatusCode;
+        let app = axum::Router::new().route(
+            "/api/interpreter",
+            axum::routing::post(move || async move {
+                tokio::time::sleep(delay).await;
+                let body = r#"{"elements":[{"type":"node","id":1,"lat":50.88,"lon":4.70,"tags":{"name":"Lalibela","cuisine":"ethiopian"}}]}"#;
+                (StatusCode::from_u16(status).unwrap(), body)
+            }),
+        );
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let url = format!("http://{}/api/interpreter", listener.local_addr().unwrap());
+        tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+        url
+    }
+
+    #[tokio::test]
+    async fn a_failing_or_slow_server_brings_in_the_next_one() {
+        let failing = fake_server(502, Duration::ZERO).await;
+        let slow = fake_server(200, Duration::from_secs(5)).await;
+        let quick = fake_server(200, Duration::from_millis(10)).await;
+        let overpass = Overpass::new(reqwest::Client::new(), vec![failing, slow, quick]);
+        let asked = std::sync::atomic::AtomicUsize::new(0);
+        let started = Instant::now();
+        let places = overpass
+            .fetch_any("q", Duration::from_secs(10), Some(Duration::from_millis(200)), &|| {
+                asked.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+            })
+            .await
+            .unwrap();
+        assert_eq!(places[0].id, "osm-node-1");
+        // The 502 brings in the slow server at once; 200 ms later the quick one answers first.
+        assert_eq!(asked.into_inner(), 2);
+        assert!(started.elapsed() < Duration::from_secs(2), "{:?}", started.elapsed());
+    }
+
+    #[tokio::test]
+    async fn without_a_deadline_servers_are_asked_one_at_a_time() {
+        let slow = fake_server(200, Duration::from_millis(500)).await;
+        let quick = fake_server(200, Duration::ZERO).await;
+        let overpass = Overpass::new(reqwest::Client::new(), vec![slow, quick]);
+        let asked = std::sync::atomic::AtomicUsize::new(0);
+        overpass
+            .fetch_any("q", Duration::from_secs(10), None, &|| {
+                asked.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+            })
+            .await
+            .unwrap();
+        assert_eq!(asked.into_inner(), 0);
+    }
+
+    #[test]
+    fn the_expected_time_follows_measured_queries() {
+        let overpass = Overpass::new(reqwest::Client::new(), vec![]);
+        for _ in 0..20 {
+            overpass.measured(100.0);
+        }
+        assert!((99.0..=100.0).contains(&*overpass.usual_secs.lock().unwrap()));
+    }
 
     #[test]
     fn parses_nodes_and_ways_and_skips_unmapped_cuisines() {

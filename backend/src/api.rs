@@ -373,6 +373,13 @@ impl Loads {
         self.0.lock().unwrap().insert(id.to_string(), step);
     }
 
+    /// Starts a new stretch of the current step from where it is now, with a new text.
+    fn restart(&self, id: &str, text: &'static str, expected_secs: f64) {
+        if let Some((percent, _)) = self.progress(id) {
+            self.step(id, f64::from(percent), 95.0, text, expected_secs);
+        }
+    }
+
     /// The percentage and what is happening, or None when the area isn't loading.
     fn progress(&self, id: &str) -> Option<(u8, &'static str)> {
         let loads = self.0.lock().unwrap();
@@ -432,8 +439,11 @@ async fn resolve_area(state: &AppState, id: &str) -> Result<Area, ApiError> {
             boundary
         }
     };
-    state.loads.step(id, 15.0, 95.0, "Looking for restaurants", state.places.expected_secs(&boundary));
-    match state.places.search(&boundary).await {
+    let expected = state.places.expected_secs(&boundary);
+    state.loads.step(id, 15.0, 95.0, "Looking for restaurants", expected);
+    // Another server starts the estimate over from where the wheel is.
+    let next_server = || state.loads.restart(id, "Trying another server", expected);
+    match state.places.search(&boundary, &next_server).await {
         Ok(found) => {
             state.loads.step(id, 95.0, 100.0, "Counting countries", 0.5);
             let area = Area { boundary, provider: state.places.name().into(), fetched_at: state.now() };

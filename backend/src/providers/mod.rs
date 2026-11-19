@@ -31,8 +31,9 @@ pub struct FoundPlace {
 #[async_trait]
 pub trait PlacesProvider: Send + Sync {
     fn name(&self) -> &'static str;
-    /// All places serving a national cuisine inside the area's outline.
-    async fn search(&self, area: &Boundary) -> anyhow::Result<Vec<FoundPlace>>;
+    /// All places serving a national cuisine inside the area's outline. `on_next_server` is
+    /// called when the provider starts asking another server, for the progress wheel.
+    async fn search(&self, area: &Boundary, on_next_server: &(dyn Fn() + Send + Sync)) -> anyhow::Result<Vec<FoundPlace>>;
     /// About how long `search` takes for this area, for the progress wheel.
     fn expected_secs(&self, _area: &Boundary) -> f64 {
         20.0
