@@ -16,6 +16,8 @@ final class AppModel {
     private(set) var location: SavedLocation?
     private(set) var discover: Discover?
     private(set) var loading = false
+    /// How far loading the area has come, while that takes long enough to show a wheel.
+    private(set) var areaProgress: AreaProgress?
     private(set) var error: String?
     /// The first data is in (or failed), so the startup loader can go.
     private(set) var ready = false
@@ -223,6 +225,21 @@ final class AppModel {
         refreshTask = Task {
             loading = true
             error = nil
+            // A new area can take a while to load: show the server's progress after 0.3 s.
+            let poll = Task {
+                try? await Task.sleep(for: .milliseconds(300))
+                while !Task.isCancelled {
+                    // nil (not started or already done) and errors keep the last value.
+                    if let progress = try? await api.areaProgress(areaID: here.area.id), !Task.isCancelled {
+                        areaProgress = progress
+                    }
+                    try? await Task.sleep(for: .milliseconds(400))
+                }
+            }
+            defer {
+                poll.cancel()
+                areaProgress = nil
+            }
             do {
                 let result = try await api.discover(areaID: here.area.id)
                 guard !Task.isCancelled else { return }

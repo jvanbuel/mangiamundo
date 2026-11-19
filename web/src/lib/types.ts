@@ -15,6 +15,7 @@ export type Celebration = Schemas['CelebrationView'];
 export type AreaKind = Schemas['AreaKind'];
 /** A city (every postal code in it) or a single postal code. */
 export type Area = Schemas['AreaInfo'];
+export type AreaProgress = Schemas['LoadProgress'];
 export type Located = Schemas['Located'];
 export type Discover = Schemas['Discover'];
 export type Place = Schemas['PlaceView'];

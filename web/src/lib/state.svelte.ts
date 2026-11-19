@@ -9,6 +9,7 @@ import {
 	type Catalog,
 	type Country,
 	type Area,
+	type AreaProgress,
 	type Discover,
 	type Located,
 	type Location,
@@ -48,6 +49,8 @@ export const app = $state({
 	location: null as Location | null,
 	discover: null as Discover | null,
 	loading: false,
+	/** How far the area's restaurants have loaded, while that takes a while. */
+	areaProgress: null as AreaProgress | null,
 	error: null as string | null,
 	/** Code of the country whose places are shown. */
 	selected: null as string | null,
@@ -374,6 +377,7 @@ export async function refresh() {
 	const id = ++requestId;
 	app.loading = true;
 	app.error = null;
+	const stopProgress = watchProgress(location.area.id);
 	try {
 		const result = await api.discover(location.area.id);
 		if (id === requestId) app.discover = result;
@@ -383,8 +387,26 @@ export async function refresh() {
 			app.discover = null;
 		}
 	} finally {
+		stopProgress();
 		if (id === requestId) app.loading = false;
 	}
+}
+
+/** Polls an area's load progress while discover waits on it. Shown only after 300 ms, so
+ * areas that answer quickly don't flash it. Returns a function that stops and hides it. */
+function watchProgress(areaId: string): () => void {
+	const started = Date.now();
+	let stopped = false;
+	const timer = setInterval(async () => {
+		const progress = await api.areaProgress(areaId).catch(() => null);
+		// null between steps or before the server starts: keep what is shown.
+		if (!stopped && progress && Date.now() - started > 300) app.areaProgress = progress;
+	}, 400);
+	return () => {
+		stopped = true;
+		clearInterval(timer);
+		app.areaProgress = null;
+	};
 }
 
 export async function select(code: string | null) {

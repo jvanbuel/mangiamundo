@@ -64,6 +64,10 @@ class ApiClient(private val baseUrl: String, private val tokens: TokenStore) {
         authed("PUT", "/api/places/${encode(placeId)}/closed")
     }
 
+    /** How far loading an area has come while `discover` waits on it; null when it isn't loading. */
+    suspend fun areaProgress(areaId: String): AreaProgress? =
+        json.decodeFromString(request("GET", "/api/areas/${encode(areaId)}/progress"))
+
     /** Cities and postal codes matching what someone typed. */
     suspend fun searchAreas(query: String): List<Area> =
         json.decodeFromString(request("GET", "/api/areas?q=${encode(query)}"))

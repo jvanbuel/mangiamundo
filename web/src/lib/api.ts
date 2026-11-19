@@ -1,4 +1,4 @@
-import type { Area, Catalog, Celebration, Discover, Health, Located, Place, VisitResult } from './types';
+import type { Area, AreaProgress, Catalog, Celebration, Discover, Health, Located, Place, VisitResult } from './types';
 
 const BASE = import.meta.env.VITE_API_BASE ?? '';
 const TOKEN_KEY = 'mangiamundo.token';
@@ -107,6 +107,10 @@ export const suggestAreas = (query: string, near: { lat: number; lng: number } |
 		`/api/areas/suggest?q=${encodeURIComponent(query)}${near ? `&lat=${near.lat}&lng=${near.lng}` : ''}`,
 		null
 	);
+
+/** How far loading an area has come while discover waits on it; null when it isn't loading. */
+export const areaProgress = (areaId: string) =>
+	raw<AreaProgress | null>('GET', `/api/areas/${encodeURIComponent(areaId)}/progress`, null);
 
 /** The city and postal code a point lies in. */
 export const locateArea = (lat: number, lng: number) =>

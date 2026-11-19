@@ -14,6 +14,7 @@ import app.mangiamundo.core.Country
 import app.mangiamundo.core.Discover
 import app.mangiamundo.core.Area
 import app.mangiamundo.core.AreaKind
+import app.mangiamundo.core.AreaProgress
 import app.mangiamundo.core.Place
 import app.mangiamundo.core.ProjectionKind
 import app.mangiamundo.core.ReminderPlan
@@ -23,6 +24,7 @@ import app.mangiamundo.core.World
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -40,6 +42,8 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     var discover by mutableStateOf<Discover?>(null); private set
     var loading by mutableStateOf(false); private set
     var error by mutableStateOf<String?>(null); private set
+    /** How far the server is with the area while it loads; null when there is nothing to show. */
+    var areaProgress by mutableStateOf<AreaProgress?>(null); private set
     /** The first data is in (or failed), so the startup loader can go. Read by MainActivity. */
     @Volatile var ready = false; private set
 
@@ -208,7 +212,13 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
             loading = true
             error = null
             try {
-                discover = api.discover(here.area.id)
+                val polling = launch { followProgress(here.area.id) }
+                discover = try {
+                    api.discover(here.area.id)
+                } finally {
+                    polling.cancel()
+                    areaProgress = null
+                }
                 ready = true
                 pendingCountry?.let { code ->
                     pendingCountry = null
@@ -224,6 +234,22 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
                 ready = true
             }
             loading = false
+        }
+    }
+
+    /** Polls the area's loading progress, once loading has taken a moment, until cancelled. */
+    private suspend fun followProgress(areaId: String) {
+        delay(300)
+        while (true) {
+            try {
+                // null: not started or just finished; keep what is shown.
+                api.areaProgress(areaId)?.let { areaProgress = it }
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                // A missed poll only delays the wheel.
+            }
+            delay(400)
         }
     }
 

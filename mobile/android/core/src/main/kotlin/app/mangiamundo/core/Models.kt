@@ -250,6 +250,15 @@ data class VisitResult(
 @Serializable
 internal data class Session(val token: String)
 
+/** How far the server is with loading an area, for the progress wheel. */
+@Serializable
+data class AreaProgress(
+    /** 0 to 100. */
+    val percent: Int,
+    /** What is happening, e.g. "Looking for restaurants". */
+    val text: String,
+)
+
 @Serializable
 internal data class ErrorBody(val error: String? = null)
 
