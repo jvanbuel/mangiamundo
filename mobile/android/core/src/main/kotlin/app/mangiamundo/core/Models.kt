@@ -225,6 +225,10 @@ data class Area(
     val lng: Double,
 )
 
+/** Recent areas with `area` in front: newest first, no duplicates, at most 6. */
+fun withRecent(recent: List<Area>, area: Area): List<Area> =
+    (listOf(area) + recent.filter { it.id != area.id }).take(6)
+
 @Serializable
 enum class AreaKind {
     /** A city, town or municipality: every postal code in it. */

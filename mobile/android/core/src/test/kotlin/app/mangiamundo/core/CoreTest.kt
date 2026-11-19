@@ -129,4 +129,13 @@ class CoreTest {
         assertEquals(AreaProgress(42, "Looking for restaurants"), json.decodeFromString<AreaProgress?>("""{"percent":42,"text":"Looking for restaurants"}"""))
         assertNull(json.decodeFromString<AreaProgress?>("null"))
     }
+
+    @Test
+    fun recentAreasPutTheNewestFirstWithoutDuplicates() {
+        fun area(id: String) = Area(id = id, name = id, lat = 0.0, lng = 0.0)
+        var recent = emptyList<Area>()
+        for (id in listOf("a", "b", "c", "d", "e", "f", "g")) recent = withRecent(recent, area(id))
+        assertEquals(listOf("g", "f", "e", "d", "c", "b"), recent.map { it.id })
+        assertEquals(listOf("d", "g", "f", "e", "c", "b"), withRecent(recent, area("d")).map { it.id })
+    }
 }
