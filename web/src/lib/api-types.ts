@@ -333,6 +333,11 @@ export interface components {
             /** Format: double */
             lng: number;
             name: string;
+            /**
+             * @description `false` when the user adds it to OpenStreetMap themselves (in CoMaps or Organic Maps),
+             *     so no note asks mappers to. Defaults to `true`.
+             */
+            note?: boolean | null;
             /** @description An `http` or `https` URL. */
             website?: string | null;
         };

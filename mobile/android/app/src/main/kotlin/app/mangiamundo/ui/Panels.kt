@@ -591,7 +591,15 @@ private enum class EditorApp(val scheme: String, val label: String) {
     ORGANIC_MAPS("om", "Organic Maps");
 
     /** The app's place card at the place, which shows the OSM feature there with "Edit place". `ll` must come before `n`. */
-    fun link(place: Place) = "$scheme://map?ll=${place.lat},${place.lng}&n=${Uri.encode(place.name)}"
+    fun link(place: Place) = link(place.name, place.lat, place.lng)
+
+    fun link(name: String, lat: Double, lng: Double) = "$scheme://map?ll=$lat,$lng&n=${Uri.encode(name)}"
+}
+
+/** Opens the editor app at a new place's pin, for the user to add it to OSM there. */
+fun android.content.Context.addInEditorApp(name: String, lat: Double, lng: Double) {
+    val editor = editorApp() ?: return
+    runCatching { startActivity(Intent(Intent.ACTION_VIEW, editor.link(name, lat, lng).toUri())) }
 }
 
 /** The first editor app installed, if any. Needs the schemes in `<queries>` (AndroidManifest.xml). */
@@ -1076,7 +1084,7 @@ fun AddPlaceForm(
     busy: Boolean,
     startingPoint: suspend () -> Pair<Double, Double>,
     onCancel: () -> Unit,
-    onAdd: (name: String, country: String, lat: Double, lng: Double, address: String?, website: String?) -> Unit,
+    onAdd: (name: String, country: String, lat: Double, lng: Double, address: String?, website: String?, note: Boolean) -> Unit,
 ) {
     val colors = LocalAppColors.current
     val context = LocalContext.current
@@ -1092,6 +1100,14 @@ fun AddPlaceForm(
     // Only countries with a cuisine can be the food a place serves.
     val choices = remember(countries) { countries.filter { it.cuisine != null }.sortedBy { it.name } }
     val chosen = choices.firstOrNull { it.code == country }
+    // A maps app the user can add the place to OSM with themselves.
+    val editor = remember { context.editorApp() }
+    val ready = !busy && point != null && name.isNotBlank() && chosen != null
+    val submit = { note: Boolean ->
+        point?.let { (lat, lng) ->
+            onAdd(name.trim(), country.orEmpty(), lat, lng, address.trim().ifEmpty { null }, website.trim().ifEmpty { null }, note)
+        }
+    }
 
     Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
         Text("Add a missing restaurant", style = MaterialTheme.typography.titleLarge, color = colors.text)
@@ -1130,13 +1146,19 @@ fun AddPlaceForm(
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
             TextButton(onClick = onCancel, enabled = !busy) { Text("Cancel") }
             Button(
-                onClick = {
-                    point?.let { (lat, lng) ->
-                        onAdd(name.trim(), country.orEmpty(), lat, lng, address.trim().ifEmpty { null }, website.trim().ifEmpty { null })
-                    }
-                },
-                enabled = !busy && point != null && name.isNotBlank() && chosen != null,
+                onClick = { submit(true) },
+                enabled = ready,
             ) { Text(if (busy) "Adding…" else "Add it") }
+        }
+        editor?.let { app ->
+            OutlinedButton(onClick = { submit(false) }, enabled = ready, modifier = Modifier.fillMaxWidth()) {
+                Text("Add it yourself in ${app.label}")
+            }
+            Text(
+                "Saves it here, then opens ${app.label} at the pin: add it there with \"Add a place to the map\", and it's on OpenStreetMap right away. No note is sent.",
+                style = MaterialTheme.typography.bodySmall,
+                color = colors.muted,
+            )
         }
     }
 }

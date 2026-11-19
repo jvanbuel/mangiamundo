@@ -435,14 +435,20 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         return userPosition() ?: ((location?.lat ?: 0.0) to (location?.lng ?: 0.0))
     }
 
-    /** Adds a restaurant OpenStreetMap lacks, where the user put the pin. Opens it once added. */
-    fun addPlace(name: String, country: String, lat: Double, lng: Double, address: String?, website: String?, onAdded: () -> Unit) {
+    /**
+     * Adds a restaurant OpenStreetMap lacks, where the user put the pin. Opens it once added.
+     * `note = false` when the user adds it to OSM themselves, so no note asks mappers to.
+     */
+    fun addPlace(name: String, country: String, lat: Double, lng: Double, address: String?, website: String?, note: Boolean, onAdded: () -> Unit) {
         if (addingPlace) return
         addingPlace = true
         viewModelScope.launch {
             try {
-                val place = api.addPlace(name, country, lat, lng, address, website)
-                messageChannel.trySend("${place.name} added. You see it right away; OpenStreetMap mappers were asked to add it for everyone.")
+                val place = api.addPlace(name, country, lat, lng, address, website, note)
+                messageChannel.trySend(
+                    if (note) "${place.name} added. You see it right away; OpenStreetMap mappers were asked to add it for everyone."
+                    else "${place.name} added for you. Now add it to the map in the other app, so everyone gets it.",
+                )
                 onAdded()
                 openPlace(place)
                 // It counts towards its country, for this user, if it lies in the area.

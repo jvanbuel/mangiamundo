@@ -466,10 +466,13 @@ final class AppModel {
     }
 
     /// Adds a restaurant OpenStreetMap lacks, where the user put the pin. The place, once added.
-    func addPlace(name: String, country: String, lat: Double, lng: Double, address: String?, website: String?) async -> Place? {
+    /// `note: false` when the user adds it to OSM themselves, so no note asks mappers to.
+    func addPlace(name: String, country: String, lat: Double, lng: Double, address: String?, website: String?, note: Bool = true) async -> Place? {
         do {
-            let place = try await api.addPlace(name: name, country: country, lat: lat, lng: lng, address: address, website: website)
-            toast("\(place.name) added. You see it right away; OpenStreetMap mappers were asked to add it for everyone.")
+            let place = try await api.addPlace(name: name, country: country, lat: lat, lng: lng, address: address, website: website, note: note)
+            toast(note
+                ? "\(place.name) added. You see it right away; OpenStreetMap mappers were asked to add it for everyone."
+                : "\(place.name) added for you. Now add it to the map in the other app, so everyone gets it.")
             // It counts towards its country, for this user, if it lies in the area.
             // Applied only if no refresh (such as a change of area) started meanwhile.
             let refresh = refreshes

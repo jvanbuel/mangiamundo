@@ -69,8 +69,9 @@ class ApiClient(private val baseUrl: String, private val tokens: TokenStore) {
         json.decodeFromString(request("GET", "/api/areas/${encode(areaId)}/progress"))
 
     /** Adds a restaurant OpenStreetMap lacks. Only this user sees it until OSM has it. */
-    suspend fun addPlace(name: String, country: String, lat: Double, lng: Double, address: String?, website: String?): Place {
-        val body = json.encodeToString(AddPlaceBody.serializer(), AddPlaceBody(name, country, lat, lng, address, website))
+    /** `note = false` when the user adds it to OSM themselves, so no note asks mappers to. */
+    suspend fun addPlace(name: String, country: String, lat: Double, lng: Double, address: String?, website: String?, note: Boolean = true): Place {
+        val body = json.encodeToString(AddPlaceBody.serializer(), AddPlaceBody(name, country, lat, lng, address, website, note))
         return json.decodeFromString(authed("POST", "/api/places", body))
     }
 

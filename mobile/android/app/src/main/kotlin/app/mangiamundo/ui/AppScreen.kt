@@ -270,8 +270,11 @@ fun AppScreen(vm: AppViewModel = viewModel()) {
                         vm.addingPlace,
                         startingPoint = vm::startingPoint,
                         onCancel = { addOpen = false },
-                    ) { name, country, lat, lng, address, website ->
-                        vm.addPlace(name, country, lat, lng, address, website) { addOpen = false }
+                    ) { name, country, lat, lng, address, website, note ->
+                        vm.addPlace(name, country, lat, lng, address, website, note) {
+                            addOpen = false
+                            if (!note) context.addInEditorApp(name, lat, lng)
+                        }
                     }
                 }
                 SnackbarHost(snackbar, Modifier.align(Alignment.TopCenter))

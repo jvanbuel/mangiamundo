@@ -279,6 +279,7 @@ internal data class AddPlaceBody(
     val lng: Double,
     val address: String? = null,
     val website: String? = null,
+    val note: Boolean = true,
 )
 
 @Serializable

@@ -733,8 +733,14 @@ async fn an_added_place_shows_up_for_whoever_added_it_and_is_sent_to_osm() {
         assert!(notes[0].contains("website%3Dhttps%3A%2F%2Fkiwi.example"), "{}", notes[0]);
     }
 
+    // Someone adding it to OSM themselves gets no note.
+    let own = format!(r#"{{"name":"B","country":"NZ","lat":{lat},"lng":{lng},"note":false}}"#);
+    assert_eq!(call(&app, "POST", "/api/places", Some(&alice), Some(&own)).await.0, StatusCode::OK);
+    tokio::time::sleep(std::time::Duration::from_millis(200)).await;
+    assert_eq!(notes.lock().unwrap().len(), 1);
+
     // Five a day.
-    for name in ["B", "C", "D", "E"] {
+    for name in ["C", "D", "E"] {
         assert_eq!(call(&app, "POST", "/api/places", Some(&alice), Some(&body(name))).await.0, StatusCode::OK);
     }
     let (status, error) = call(&app, "POST", "/api/places", Some(&alice), Some(&body("F"))).await;

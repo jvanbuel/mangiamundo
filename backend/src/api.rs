@@ -735,6 +735,9 @@ struct AddPlace {
     address: Option<String>,
     /// An `http` or `https` URL.
     website: Option<String>,
+    /// `false` when the user adds it to OpenStreetMap themselves (in CoMaps or Organic Maps),
+    /// so no note asks mappers to. Defaults to `true`.
+    note: Option<bool>,
 }
 
 /// Trimmed, `None` when empty; an error past `max` characters.
@@ -778,7 +781,7 @@ async fn add_place(
         .await?
         .ok_or(ApiError::TooManyRequests("you have added 5 places today; try again tomorrow"))?;
 
-    if let Some(notes) = state.osm_notes_url.clone() {
+    if let Some(notes) = state.osm_notes_url.clone().filter(|_| body.note != Some(false)) {
         let (db, id, token) = (state.db.clone(), id.clone(), state.osm_notes_token.clone());
         let text = missing_place_note(&new);
         tokio::spawn(async move {

@@ -25,6 +25,13 @@
           "name": {
             "type": "string"
           },
+          "note": {
+            "description": "`false` when the user adds it to OpenStreetMap themselves (in CoMaps or Organic Maps),\nso no note asks mappers to. Defaults to `true`.",
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
           "website": {
             "description": "An `http` or `https` URL.",
             "type": [
