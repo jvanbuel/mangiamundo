@@ -10,7 +10,7 @@ use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
-use super::{AreaDirectory, AreaInfo, AreaKind, Boundary, FoundPlace, Located, PlacesProvider};
+use super::{AreaDirectory, AreaInfo, AreaKind, Boundary, FoundPlace, Located, Lookup, PlacesProvider};
 use crate::geo::{Bbox, Shape};
 use crate::{catalog, store};
 
@@ -131,12 +131,24 @@ struct Center {
     lon: f64,
 }
 
+/// The kinds of place that count, as an Overpass tag filter.
+const AMENITIES: &str = "[\"amenity\"~\"^(restaurant|fast_food|cafe|pub|bar)$\"]";
+
+/// One element by its place id (`osm-node-123`), only while it is still a restaurant or the
+/// like. `None` for ids that aren't OpenStreetMap elements.
+fn element_query(id: &str) -> Option<String> {
+    let (kind, n) = id.strip_prefix("osm-")?.split_once('-')?;
+    let n: u64 = n.parse().ok()?;
+    matches!(kind, "node" | "way" | "relation")
+        .then(|| format!("[out:json][timeout:25];{kind}(id:{n}){AMENITIES};out center tags;"))
+}
+
 /// Restaurants in the area's bounding box; [`Overpass::search`] keeps the ones inside the
 /// outline. A box query works for every area, also postal codes Overpass has no area for.
 fn query(b: Bbox, timeout_secs: u64) -> String {
     format!(
         "[out:json][timeout:{timeout_secs}];\
-         nwr[\"amenity\"~\"^(restaurant|fast_food|cafe|pub|bar)$\"][\"cuisine\"][\"name\"]\
+         nwr{AMENITIES}[\"cuisine\"][\"name\"]\
          ({},{},{},{});\
          out center tags;",
         // Full precision: rounding could cut off a place just inside an edge.
@@ -225,6 +237,21 @@ impl PlacesProvider for Overpass {
     fn expected_secs(&self, _area: &Boundary) -> f64 {
         *self.usual_secs.lock().unwrap()
     }
+
+    async fn place(&self, id: &str) -> anyhow::Result<Lookup> {
+        let query = element_query(id).ok_or_else(|| anyhow::anyhow!("not an OpenStreetMap place: {id}"))?;
+        let places = self.fetch_any(&query, Duration::from_secs(30), Some(Duration::from_secs(8)), &|| ()).await?;
+        Ok(places.into_iter().next().map_or(Lookup::Gone, Lookup::Found))
+    }
+
+    async fn nearby(&self, lat: f64, lng: f64, radius_m: f64) -> anyhow::Result<Vec<FoundPlace>> {
+        let dlat = radius_m / 111_320.0;
+        let dlng = dlat / lat.to_radians().cos().max(0.01);
+        let b = Bbox { south: lat - dlat, west: lng - dlng, north: lat + dlat, east: lng + dlng };
+        let mut places = self.fetch_any(&query(b, 25), Duration::from_secs(30), Some(Duration::from_secs(8)), &|| ()).await?;
+        places.retain(|p| crate::geo::distance_m(lat, lng, p.lat, p.lng) <= radius_m);
+        Ok(places)
+    }
 }
 
 /// Downloads every place in [`IMPORT_BBOX`] into the local copy. One large query a
@@ -290,6 +317,15 @@ impl PlacesProvider for WithImport {
     fn expected_secs(&self, area: &Boundary) -> f64 {
         // ponytail: assumes the local copy exists; before the first import a covered area goes live.
         if covered(area.shape.bbox()) { 1.0 } else { self.live.expected_secs(area) }
+    }
+
+    /// Always live: the point is to see an edit before the next import.
+    async fn place(&self, id: &str) -> anyhow::Result<Lookup> {
+        self.live.place(id).await
+    }
+
+    async fn nearby(&self, lat: f64, lng: f64, radius_m: f64) -> anyhow::Result<Vec<FoundPlace>> {
+        self.live.nearby(lat, lng, radius_m).await
     }
 }
 
@@ -486,6 +522,17 @@ fn photon_areas(found: &Value) -> Vec<AreaInfo> {
 
 #[cfg(test)]
 mod tests {
+
+    #[test]
+    fn element_queries_take_only_osm_element_ids() {
+        let q = element_query("osm-way-1085544575").unwrap();
+        assert!(q.contains("way(id:1085544575)[\"amenity\"~"), "{q}");
+        assert!(element_query("osm-node-12").unwrap().contains("node(id:12)"));
+        for bad in ["user-abc", "demo-leuven-1", "osm-area-3", "osm-node-1;out", "osm-node-"] {
+            assert_eq!(element_query(bad), None, "{bad}");
+        }
+    }
+
     use super::*;
 
     /// A fake Overpass server: answers with `status` and one restaurant after `delay`.

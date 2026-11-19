@@ -42,6 +42,7 @@ async fn app_with_notes(
     let clock = now.clone();
     let router = api::router(AppState {
         loads: Default::default(),
+        limits: Default::default(),
         db,
         places: Arc::new(Demo),
         areas: Arc::new(Demo),
@@ -959,4 +960,193 @@ async fn an_added_place_earns_xp_once_the_import_confirms_it() {
 
     let too_many: Vec<Value> = (0..101).map(|i| Value::from(format!("user-{i}"))).collect();
     assert_eq!(put(bob.clone(), seen(&too_many.iter().collect::<Vec<_>>())).await, StatusCode::BAD_REQUEST);
+}
+
+/// A provider whose OpenStreetMap answers the test sets: areas come from the demo provider.
+#[derive(Default)]
+struct FakeOsm {
+    places: std::sync::Mutex<std::collections::HashMap<String, mangiamundo::providers::Lookup>>,
+    nearby: std::sync::Mutex<Vec<mangiamundo::providers::FoundPlace>>,
+    down: std::sync::atomic::AtomicBool,
+}
+
+#[async_trait::async_trait]
+impl mangiamundo::providers::PlacesProvider for FakeOsm {
+    fn name(&self) -> &'static str {
+        "osm"
+    }
+    async fn search(
+        &self,
+        area: &mangiamundo::providers::Boundary,
+        next: &(dyn Fn() + Send + Sync),
+    ) -> anyhow::Result<Vec<mangiamundo::providers::FoundPlace>> {
+        mangiamundo::providers::PlacesProvider::search(&Demo, area, next).await
+    }
+    async fn place(&self, id: &str) -> anyhow::Result<mangiamundo::providers::Lookup> {
+        anyhow::ensure!(!self.down.load(Ordering::Relaxed), "overpass is down");
+        Ok(self.places.lock().unwrap().get(id).cloned().unwrap_or(mangiamundo::providers::Lookup::Gone))
+    }
+    async fn nearby(&self, _lat: f64, _lng: f64, _radius_m: f64) -> anyhow::Result<Vec<mangiamundo::providers::FoundPlace>> {
+        anyhow::ensure!(!self.down.load(Ordering::Relaxed), "overpass is down");
+        Ok(self.nearby.lock().unwrap().clone())
+    }
+}
+
+/// An app on `osm`, with Leuven cached holding one OSM place, osm-node-42 (Lalibela, Ethiopian).
+async fn app_with_osm() -> (Router, Arc<AtomicI64>, Arc<FakeOsm>, sqlx::SqlitePool) {
+    use mangiamundo::geo::{Bbox, Shape};
+    use mangiamundo::providers::{AreaInfo, AreaKind, Boundary};
+    let db = store::connect("sqlite::memory:").await.unwrap();
+    let area = store::Area {
+        boundary: Boundary {
+            info: AreaInfo { id: "demo-leuven".into(), name: "Leuven".into(), kind: AreaKind::City, detail: None, lat: 50.88, lng: 4.7 },
+            shape: Shape::rect(Bbox { south: 50.8, west: 4.6, north: 50.95, east: 4.8 }),
+        },
+        provider: "osm".into(),
+        fetched_at: START,
+    };
+    store::save_area(&db, &area, &[osm_place(42, "Lalibela", "ethiopian", 50.8798, 4.7005)]).await.unwrap();
+    let fake = Arc::new(FakeOsm::default());
+    let now = Arc::new(AtomicI64::new(START));
+    let clock = now.clone();
+    let router = api::router(AppState {
+        loads: Default::default(),
+        limits: Default::default(),
+        db: db.clone(),
+        places: fake.clone(),
+        areas: Arc::new(Demo),
+        cache_ttl_secs: 3600,
+        clock: Arc::new(move || clock.load(Ordering::Relaxed)),
+        push_key: None,
+        osm_notes_url: None,
+        osm_notes_token: None,
+    });
+    (router, now, fake, db)
+}
+
+fn osm_place(n: u64, name: &str, cuisine: &str, lat: f64, lng: f64) -> mangiamundo::providers::FoundPlace {
+    mangiamundo::providers::FoundPlace {
+        id: format!("osm-node-{n}"),
+        name: name.into(),
+        lat,
+        lng,
+        address: None,
+        url: None,
+        cuisine: Some(cuisine.into()),
+        opening_hours: None,
+        countries: mangiamundo::catalog::countries_for_cuisine_tag(cuisine),
+    }
+}
+
+async fn countries_here(app: &Router, token: &str) -> Vec<String> {
+    let (_, discover) = call(app, "GET", &format!("/api/discover?{HERE}"), Some(token), None).await;
+    discover["countries"].as_array().unwrap().iter().map(|c| c["code"].as_str().unwrap().to_string()).collect()
+}
+
+#[tokio::test]
+async fn a_place_can_be_refreshed_from_osm_before_the_next_import() {
+    use mangiamundo::providers::Lookup;
+    let (app, clock, fake, db) = app_with_osm().await;
+    let token = session(&app).await;
+    let refresh = |id: &'static str| {
+        let (app, token) = (app.clone(), token.clone());
+        async move { call(&app, "POST", &format!("/api/places/{id}/refresh"), Some(&token), None).await }
+    };
+    let set = |lookup: Lookup| {
+        fake.places.lock().unwrap().insert("osm-node-42".into(), lookup);
+    };
+
+    // The same as we have.
+    set(Lookup::Found(osm_place(42, "Lalibela", "ethiopian", 50.8798, 4.7005)));
+    let (status, body) = refresh("osm-node-42").await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert_eq!(body["status"], "unchanged");
+    assert_eq!(body["place"]["name"], "Lalibela");
+
+    // Hours added on OSM: in the place, and in the local copy the next area rebuild reads.
+    let mut edited = osm_place(42, "Lalibela", "ethiopian", 50.8798, 4.7005);
+    edited.opening_hours = Some("Mo-Su 12:00-22:00".into());
+    set(Lookup::Found(edited));
+    let (_, body) = refresh("osm-node-42").await;
+    assert_eq!(body["status"], "updated");
+    assert_eq!(body["place"]["hours"]["raw"], "Mo-Su 12:00-22:00");
+    assert_eq!(body["place"]["hours"]["week"].as_array().map(Vec::len), Some(7), "with the week, like the details");
+    let copy: Option<String> = sqlx::query_scalar("SELECT opening_hours FROM osm_places WHERE id = 'osm-node-42'").fetch_one(&db).await.unwrap();
+    assert_eq!(copy.as_deref(), Some("Mo-Su 12:00-22:00"));
+
+    // Checked in, then the place closes on OSM: hidden from every list, visits kept.
+    assert_eq!(call(&app, "POST", "/api/places/osm-node-42/visits", Some(&token), None).await.0, StatusCode::OK);
+    assert!(countries_here(&app, &token).await.contains(&"ET".to_string()));
+    set(Lookup::Gone);
+    let (_, body) = refresh("osm-node-42").await;
+    assert_eq!((body["status"].as_str(), &body["place"]), (Some("gone"), &Value::Null));
+    assert!(!countries_here(&app, &token).await.contains(&"ET".to_string()));
+    let (status, place) = call(&app, "GET", "/api/places/osm-node-42", Some(&token), None).await;
+    assert_eq!((status, place["visits"].as_array().unwrap().len()), (StatusCode::OK, 1));
+    let copies: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM osm_places").fetch_one(&db).await.unwrap();
+    assert_eq!(copies, 0, "the next area rebuild must not bring it back");
+
+    // Reopened: listed again.
+    set(Lookup::Found(osm_place(42, "Lalibela", "ethiopian", 50.8798, 4.7005)));
+    assert_eq!(refresh("osm-node-42").await.1["status"], "updated");
+    assert!(countries_here(&app, &token).await.contains(&"ET".to_string()));
+
+    // Five a minute.
+    assert_eq!(refresh("osm-node-42").await.0, StatusCode::OK);
+    let (status, error) = refresh("osm-node-42").await;
+    assert_eq!(status, StatusCode::TOO_MANY_REQUESTS);
+    assert_error(&error, "too_many_requests");
+    clock.fetch_add(61, Ordering::Relaxed);
+
+    // Only OSM places this user can see, and OSM must answer.
+    assert_eq!(call(&app, "POST", "/api/places/osm-node-42/refresh", None, None).await.0, StatusCode::UNAUTHORIZED);
+    assert_eq!(refresh("user-abc").await.0, StatusCode::BAD_REQUEST);
+    assert_eq!(refresh("osm-node-999").await.0, StatusCode::NOT_FOUND);
+    fake.down.store(true, Ordering::Relaxed);
+    let (status, error) = refresh("osm-node-42").await;
+    assert_eq!(status, StatusCode::BAD_GATEWAY);
+    assert_error(&error, "upstream");
+}
+
+#[tokio::test]
+async fn places_just_mapped_nearby_are_added_and_confirm_pending_additions() {
+    let (app, clock, fake, _db) = app_with_osm().await;
+    let (alice, bob) = (session(&app).await, session(&app).await);
+    // Alice added Inti, a Peruvian place, before a mapper put it on OSM.
+    let body = r#"{"name":"Inti","country":"PE","lat":50.8801,"lng":4.7009,"note":false}"#;
+    assert_eq!(call(&app, "POST", "/api/places", Some(&alice), Some(body)).await.0, StatusCode::OK);
+    assert!(!countries_here(&app, &bob).await.contains(&"PE".to_string()));
+
+    *fake.nearby.lock().unwrap() = vec![
+        osm_place(42, "Lalibela", "ethiopian", 50.8798, 4.7005),
+        osm_place(43, "Restaurant Inti", "peruvian", 50.8801, 4.7009),
+        osm_place(44, "Far Away", "greek", 10.0, 10.0),
+    ];
+    let look = |token: String| {
+        let app = app.clone();
+        async move { call(&app, "POST", "/api/places/nearby/refresh?lat=50.88&lng=4.7", Some(&token), None).await }
+    };
+    let (status, body) = look(bob.clone()).await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    let added: Vec<&str> = body["added"].as_array().unwrap().iter().map(|p| p["name"].as_str().unwrap()).collect();
+    assert_eq!(added, vec!["Restaurant Inti"], "already listed, and outside every cached area, don't count");
+    assert_eq!(body["matched"], 1);
+    assert!(countries_here(&app, &bob).await.contains(&"PE".to_string()), "for everyone now");
+    let (_, additions) = call(&app, "GET", "/api/additions", Some(&alice), None).await;
+    assert_eq!((additions[0]["status"].as_str(), additions[0]["place_id"].as_str()), (Some("confirmed"), Some("osm-node-43")));
+
+    // Looking again finds nothing new.
+    let (_, body) = look(bob.clone()).await;
+    assert_eq!((body["added"].as_array().unwrap().len(), body["matched"].as_u64()), (0, Some(0)));
+
+    // Five an hour, per user.
+    for _ in 0..3 {
+        assert_eq!(look(bob.clone()).await.0, StatusCode::OK);
+    }
+    assert_eq!(look(bob.clone()).await.0, StatusCode::TOO_MANY_REQUESTS);
+    assert_eq!(look(alice.clone()).await.0, StatusCode::OK);
+    clock.fetch_add(3601, Ordering::Relaxed);
+    assert_eq!(look(bob.clone()).await.0, StatusCode::OK);
+    let bad = call(&app, "POST", "/api/places/nearby/refresh?lat=91&lng=4.7", Some(&bob), None).await;
+    assert_eq!(bad.0, StatusCode::BAD_REQUEST);
 }

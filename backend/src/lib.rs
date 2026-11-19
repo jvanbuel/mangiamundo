@@ -31,6 +31,8 @@ pub struct AppState {
     pub osm_notes_token: Option<String>,
     /// Areas being fetched right now, for the clients' progress wheel.
     pub loads: api::Loads,
+    /// Recent requests per user, for limits on the ones that ask OpenStreetMap.
+    pub limits: api::Limits,
 }
 
 impl AppState {
