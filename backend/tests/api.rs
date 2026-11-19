@@ -595,22 +595,28 @@ async fn closed_reports_hide_a_place_from_the_reporter_then_from_everyone() {
     assert!(!list(None).await.contains(&place));
 }
 
-#[tokio::test]
-async fn the_second_closed_report_of_an_osm_place_posts_one_osm_note() {
+/// A fake OSM Notes API: its URL, and the form bodies of the notes posted to it. Each
+/// note gets id 7.
+async fn fake_osm_notes() -> (String, Arc<std::sync::Mutex<Vec<String>>>) {
     use axum::routing::post;
-    use std::sync::Mutex;
-    let notes: Arc<Mutex<Vec<String>>> = Arc::default();
+    let notes: Arc<std::sync::Mutex<Vec<String>>> = Arc::default();
     let seen = notes.clone();
     let fake = Router::new().route(
-        "/notes",
+        "/notes.json",
         post(move |body: String| async move {
             seen.lock().unwrap().push(body);
-            StatusCode::OK
+            axum::Json(serde_json::json!({"type": "Feature", "properties": {"id": 7}}))
         }),
     );
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let url = format!("http://{}/notes", listener.local_addr().unwrap());
     tokio::spawn(async move { axum::serve(listener, fake).await.unwrap() });
+    (url, notes)
+}
+
+#[tokio::test]
+async fn the_second_closed_report_of_an_osm_place_posts_one_osm_note() {
+    let (url, notes) = fake_osm_notes().await;
 
     // An OSM place already saved, so the demo provider is not asked.
     let db = store::connect("sqlite::memory:").await.unwrap();
@@ -649,6 +655,69 @@ async fn the_second_closed_report_of_an_osm_place_posts_one_osm_note() {
     assert!(notes[0].contains("openstreetmap.org%2Fnode%2F42"), "{}", notes[0]);
 }
 
+#[tokio::test]
+async fn an_added_place_shows_up_for_whoever_added_it_and_is_sent_to_osm() {
+    let (url, notes) = fake_osm_notes().await;
+    let db = store::connect("sqlite::memory:").await.unwrap();
+    let (app, clock) = app_with(db.clone(), Some(url), START).await;
+    let (alice, bob) = (session(&app).await, session(&app).await);
+    let countries = |token: String| {
+        let app = app.clone();
+        async move {
+            let (_, discover) = call(&app, "GET", &format!("/api/discover?{HERE}"), Some(&token), None).await;
+            discover["countries"].as_array().unwrap().iter().map(|c| c["code"].as_str().unwrap().to_string()).collect::<Vec<_>>()
+        }
+    };
+    assert!(!countries(alice.clone()).await.contains(&"NZ".to_string()));
+    let (_, places) = call(&app, "GET", &format!("/api/places?{HERE}"), None, None).await;
+    let (lat, lng) = (&places[0]["lat"], &places[0]["lng"]);
+    let body = |name: &str| {
+        format!(r#"{{"name":"{name}","country":"nz","lat":{lat},"lng":{lng},"address":" 1 Kiwi Lane ","website":"https://kiwi.example"}}"#)
+    };
+
+    assert_eq!(call(&app, "POST", "/api/places", None, Some(&body("Kiwi"))).await.0, StatusCode::UNAUTHORIZED);
+    let bad = format!(r#"{{"name":"Kiwi","country":"XX","lat":{lat},"lng":{lng}}}"#);
+    assert_eq!(call(&app, "POST", "/api/places", Some(&alice), Some(&bad)).await.0, StatusCode::BAD_REQUEST);
+    let blank = format!(r#"{{"name":"  ","country":"NZ","lat":{lat},"lng":{lng}}}"#);
+    assert_eq!(call(&app, "POST", "/api/places", Some(&alice), Some(&blank)).await.0, StatusCode::BAD_REQUEST);
+
+    let (status, place) = call(&app, "POST", "/api/places", Some(&alice), Some(&body("Kiwi"))).await;
+    assert_eq!(status, StatusCode::OK, "{place}");
+    let id = place["id"].as_str().unwrap().to_string();
+    assert!(id.starts_with("user-"), "{id}");
+    assert_eq!(place["cuisine"], "new_zealand");
+    assert_eq!(place["address"], "1 Kiwi Lane");
+    assert_eq!(place["countries"], serde_json::json!(["NZ"]));
+    assert_eq!(place["osm_url"], Value::Null);
+
+    assert!(countries(alice.clone()).await.contains(&"NZ".to_string()));
+    assert!(!countries(bob.clone()).await.contains(&"NZ".to_string()), "pending places are only for whoever added them");
+    // A refresh of the area from the provider keeps it.
+    clock.fetch_add(2 * 3600, Ordering::Relaxed);
+    assert!(countries(alice.clone()).await.contains(&"NZ".to_string()));
+    let (status, _) = call(&app, "POST", &format!("/api/places/{id}/visits"), Some(&alice), None).await;
+    assert_eq!(status, StatusCode::OK);
+
+    tokio::time::sleep(std::time::Duration::from_millis(200)).await;
+    {
+        let notes = notes.lock().unwrap();
+        assert_eq!(notes.len(), 1, "{notes:?}");
+        assert!(notes[0].contains("amenity%3Drestaurant") && notes[0].contains("cuisine%3Dnew_zealand"), "{}", notes[0]);
+        assert!(notes[0].contains("website%3Dhttps%3A%2F%2Fkiwi.example"), "{}", notes[0]);
+    }
+    let note: Option<i64> = sqlx::query_scalar("SELECT osm_note_id FROM places WHERE id = ?").bind(&id).fetch_one(&db).await.unwrap();
+    assert_eq!(note, Some(7));
+
+    // Five a day.
+    for name in ["B", "C", "D", "E"] {
+        assert_eq!(call(&app, "POST", "/api/places", Some(&alice), Some(&body(name))).await.0, StatusCode::OK);
+    }
+    let (status, error) = call(&app, "POST", "/api/places", Some(&alice), Some(&body("F"))).await;
+    assert_eq!(status, StatusCode::TOO_MANY_REQUESTS);
+    assert_error(&error, "too_many_requests");
+    clock.fetch_add(DAY, Ordering::Relaxed);
+    assert_eq!(call(&app, "POST", "/api/places", Some(&alice), Some(&body("F"))).await.0, StatusCode::OK);
+}
 
 /// Writes real responses to `contract/`, where the Android and iOS tests decode them.
 /// CI fails when the checked-in files differ, so an API change shows up in the diff.

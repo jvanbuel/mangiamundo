@@ -172,9 +172,14 @@ pub const CUISINES: &[Cuisine] = &[
     c("NZ", &["new_zealand"]),
 ];
 
+/// The canonical OpenStreetMap `cuisine` value for a country, like "sri_lankan".
+pub fn cuisine_tag(country: &str) -> Option<&'static str> {
+    Some(CUISINES.iter().find(|c| c.country == country)?.osm[0])
+}
+
 /// The cuisine's adjective, like "Lebanese" or "Sri Lankan", when the catalog has one.
 pub fn cuisine_adjective(country: &str) -> Option<String> {
-    let tag = CUISINES.iter().find(|c| c.country == country)?.osm[0];
+    let tag = cuisine_tag(country)?;
     Some(
         tag.split('_')
             .map(|word| {

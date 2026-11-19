@@ -62,7 +62,7 @@ fn api_router() -> (Router<AppState>, utoipa::openapi::OpenApi) {
         .routes(routes!(create_session))
         .routes(routes!(countries))
         .routes(routes!(discover))
-        .routes(routes!(places))
+        .routes(routes!(places, add_place))
         .routes(routes!(place))
         .routes(routes!(celebrations))
         .routes(routes!(report_closed))
@@ -134,6 +134,7 @@ struct ErrorBody {
 /// - `unauthorized` (401): a missing or unknown session token.
 /// - `not_found` (404): an unknown place, area or `/api` path.
 /// - `method_not_allowed` (405): the path exists, but not with this method.
+/// - `too_many_requests` (429): a limit was reached, such as places added per day.
 /// - `upstream` (502): the places or areas provider failed.
 /// - `internal` (500): anything else, such as a database error.
 #[derive(Serialize, ToSchema, Clone, Copy)]
@@ -143,6 +144,7 @@ enum ErrorCode {
     Unauthorized,
     NotFound,
     MethodNotAllowed,
+    TooManyRequests,
     Upstream,
     Internal,
 }
@@ -161,6 +163,8 @@ pub enum ApiError {
     Unauthorized,
     #[error("{0} not found")]
     NotFound(&'static str),
+    #[error("{0}")]
+    TooManyRequests(&'static str),
     #[error("the places provider is unavailable")]
     Upstream(#[source] anyhow::Error),
     #[error("internal error")]
@@ -175,6 +179,7 @@ impl IntoResponse for ApiError {
             ApiError::MethodNotAllowed => (StatusCode::METHOD_NOT_ALLOWED, ErrorCode::MethodNotAllowed),
             ApiError::Unauthorized => (StatusCode::UNAUTHORIZED, ErrorCode::Unauthorized),
             ApiError::NotFound(_) => (StatusCode::NOT_FOUND, ErrorCode::NotFound),
+            ApiError::TooManyRequests(_) => (StatusCode::TOO_MANY_REQUESTS, ErrorCode::TooManyRequests),
             ApiError::Upstream(error) => {
                 tracing::error!(error = format!("{error:#}"), "provider request failed");
                 (StatusCode::BAD_GATEWAY, ErrorCode::Upstream)
@@ -715,6 +720,98 @@ fn group(place: &PlaceView) -> u8 {
     }
 }
 
+/// Places a user may add per day, so the app never floods OpenStreetMap with notes.
+const PLACES_PER_DAY: i64 = 5;
+
+/// A restaurant missing from the map.
+#[derive(Deserialize, ToSchema)]
+struct AddPlace {
+    name: String,
+    /// The country whose food it serves (ISO 3166-1 alpha-2), one from `/api/countries`
+    /// with a cuisine.
+    country: String,
+    lat: f64,
+    lng: f64,
+    address: Option<String>,
+    /// An `http` or `https` URL.
+    website: Option<String>,
+}
+
+/// Trimmed, `None` when empty; an error past `max` characters.
+fn text(value: Option<String>, field: &str, max: usize) -> Result<Option<String>, ApiError> {
+    let value = value.map(|v| v.trim().to_string()).filter(|v| !v.is_empty());
+    if value.as_ref().is_some_and(|v| v.chars().count() > max) {
+        return Err(ApiError::BadRequest(format!("{field} is longer than {max} characters")));
+    }
+    Ok(value)
+}
+
+/// Adds a restaurant missing from the map. It shows up right away, but only for whoever
+/// added it, and an OpenStreetMap note asks local mappers to add it there for everyone.
+/// At most 5 a day.
+#[utoipa::path(
+    post, path = "/api/places", tag = "game", request_body = AddPlace,
+    security(("token" = [])),
+    responses((status = 200, body = PlaceView), (status = "default", description = "An error", body = ErrorBody)),
+)]
+async fn add_place(
+    State(state): State<AppState>,
+    User(user): User,
+    JsonBody(body): JsonBody<AddPlace>,
+) -> ApiResult<PlaceView> {
+    let name = text(Some(body.name), "name", 100)?.ok_or(ApiError::BadRequest("name is missing".into()))?;
+    let address = text(body.address, "address", 200)?;
+    let url = text(body.website, "website", 300)?;
+    if url.as_ref().is_some_and(|u| !u.starts_with("https://") && !u.starts_with("http://")) {
+        return Err(ApiError::BadRequest("website must be an http or https URL".into()));
+    }
+    if !(-90.0..=90.0).contains(&body.lat) || !(-180.0..=180.0).contains(&body.lng) {
+        return Err(ApiError::BadRequest("lat/lng out of range".into()));
+    }
+    let code = body.country.to_uppercase();
+    let (country, cuisine) = catalog::country(&code)
+        .zip(catalog::cuisine_tag(&code))
+        .ok_or(ApiError::BadRequest("unknown country".into()))?;
+    let now = state.now();
+    if store::places_added_since(&state.db, &user, now - 86_400).await? >= PLACES_PER_DAY {
+        return Err(ApiError::TooManyRequests("you have added 5 places today; try again tomorrow"));
+    }
+    let new = store::NewPlace { name, lat: body.lat, lng: body.lng, address, url, country: &country.code, cuisine };
+    let id = store::add_place(&state.db, &user, &new, now).await?;
+
+    if let Some(notes) = state.osm_notes_url.clone() {
+        let (db, id) = (state.db.clone(), id.clone());
+        let text = missing_place_note(&new);
+        tokio::spawn(async move {
+            if let Some(note) = post_osm_note(notes, new.lat, new.lng, text).await {
+                if let Err(error) = store::set_osm_note(&db, &id, note).await {
+                    tracing::warn!(%error, "could not keep the osm note id");
+                }
+            }
+        });
+    }
+    let mut place = store::place(&state.db, &id, Some(&user)).await?.ok_or(ApiError::NotFound("place"))?;
+    let (lat, lng) = (place.lat, place.lng);
+    complete(&mut place, lat, lng, now);
+    Ok(Json(place))
+}
+
+/// An OSM note mappers can act on: the tags to add, ready to copy.
+fn missing_place_note(place: &store::NewPlace) -> String {
+    let mut text = format!(
+        "A Mangiamundo user who knows this place says a restaurant is missing here:\n\n\
+         amenity=restaurant\nname={}\ncuisine={}\n",
+        place.name, place.cuisine
+    );
+    if let Some(url) = &place.url {
+        text += &format!("website={url}\n");
+    }
+    if let Some(address) = &place.address {
+        text += &format!("\nAddress: {address}\n");
+    }
+    text + "\nCould someone check and add it?"
+}
+
 #[derive(Deserialize, IntoParams)]
 #[into_params(parameter_in = Query)]
 struct PlaceQuery {
@@ -853,18 +950,32 @@ fn osm_link(place_id: &str) -> Option<String> {
     Some(format!("https://www.openstreetmap.org/{kind}/{id}"))
 }
 
-/// Posts an anonymous OSM note. Best effort: a failure is logged, not retried.
-async fn post_osm_note(url: String, lat: f64, lng: f64, text: String) {
-    let result = reqwest::Client::new()
-        .post(&url)
-        .header(header::USER_AGENT, concat!("mangiamundo/", env!("CARGO_PKG_VERSION")))
-        .form(&[("lat", lat.to_string()), ("lon", lng.to_string()), ("text", text)])
-        .send()
-        .await
-        .and_then(|r| r.error_for_status());
+/// Posts an anonymous OSM note and returns its id. Best effort: a failure is logged, not
+/// retried.
+async fn post_osm_note(url: String, lat: f64, lng: f64, text: String) -> Option<i64> {
+    // The `.json` endpoint answers with the note as GeoJSON instead of XML.
+    let result = async {
+        reqwest::Client::new()
+            .post(format!("{url}.json"))
+            .header(header::USER_AGENT, concat!("mangiamundo/", env!("CARGO_PKG_VERSION")))
+            .form(&[("lat", lat.to_string()), ("lon", lng.to_string()), ("text", text)])
+            .send()
+            .await?
+            .error_for_status()?
+            .json::<serde_json::Value>()
+            .await
+    }
+    .await;
     match result {
-        Ok(_) => tracing::info!(lat, lng, "posted osm note"),
-        Err(error) => tracing::warn!(%error, "osm note failed"),
+        Ok(note) => {
+            let id = note["properties"]["id"].as_i64();
+            tracing::info!(lat, lng, id, "posted osm note");
+            id
+        }
+        Err(error) => {
+            tracing::warn!(%error, "osm note failed");
+            None
+        }
     }
 }
 

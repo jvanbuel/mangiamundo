@@ -78,7 +78,8 @@ pub async fn find_area(db: &SqlitePool, id: &str) -> sqlx::Result<Option<Area>> 
 }
 
 /// Replaces the contents of an area with a fresh provider result. Places that dropped
-/// out of the result stay in `places` so existing visits are never lost.
+/// out of the result stay in `places` so existing visits are never lost, and places users
+/// added stay in the area.
 pub async fn save_area(db: &SqlitePool, area: &Area, places: &[FoundPlace]) -> sqlx::Result<()> {
     let info = &area.boundary.info;
     let shape = serde_json::to_string(&area.boundary.shape).expect("a shape serializes");
@@ -101,7 +102,31 @@ pub async fn save_area(db: &SqlitePool, area: &Area, places: &[FoundPlace]) -> s
     .bind(area.fetched_at)
     .execute(&mut *tx)
     .await?;
-    sqlx::query("DELETE FROM area_places WHERE area_id = ?").bind(&info.id).execute(&mut *tx).await?;
+    sqlx::query(
+        "DELETE FROM area_places WHERE area_id = ?
+         AND place_id NOT IN (SELECT id FROM places WHERE added_by IS NOT NULL)",
+    )
+    .bind(&info.id)
+    .execute(&mut *tx)
+    .await?;
+    // An area cached after a place was added still needs it.
+    let b = area.boundary.shape.bbox();
+    let added = sqlx::query(
+        "SELECT id, lat, lng FROM places WHERE added_by IS NOT NULL AND lat BETWEEN ? AND ? AND lng BETWEEN ? AND ?",
+    )
+    .bind(b.south)
+    .bind(b.north)
+    .bind(b.west)
+    .bind(b.east)
+    .fetch_all(&mut *tx)
+    .await?;
+    for r in added.iter().filter(|r| area.boundary.shape.contains(r.get("lat"), r.get("lng"))) {
+        sqlx::query("INSERT OR IGNORE INTO area_places (area_id, place_id) VALUES (?, ?)")
+            .bind(&info.id)
+            .bind(r.get::<String, _>("id"))
+            .execute(&mut *tx)
+            .await?;
+    }
 
     for place in places {
         sqlx::query(
@@ -155,8 +180,10 @@ pub async fn user_for_token(db: &SqlitePool, token: &str) -> sqlx::Result<Option
     sqlx::query_scalar("SELECT id FROM users WHERE token = ?").bind(token).fetch_optional(db).await
 }
 
-/// Hides places the user reported closed, and places two or more users reported closed.
-const NOT_REPORTED_CLOSED: &str = "NOT EXISTS (SELECT 1 FROM closed_reports WHERE place_id = p.id AND user_id = ?1)
+/// Hides other users' added places, places the user reported closed, and places two or
+/// more users reported closed.
+const VISIBLE: &str = "(p.added_by IS NULL OR p.added_by = ?1)
+           AND NOT EXISTS (SELECT 1 FROM closed_reports WHERE place_id = p.id AND user_id = ?1)
            AND (SELECT COUNT(*) FROM closed_reports WHERE place_id = p.id) < 2";
 
 pub async fn area_rows(db: &SqlitePool, area_id: &str, user: Option<&str>) -> sqlx::Result<Vec<PlaceRow>> {
@@ -166,7 +193,7 @@ pub async fn area_rows(db: &SqlitePool, area_id: &str, user: Option<&str>) -> sq
          FROM area_places ap
          JOIN places p ON p.id = ap.place_id
          JOIN place_countries pc ON pc.place_id = p.id
-         WHERE ap.area_id = ?2 AND {NOT_REPORTED_CLOSED}"
+         WHERE ap.area_id = ?2 AND {VISIBLE}"
     );
     let rows = sqlx::query(&sql)
     .bind(user)
@@ -295,7 +322,7 @@ pub async fn area_places(
          WHERE ap.area_id = ?2
            AND (?3 IS NULL OR EXISTS (
                 SELECT 1 FROM place_countries WHERE place_id = p.id AND country = ?3))
-           AND {NOT_REPORTED_CLOSED}"
+           AND {VISIBLE}"
     );
     let rows = sqlx::query(&sql)
     .bind(user)
@@ -492,6 +519,78 @@ pub async fn report_closed(db: &SqlitePool, user: &str, place_id: &str, at: i64)
         .fetch_one(db)
         .await?;
     Ok(Some(count))
+}
+
+/// A restaurant a user adds because OpenStreetMap lacks it.
+pub struct NewPlace {
+    pub name: String,
+    pub lat: f64,
+    pub lng: f64,
+    pub address: Option<String>,
+    pub url: Option<String>,
+    pub country: &'static str,
+    pub cuisine: &'static str,
+}
+
+/// Saves a place added by `user` and puts it in the cached areas around it. Returns its id.
+pub async fn add_place(db: &SqlitePool, user: &str, place: &NewPlace, at: i64) -> sqlx::Result<String> {
+    let id = format!("user-{}", uuid::Uuid::new_v4().simple());
+    let mut tx = db.begin().await?;
+    sqlx::query(
+        "INSERT INTO places (id, name, lat, lng, address, url, cuisine, updated_at, added_by, added_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+    )
+    .bind(&id)
+    .bind(&place.name)
+    .bind(place.lat)
+    .bind(place.lng)
+    .bind(&place.address)
+    .bind(&place.url)
+    .bind(place.cuisine)
+    .bind(at)
+    .bind(user)
+    .bind(at)
+    .execute(&mut *tx)
+    .await?;
+    sqlx::query("INSERT INTO place_countries (place_id, country) VALUES (?, ?)")
+        .bind(&id)
+        .bind(place.country)
+        .execute(&mut *tx)
+        .await?;
+    // Areas are at most 1.5° across, so any area holding the place is centred within that.
+    let near = sqlx::query("SELECT id, shape FROM areas WHERE lat BETWEEN ? AND ? AND lng BETWEEN ? AND ?")
+        .bind(place.lat - 1.5)
+        .bind(place.lat + 1.5)
+        .bind(place.lng - 1.5)
+        .bind(place.lng + 1.5)
+        .fetch_all(&mut *tx)
+        .await?;
+    for r in near {
+        let inside = serde_json::from_str::<Shape>(r.get("shape")).is_ok_and(|s| s.contains(place.lat, place.lng));
+        if inside {
+            sqlx::query("INSERT INTO area_places (area_id, place_id) VALUES (?, ?)")
+                .bind(r.get::<String, _>("id"))
+                .bind(&id)
+                .execute(&mut *tx)
+                .await?;
+        }
+    }
+    tx.commit().await?;
+    Ok(id)
+}
+
+/// How many places `user` added since `since`.
+pub async fn places_added_since(db: &SqlitePool, user: &str, since: i64) -> sqlx::Result<i64> {
+    sqlx::query_scalar("SELECT COUNT(*) FROM places WHERE added_by = ? AND added_at >= ?")
+        .bind(user)
+        .bind(since)
+        .fetch_one(db)
+        .await
+}
+
+pub async fn set_osm_note(db: &SqlitePool, place_id: &str, note_id: i64) -> sqlx::Result<()> {
+    sqlx::query("UPDATE places SET osm_note_id = ? WHERE id = ?").bind(note_id).bind(place_id).execute(db).await?;
+    Ok(())
 }
 
 /// Name and location of a place.
