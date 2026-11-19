@@ -455,16 +455,19 @@ final class AppModel {
         }
     }
 
-    /// Adds a restaurant OpenStreetMap lacks, at the device's position: the user stands at
-    /// it, as OSM wants additions from people who know the place. The place, once added.
-    func addPlace(name: String, country: String, address: String?, website: String?) async -> Place? {
-        do {
-            guard let fix = try? await locationService.current() else {
-                toast("Allow location access and stand at the restaurant: its position is yours.")
-                return nil
-            }
+    /// Where the add form's pin starts: the device's position, or the area's centre without one.
+    func startingPoint() async -> (lat: Double, lng: Double) {
+        if let fix = try? await locationService.current() {
             let lat = fix.coordinate.latitude, lng = fix.coordinate.longitude
             gpsFix = (lat, lng, Date())
+            return (lat, lng)
+        }
+        return userPosition ?? (location?.lat ?? 0, location?.lng ?? 0)
+    }
+
+    /// Adds a restaurant OpenStreetMap lacks, where the user put the pin. The place, once added.
+    func addPlace(name: String, country: String, lat: Double, lng: Double, address: String?, website: String?) async -> Place? {
+        do {
             let place = try await api.addPlace(name: name, country: country, lat: lat, lng: lng, address: address, website: website)
             toast("\(place.name) added. You see it right away; OpenStreetMap mappers were asked to add it for everyone.")
             // It counts towards its country, for this user, if it lies in the area.

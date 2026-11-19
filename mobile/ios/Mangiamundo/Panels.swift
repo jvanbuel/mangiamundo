@@ -1,3 +1,4 @@
+import MapKit
 import SwiftUI
 
 /// A panel with a solid outline and a heavier lower edge, rather than a soft tinted card.
@@ -974,6 +975,9 @@ struct AddPlaceForm: View {
     @State private var address = ""
     @State private var website = ""
     @State private var busy = false
+    /// The map's centre, where the pin is; nil until the starting point is known.
+    @State private var point: CLLocationCoordinate2D?
+    @State private var camera: MapCameraPosition = .automatic
 
     /// Only countries with a cuisine can be the food a place serves.
     private var countries: [Country] {
@@ -994,8 +998,29 @@ struct AddPlaceForm: View {
                         Text("Choose a country").tag("")
                         ForEach(countries, id: \.code) { Text("\($0.flag) \($0.name)").tag($0.code) }
                     }
+                }
+                Section {
+                    if point != nil {
+                        Map(position: $camera) { UserAnnotation() }
+                            .onMapCameraChange(frequency: .continuous) { point = $0.region.center }
+                            // The pin's tip marks the map's centre.
+                            .overlay {
+                                Image(systemName: "mappin")
+                                    .font(.system(size: 34, weight: .bold))
+                                    .foregroundStyle(Theme.accent)
+                                    .offset(y: -17)
+                                    .allowsHitTesting(false)
+                                    .accessibilityHidden(true)
+                            }
+                            .frame(height: 220)
+                            .listRowInsets(EdgeInsets())
+                    } else {
+                        Text("Finding your position…").foregroundStyle(Theme.muted)
+                    }
+                } header: {
+                    Text("Where is it?")
                 } footer: {
-                    Text("Stand at the restaurant: it goes on the map where you are.")
+                    Text("Drag the map until the pin is on the restaurant's door.")
                 }
                 Section("Optional") {
                     TextField("Address", text: $address).textContentType(.fullStreetAddress)
@@ -1013,6 +1038,12 @@ struct AddPlaceForm: View {
                     .foregroundStyle(Theme.muted)
                 }
             }
+            .task {
+                let start = await model.startingPoint()
+                let centre = CLLocationCoordinate2D(latitude: start.lat, longitude: start.lng)
+                camera = .camera(MapCamera(centerCoordinate: centre, distance: 300))
+                point = centre
+            }
             // Stays open until a submission finishes, so its result opens the right place.
             .interactiveDismissDisabled(busy)
             .navigationTitle("Add a restaurant")
@@ -1020,12 +1051,15 @@ struct AddPlaceForm: View {
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) { Button("Cancel", action: onCancel).disabled(busy) }
                 ToolbarItem(placement: .confirmationAction) {
-                    Button(busy ? "Adding…" : "Add here") {
+                    Button(busy ? "Adding…" : "Add") {
                         busy = true
                         Task {
+                            guard let point else { return }
                             let place = await model.addPlace(
                                 name: name.trimmingCharacters(in: .whitespacesAndNewlines),
                                 country: country,
+                                lat: point.latitude,
+                                lng: point.longitude,
                                 address: trimmed(address),
                                 website: trimmed(website)
                             )
@@ -1033,7 +1067,7 @@ struct AddPlaceForm: View {
                             if let place { onAdded(place) }
                         }
                     }
-                    .disabled(busy || trimmed(name) == nil || country.isEmpty)
+                    .disabled(busy || point == nil || trimmed(name) == nil || country.isEmpty)
                 }
             }
         }
