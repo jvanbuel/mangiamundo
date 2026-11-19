@@ -27,6 +27,7 @@ async fn main() -> anyhow::Result<()> {
         clock: Arc::new(store::now),
         push_key: Some(pusher.public_key.clone()),
         osm_notes_url: config.osm_notes_url.clone(),
+        osm_notes_token: config.osm_notes_token.clone(),
     };
     calendar::validate().map_err(anyhow::Error::msg)?;
     tracing::info!(provider = state.places.name(), "places provider ready");

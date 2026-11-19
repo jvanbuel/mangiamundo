@@ -780,10 +780,10 @@ async fn add_place(
     let id = store::add_place(&state.db, &user, &new, now).await?;
 
     if let Some(notes) = state.osm_notes_url.clone() {
-        let (db, id) = (state.db.clone(), id.clone());
+        let (db, id, token) = (state.db.clone(), id.clone(), state.osm_notes_token.clone());
         let text = missing_place_note(&new);
         tokio::spawn(async move {
-            if let Some(note) = post_osm_note(notes, new.lat, new.lng, text).await {
+            if let Some(note) = post_osm_note(notes, token, new.lat, new.lng, text).await {
                 if let Err(error) = store::set_osm_note(&db, &id, note).await {
                     tracing::warn!(%error, "could not keep the osm note id");
                 }
@@ -939,7 +939,7 @@ async fn report_closed(
             "Two Mangiamundo users reported that \"{name}\" ({osm}) has closed. \
              Could someone check and update or remove it?"
         );
-        tokio::spawn(post_osm_note(url.clone(), lat, lng, text));
+        tokio::spawn(post_osm_note(url.clone(), state.osm_notes_token.clone(), lat, lng, text));
     }
     Ok(StatusCode::NO_CONTENT)
 }
@@ -950,15 +950,19 @@ fn osm_link(place_id: &str) -> Option<String> {
     Some(format!("https://www.openstreetmap.org/{kind}/{id}"))
 }
 
-/// Posts an anonymous OSM note and returns its id. Best effort: a failure is logged, not
-/// retried.
-async fn post_osm_note(url: String, lat: f64, lng: f64, text: String) -> Option<i64> {
+/// Posts an OSM note, as the account `token` belongs to or anonymously, and returns its id.
+/// Best effort: a failure is logged, not retried.
+async fn post_osm_note(url: String, token: Option<String>, lat: f64, lng: f64, text: String) -> Option<i64> {
     // The `.json` endpoint answers with the note as GeoJSON instead of XML.
     let result = async {
-        reqwest::Client::new()
+        let mut request = reqwest::Client::new()
             .post(format!("{url}.json"))
             .header(header::USER_AGENT, concat!("mangiamundo/", env!("CARGO_PKG_VERSION")))
-            .form(&[("lat", lat.to_string()), ("lon", lng.to_string()), ("text", text)])
+            .form(&[("lat", lat.to_string()), ("lon", lng.to_string()), ("text", text)]);
+        if let Some(token) = token {
+            request = request.bearer_auth(token);
+        }
+        request
             .send()
             .await?
             .error_for_status()?

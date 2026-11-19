@@ -29,6 +29,15 @@ async fn app_with_clock() -> (Router, Arc<AtomicI64>) {
 }
 
 async fn app_with(db: sqlx::SqlitePool, osm_notes_url: Option<String>, start: i64) -> (Router, Arc<AtomicI64>) {
+    app_with_notes(db, osm_notes_url, None, start).await
+}
+
+async fn app_with_notes(
+    db: sqlx::SqlitePool,
+    osm_notes_url: Option<String>,
+    osm_notes_token: Option<String>,
+    start: i64,
+) -> (Router, Arc<AtomicI64>) {
     let now = Arc::new(AtomicI64::new(start));
     let clock = now.clone();
     let router = api::router(AppState {
@@ -40,6 +49,7 @@ async fn app_with(db: sqlx::SqlitePool, osm_notes_url: Option<String>, start: i6
         clock: Arc::new(move || clock.load(Ordering::Relaxed)),
         push_key: None,
         osm_notes_url,
+        osm_notes_token,
     });
     (router, now)
 }
@@ -595,16 +605,17 @@ async fn closed_reports_hide_a_place_from_the_reporter_then_from_everyone() {
     assert!(!list(None).await.contains(&place));
 }
 
-/// A fake OSM Notes API: its URL, and the form bodies of the notes posted to it. Each
-/// note gets id 7.
+/// A fake OSM Notes API: its URL, and the notes posted to it as `<authorization> <form
+/// body>`, with `-` for an anonymous note. Each note gets id 7.
 async fn fake_osm_notes() -> (String, Arc<std::sync::Mutex<Vec<String>>>) {
     use axum::routing::post;
     let notes: Arc<std::sync::Mutex<Vec<String>>> = Arc::default();
     let seen = notes.clone();
     let fake = Router::new().route(
         "/notes.json",
-        post(move |body: String| async move {
-            seen.lock().unwrap().push(body);
+        post(move |headers: axum::http::HeaderMap, body: String| async move {
+            let auth = headers.get("authorization").map_or("-", |v| v.to_str().unwrap()).to_string();
+            seen.lock().unwrap().push(format!("{auth} {body}"));
             axum::Json(serde_json::json!({"type": "Feature", "properties": {"id": 7}}))
         }),
     );
@@ -651,6 +662,7 @@ async fn the_second_closed_report_of_an_osm_place_posts_one_osm_note() {
     tokio::time::sleep(std::time::Duration::from_millis(200)).await;
     let notes = notes.lock().unwrap();
     assert_eq!(notes.len(), 1, "{notes:?}");
+    assert!(notes[0].starts_with("- "), "anonymous without a token: {}", notes[0]);
     assert!(notes[0].contains("lat=50.8798") && notes[0].contains("lon=4.7005"), "{}", notes[0]);
     assert!(notes[0].contains("openstreetmap.org%2Fnode%2F42"), "{}", notes[0]);
 }
@@ -659,7 +671,7 @@ async fn the_second_closed_report_of_an_osm_place_posts_one_osm_note() {
 async fn an_added_place_shows_up_for_whoever_added_it_and_is_sent_to_osm() {
     let (url, notes) = fake_osm_notes().await;
     let db = store::connect("sqlite::memory:").await.unwrap();
-    let (app, clock) = app_with(db.clone(), Some(url), START).await;
+    let (app, clock) = app_with_notes(db.clone(), Some(url), Some("secret".into()), START).await;
     let (alice, bob) = (session(&app).await, session(&app).await);
     let countries = |token: String| {
         let app = app.clone();
@@ -702,6 +714,7 @@ async fn an_added_place_shows_up_for_whoever_added_it_and_is_sent_to_osm() {
     {
         let notes = notes.lock().unwrap();
         assert_eq!(notes.len(), 1, "{notes:?}");
+        assert!(notes[0].starts_with("Bearer secret "), "as the Mangiamundo account: {}", notes[0]);
         assert!(notes[0].contains("amenity%3Drestaurant") && notes[0].contains("cuisine%3Dnew_zealand"), "{}", notes[0]);
         assert!(notes[0].contains("website%3Dhttps%3A%2F%2Fkiwi.example"), "{}", notes[0]);
     }

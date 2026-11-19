@@ -28,6 +28,9 @@ pub struct Config {
     /// Where closed places are reported to OpenStreetMap. Unset in development, so
     /// testing locally never posts real notes.
     pub osm_notes_url: Option<String>,
+    /// OAuth 2 token (`write_notes` scope) of the Mangiamundo OSM account, so notes come
+    /// from it and mappers can reply. Anonymous notes when unset.
+    pub osm_notes_token: Option<String>,
 }
 
 /// The main public instance is often overloaded, so community mirrors back it up.
@@ -70,6 +73,7 @@ impl Config {
             vapid_private_key: var("VAPID_PRIVATE_KEY"),
             vapid_subject: var("VAPID_SUBJECT").unwrap_or_else(|| "mailto:hello@mangiamundo.app".into()),
             osm_notes_url: var("OSM_NOTES_URL"),
+            osm_notes_token: var("OSM_NOTES_TOKEN"),
             push_interval_secs: var("PUSH_INTERVAL_SECS").map(|v| v.parse()).transpose()?.unwrap_or(600),
             static_dir: Some(PathBuf::from(
                 var("STATIC_DIR").unwrap_or_else(|| "../web/build".into()),

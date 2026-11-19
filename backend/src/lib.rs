@@ -27,6 +27,8 @@ pub struct AppState {
     pub push_key: Option<String>,
     /// OSM Notes API endpoint for reporting closed places to OpenStreetMap. Off when unset.
     pub osm_notes_url: Option<String>,
+    /// Posts notes as the Mangiamundo OSM account when set, anonymously otherwise.
+    pub osm_notes_token: Option<String>,
     /// Areas being fetched right now, for the clients' progress wheel.
     pub loads: api::Loads,
 }
