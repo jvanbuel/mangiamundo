@@ -23,6 +23,7 @@ CREATE TABLE additions (
 );
 CREATE INDEX additions_user ON additions(user_id, submitted_at);
 CREATE INDEX additions_area ON additions(area_id, country);
+CREATE INDEX additions_osm_place ON additions(osm_place_id);
 
 -- Places added before rewards existed still earn the base reward.
 INSERT INTO additions (place_id, user_id, name, country, bonus, submitted_at)

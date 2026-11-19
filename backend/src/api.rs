@@ -771,7 +771,9 @@ struct Reward {
 
 /// Adds a restaurant missing from the map. It shows up right away, but only for whoever
 /// added it, and an OpenStreetMap note asks local mappers to add it there for everyone.
-/// At most 5 a day. Once the import finds it on OpenStreetMap it earns `reward.xp`.
+/// At most 5 a day. Once the import finds it on OpenStreetMap it earns up to `reward.xp`:
+/// less when an earlier addition in the area claimed the same bonus, and nothing when
+/// someone else added the same place first.
 #[utoipa::path(
     post, path = "/api/places", tag = "game", request_body = AddPlace,
     security(("token" = [])),
@@ -831,14 +833,29 @@ async fn additions(State(state): State<AppState>, User(user): User) -> ApiResult
     Ok(Json(store::additions(&state.db, &user).await?))
 }
 
-/// The user was told about their confirmed additions: they come back with `seen: true`.
+/// Additions the user was told about.
+#[derive(Deserialize, ToSchema)]
+struct SeenAdditions {
+    /// `place_id`s from `/api/additions`. At most 100.
+    place_ids: Vec<String>,
+}
+
+/// The user was told about these confirmed additions: they come back with `seen: true`.
+/// Pending ones, and ones not listed, are left alone.
 #[utoipa::path(
-    put, path = "/api/additions/seen", tag = "game",
+    put, path = "/api/additions/seen", tag = "game", request_body = SeenAdditions,
     security(("token" = [])),
     responses((status = 204, description = "Marked"), (status = "default", description = "An error", body = ErrorBody)),
 )]
-async fn mark_additions_seen(State(state): State<AppState>, User(user): User) -> Result<StatusCode, ApiError> {
-    store::mark_additions_seen(&state.db, &user).await?;
+async fn mark_additions_seen(
+    State(state): State<AppState>,
+    User(user): User,
+    JsonBody(body): JsonBody<SeenAdditions>,
+) -> Result<StatusCode, ApiError> {
+    if body.place_ids.len() > 100 {
+        return Err(ApiError::BadRequest("at most 100 place_ids".into()));
+    }
+    store::mark_additions_seen(&state.db, &user, &body.place_ids).await?;
     Ok(StatusCode::NO_CONTENT)
 }
 

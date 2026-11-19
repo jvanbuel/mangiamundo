@@ -943,7 +943,11 @@ async fn an_added_place_earns_xp_once_the_import_confirms_it() {
     assert_eq!(xp(bob.clone()).await, 130);
     assert_eq!(xp(carol.clone()).await, 30 + 130);
 
-    assert_eq!(call(&app, "PUT", "/api/additions/seen", Some(&alice), None).await.0, StatusCode::NO_CONTENT);
+    // Only what the caller lists, and only their own.
+    let seen = |ids: &str| format!(r#"{{"place_ids":[{ids}]}}"#);
+    assert_eq!(call(&app, "PUT", "/api/additions/seen", Some(&alice), Some(&seen(r#""osm-node-2""#))).await.0, StatusCode::NO_CONTENT);
+    assert_eq!(get("/api/additions", bob.clone()).await[1]["seen"], false, "Beta is Bob's");
+    assert_eq!(get("/api/additions", alice.clone()).await[0]["seen"], false, "not listed");
+    assert_eq!(call(&app, "PUT", "/api/additions/seen", Some(&alice), Some(&seen(r#""osm-node-1""#))).await.0, StatusCode::NO_CONTENT);
     assert_eq!(get("/api/additions", alice.clone()).await[0]["seen"], true);
-    assert_eq!(get("/api/additions", bob.clone()).await[1]["seen"], false, "only the caller's");
 }

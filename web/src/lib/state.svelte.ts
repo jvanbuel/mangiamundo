@@ -596,7 +596,7 @@ async function announceConfirmedAdditions() {
 				toast(icon, `${a.name} is on the map`, bonus ? `+${a.xp} XP, and ${bonus}!` : `+${a.xp} XP. Thanks for adding it!`);
 			}
 		}
-		await api.markAdditionsSeen();
+		await api.markAdditionsSeen(fresh.map((a) => a.place_id));
 	} catch {
 		// Shown at the next refresh instead.
 	} finally {

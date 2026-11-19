@@ -32,7 +32,10 @@ export interface paths {
             cookie?: never;
         };
         get?: never;
-        /** The user was told about their confirmed additions: they come back with `seen: true`. */
+        /**
+         * The user was told about these confirmed additions: they come back with `seen: true`.
+         *     Pending ones, and ones not listed, are left alone.
+         */
         put: operations["mark_additions_seen"];
         post?: never;
         delete?: never;
@@ -199,7 +202,9 @@ export interface paths {
         /**
          * Adds a restaurant missing from the map. It shows up right away, but only for whoever
          *     added it, and an OpenStreetMap note asks local mappers to add it there for everyone.
-         *     At most 5 a day. Once the import finds it on OpenStreetMap it earns `reward.xp`.
+         *     At most 5 a day. Once the import finds it on OpenStreetMap it earns up to `reward.xp`:
+         *     less when an earlier addition in the area claimed the same bonus, and nothing when
+         *     someone else added the same place first.
          */
         post: operations["add_place"];
         delete?: never;
@@ -723,6 +728,11 @@ export interface components {
             /** Format: int32 */
             xp: number;
         };
+        /** @description Additions the user was told about. */
+        SeenAdditions: {
+            /** @description `place_id`s from `/api/additions`. At most 100. */
+            place_ids: string[];
+        };
         Session: {
             /** @description Send it as `Authorization: Bearer <token>`. */
             token: string;
@@ -814,7 +824,11 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SeenAdditions"];
+            };
+        };
         responses: {
             /** @description Marked */
             204: {

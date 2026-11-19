@@ -25,6 +25,7 @@ import app.mangiamundo.core.World
 import app.mangiamundo.core.withRecent
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.receiveAsFlow
@@ -468,13 +469,18 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     /** "Lalibela is on the map. +130 XP…" for each addition OpenStreetMap now has that the
-     * user wasn't told about. A failure leaves them for the next refresh. */
+     * user wasn't told about. Only those queued are marked seen; the rest wait for the next refresh. */
     private suspend fun announceConfirmedAdditions() {
-        runCatching {
-            val news = api.additions().filter { it.news }
-            if (news.isEmpty()) return
-            for (addition in news) messageChannel.trySend(addition.announcement(catalog))
-            api.markAdditionsSeen()
+        val news = runCatching { api.additions().filter { it.news } }.getOrNull() ?: return
+        val told = mutableListOf<String>()
+        try {
+            // `send` waits for room, where `trySend` would drop messages past the buffer.
+            for (addition in news) {
+                messageChannel.send(addition.announcement(catalog))
+                told += addition.placeId
+            }
+        } finally {
+            if (told.isNotEmpty()) withContext(NonCancellable) { runCatching { api.markAdditionsSeen(told) } }
         }
     }
 

@@ -721,7 +721,7 @@ async fn match_pending(tx: &mut sqlx::SqliteConnection) -> sqlx::Result<usize> {
     let pending = sqlx::query(
         "SELECT p.id, p.name, p.lat, p.lng, pc.country FROM places p
          JOIN place_countries pc ON pc.place_id = p.id
-         WHERE p.added_by IS NOT NULL ORDER BY p.added_at",
+         WHERE p.added_by IS NOT NULL ORDER BY p.added_at, p.id",
     )
     .fetch_all(&mut *tx)
     .await?;
@@ -884,12 +884,19 @@ pub async fn additions(db: &SqlitePool, user: &str) -> sqlx::Result<Vec<Addition
         .collect())
 }
 
-/// Marks the user's confirmed additions as told.
-pub async fn mark_additions_seen(db: &SqlitePool, user: &str) -> sqlx::Result<()> {
-    sqlx::query("UPDATE additions SET seen = 1 WHERE user_id = ? AND confirmed_at IS NOT NULL")
+/// Marks some of the user's confirmed additions as told, by the `place_id` that
+/// [`additions`] lists. Others stay unseen, such as one confirmed after the user was told.
+pub async fn mark_additions_seen(db: &SqlitePool, user: &str, place_ids: &[String]) -> sqlx::Result<()> {
+    for id in place_ids {
+        sqlx::query(
+            "UPDATE additions SET seen = 1
+             WHERE user_id = ? AND confirmed_at IS NOT NULL AND COALESCE(osm_place_id, place_id) = ?",
+        )
         .bind(user)
+        .bind(id)
         .execute(db)
         .await?;
+    }
     Ok(())
 }
 
@@ -1028,6 +1035,36 @@ mod tests {
         let countries: Vec<String> =
             sqlx::query_scalar("SELECT country FROM place_countries WHERE place_id = 'osm-node-1'").fetch_all(&db).await.unwrap();
         assert_eq!(countries, vec!["ET"]);
+    }
+
+    #[tokio::test]
+    async fn additions_made_at_the_same_second_are_settled_in_one_order() {
+        let db = connect("sqlite::memory:").await.unwrap();
+        let token = create_user(&db).await.unwrap();
+        let user = user_for_token(&db, &token).await.unwrap().unwrap();
+        // Two additions of the same new restaurant in the same second. "user-b" is inserted
+        // first, so an order by time alone would likely settle it first.
+        for id in ["user-b", "user-a"] {
+            for sql in [
+                "INSERT INTO places (id, name, lat, lng, cuisine, updated_at, added_by, added_at)
+                 VALUES (?1, 'Lalibela', 50.88, 4.7, 'ethiopian', 1000, ?2, 1000)",
+                "INSERT INTO place_countries (place_id, country) VALUES (?1, 'ET')",
+                "INSERT INTO additions (place_id, user_id, name, country, area_id, bonus, submitted_at)
+                 VALUES (?1, ?2, 'Lalibela', 'ET', 'leuven', 'country', 1000)",
+            ] {
+                sqlx::query(sql).bind(id).bind(&user).execute(&db).await.unwrap();
+            }
+        }
+        let mut twin = place("osm-node-1", 50.88, 4.7, "ethiopian");
+        twin.name = "Lalibela".into();
+        let all = Bbox { south: -90.0, west: -180.0, north: 90.0, east: 180.0 };
+        replace_imported(&db, all, &[twin]).await.unwrap();
+        let settled: Vec<(String, String, bool)> =
+            sqlx::query_as("SELECT place_id, bonus, rewarded FROM additions ORDER BY place_id").fetch_all(&db).await.unwrap();
+        assert_eq!(
+            settled,
+            vec![("user-a".into(), "country".into(), true), ("user-b".into(), "none".into(), false)]
+        );
     }
 
     #[tokio::test]

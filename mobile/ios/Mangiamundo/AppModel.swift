@@ -494,7 +494,7 @@ final class AppModel {
     private func announceConfirmedAdditions() async {
         guard let news = try? await api.additions().filter(\.isNews), !news.isEmpty else { return }
         for addition in news { toast(addition.announcement(catalog: catalog)) }
-        try? await api.markAdditionsSeen()
+        try? await api.markAdditionsSeen(placeIDs: news.map(\.placeId))
     }
 
     /// Updates a place's visits on its card (which shows only the latest) and in its details.

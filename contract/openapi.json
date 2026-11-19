@@ -1034,6 +1034,22 @@
         ],
         "type": "object"
       },
+      "SeenAdditions": {
+        "description": "Additions the user was told about.",
+        "properties": {
+          "place_ids": {
+            "description": "`place_id`s from `/api/additions`. At most 100.",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "place_ids"
+        ],
+        "type": "object"
+      },
       "Session": {
         "properties": {
           "token": {
@@ -1244,6 +1260,16 @@
     "/api/additions/seen": {
       "put": {
         "operationId": "mark_additions_seen",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SeenAdditions"
+              }
+            }
+          },
+          "required": true
+        },
         "responses": {
           "204": {
             "description": "Marked"
@@ -1264,7 +1290,7 @@
             "token": []
           }
         ],
-        "summary": "The user was told about their confirmed additions: they come back with `seen: true`.",
+        "summary": "The user was told about these confirmed additions: they come back with `seen: true`.\nPending ones, and ones not listed, are left alone.",
         "tags": [
           "game"
         ]
@@ -1749,7 +1775,7 @@
             "token": []
           }
         ],
-        "summary": "Adds a restaurant missing from the map. It shows up right away, but only for whoever\nadded it, and an OpenStreetMap note asks local mappers to add it there for everyone.\nAt most 5 a day. Once the import finds it on OpenStreetMap it earns `reward.xp`.",
+        "summary": "Adds a restaurant missing from the map. It shows up right away, but only for whoever\nadded it, and an OpenStreetMap note asks local mappers to add it there for everyone.\nAt most 5 a day. Once the import finds it on OpenStreetMap it earns up to `reward.xp`:\nless when an earlier addition in the area claimed the same bonus, and nothing when\nsomeone else added the same place first.",
         "tags": [
           "game"
         ]

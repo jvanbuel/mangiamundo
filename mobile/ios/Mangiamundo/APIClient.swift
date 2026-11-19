@@ -93,9 +93,10 @@ actor APIClient {
         try decode(await authed("GET", "/api/additions"))
     }
 
-    /// The user was told about their confirmed additions.
-    func markAdditionsSeen() async throws {
-        _ = try await authed("PUT", "/api/additions/seen")
+    /// The user was told about these confirmed additions, by `placeId`.
+    func markAdditionsSeen(placeIDs: [String]) async throws {
+        let data = try JSONSerialization.data(withJSONObject: ["place_ids": placeIDs])
+        _ = try await authed("PUT", "/api/additions/seen", body: data)
     }
 
     /// Cities and postal codes matching what someone typed.

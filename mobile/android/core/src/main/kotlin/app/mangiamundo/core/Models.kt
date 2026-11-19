@@ -306,6 +306,9 @@ data class Reward(
     @SerialName("area_name") val areaName: String? = null,
 )
 
+@Serializable
+internal data class SeenBody(@SerialName("place_ids") val placeIds: List<String>)
+
 /** `POST /api/places` sends the place with its reward next to its fields. */
 @Serializable
 internal data class RewardOnly(val reward: Reward)
