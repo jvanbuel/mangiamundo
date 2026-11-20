@@ -185,6 +185,7 @@ struct SettingsSheet: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             Text("Settings").font(Theme.font(.title3, .black))
+            if let area = model.location?.area.name { NewFoodSetting(area: area) }
             if googleInstalled { DirectionsSetting() }
             Button("Map data © OpenStreetMap contributors") {
                 if let copyright = URL(string: "https://www.openstreetmap.org/copyright") { openURL(copyright) }
@@ -197,6 +198,26 @@ struct SettingsSheet: View {
             Spacer()
         }
         .frame(maxWidth: .infinity, alignment: .leading)
+    }
+}
+
+/// News of food not tasted yet showing up in the area, by push.
+struct NewFoodSetting: View {
+    @Environment(AppModel.self) private var model
+    let area: String
+
+    var body: some View {
+        Toggle(isOn: Binding(get: { model.newFoodOn }, set: { _ in Task { await model.toggleNewFood() } })) {
+            VStack(alignment: .leading, spacing: 2) {
+                Text("New food near me").font(Theme.font(.subheadline, .bold))
+                Text("A notification when food from a country you haven't tasted shows up in \(area).")
+                    .font(Theme.font(.footnote))
+                    .foregroundStyle(Theme.muted)
+            }
+        }
+        .tint(Theme.accent)
+        .disabled(model.newFoodBusy)
+        .padding(.top, 16)
     }
 }
 

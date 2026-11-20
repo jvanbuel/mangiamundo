@@ -27,6 +27,12 @@ targets:
         # Real devices use the deployed backend. The simulator shares the Mac's localhost.
         API_BASE_URL: https://mangiamundo.fly.dev
         "API_BASE_URL[sdk=iphonesimulator*]": http://localhost:8080
+    # Push notifications (news of new food) through APNs. Automatic signing turns
+    # "development" into "production" when an archive is exported for the App Store.
+    entitlements:
+      path: Mangiamundo/Mangiamundo.entitlements
+      properties:
+        aps-environment: development
     # Writes the commit into the built Info.plist, to tell old builds apart in the app.
     postBuildScripts:
       - name: Stamp git commit

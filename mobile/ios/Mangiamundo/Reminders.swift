@@ -109,7 +109,8 @@ final class ReminderCenter: NSObject, UNUserNotificationCenterDelegate {
         didReceive response: UNNotificationResponse
     ) async {
         let info = response.notification.request.content.userInfo
-        let country = info["country"] as? String
+        // Reminders carry the country; news of new food from the server carries a link.
+        let country = info["country"] as? String ?? DevicePush.country(in: info["url"] as? String)
         let badges = info["badges"] as? Bool ?? false
         await MainActor.run { onOpen?(country, badges) }
     }

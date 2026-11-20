@@ -8,6 +8,12 @@ final class CoreTests: XCTestCase {
         world = try XCTUnwrap(World.bundled())
     }
 
+    func testReadsTheCountryFromAPushLink() {
+        XCTAssertEqual(DevicePush.country(in: "/?country=GE"), "GE")
+        XCTAssertNil(DevicePush.country(in: "/"))
+        XCTAssertNil(DevicePush.country(in: nil))
+    }
+
     func testFindsCountriesByPosition() {
         XCTAssertEqual(world.country(lng: 4.70, lat: 50.88)?.code, "BE")
         XCTAssertEqual(world.country(lng: 139.65, lat: 35.68)?.code, "JP")

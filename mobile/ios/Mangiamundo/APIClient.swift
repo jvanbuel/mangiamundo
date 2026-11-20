@@ -104,6 +104,23 @@ actor APIClient {
         try decode(await authed("GET", "/api/additions"))
     }
 
+    /// Turns on news of food not tasted yet showing up in the area, sent through APNs to
+    /// this device token. Call again when the token or the area changes. Fails with status
+    /// 404 when the server can't send to iOS.
+    func registerDevice(token: String, areaID: String, sandbox: Bool) async throws {
+        let body: [String: Any] = [
+            "platform": "ios", "token": token, "sandbox": sandbox,
+            "area": areaID, "timezone": TimeZone.current.identifier,
+        ]
+        _ = try await authed("PUT", "/api/push/device", body: try JSONSerialization.data(withJSONObject: body))
+    }
+
+    /// Turns that news off again.
+    func unregisterDevice(token: String) async throws {
+        let data = try JSONSerialization.data(withJSONObject: ["token": token])
+        _ = try await authed("POST", "/api/push/device/delete", body: data)
+    }
+
     /// The user was told about these confirmed additions, by `id` (at most 100).
     func markAdditionsSeen(ids: [String]) async throws {
         let data = try JSONSerialization.data(withJSONObject: ["ids": ids])

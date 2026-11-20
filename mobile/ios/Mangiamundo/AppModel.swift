@@ -48,6 +48,11 @@ final class AppModel {
 
     private(set) var celebrations: [Celebration] = []
     private(set) var remindersOn = false
+    /// News of food not tasted yet showing up nearby, by push.
+    private(set) var newFoodOn = false
+    private(set) var newFoodBusy = false
+    /// The APNs token last sent to the server, to remove it when turned off.
+    @ObservationIgnored private var pushToken: String?
     /// 0 = countries, 1 = badges.
     var tab = 0
     /// The server's version and commit; nil until it answers, "not reached" after a failure.
@@ -100,6 +105,10 @@ final class AppModel {
         started = true
         reminders.onOpen = { [weak self] country, badges in self?.openFromNotification(country: country, badges: badges) }
         remindersOn = defaults.bool(forKey: "mangiamundo.reminders") ? await reminders.isAllowed() : false
+        newFoodOn = defaults.bool(forKey: "mangiamundo.newFood") ? await reminders.isAllowed() : false
+        // The token can change between launches; keep the server's copy current. Not
+        // awaited: APNs may take a while to answer, or never in a simulator.
+        Task { await syncNewFood() }
         world = World.bundled()
         loadServer()
         do {
@@ -197,6 +206,7 @@ final class AppModel {
         if let data = try? JSONEncoder().encode(target) {
             defaults.set(data, forKey: "mangiamundo.location")
         }
+        Task { await syncNewFood() }
         closePlace()
         select(nil)
         refresh()
@@ -338,6 +348,42 @@ final class AppModel {
             toast("Notifications are turned off for Mangiamundo in Settings.")
         }
         defaults.set(remindersOn, forKey: "mangiamundo.reminders")
+    }
+
+    func toggleNewFood() async {
+        guard !newFoodBusy, let area = location?.area.id else { return }
+        newFoodBusy = true
+        defer { newFoodBusy = false }
+        do {
+            if newFoodOn {
+                if let token = pushToken { try? await api.unregisterDevice(token: token) }
+                DevicePush.shared.unregister()
+                newFoodOn = false
+            } else {
+                guard await reminders.requestPermission() else {
+                    toast("Notifications are turned off for Mangiamundo in Settings.")
+                    return
+                }
+                let token = try await DevicePush.shared.token()
+                try await api.registerDevice(token: token, areaID: area, sandbox: DevicePush.sandbox)
+                pushToken = token
+                newFoodOn = true
+                toast("New food alerts on. We will let you know when food you haven't tasted shows up nearby.")
+            }
+        } catch let error as APIError where error.status == 404 {
+            toast("New food alerts aren't available yet.")
+        } catch {
+            toast("Could not change new food alerts: \(error.localizedDescription)")
+        }
+        defaults.set(newFoodOn, forKey: "mangiamundo.newFood")
+    }
+
+    /// Tells the server the current token and area, when the user opted in.
+    private func syncNewFood() async {
+        guard newFoodOn, let area = location?.area.id else { return }
+        guard let token = try? await DevicePush.shared.token() else { return }
+        pushToken = token
+        try? await api.registerDevice(token: token, areaID: area, sandbox: DevicePush.sandbox)
     }
 
     private func rescheduleReminders() async {
