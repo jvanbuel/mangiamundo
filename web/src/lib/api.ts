@@ -145,6 +145,10 @@ export interface PushTarget {
 	/** Area id. */
 	area: string;
 	timezone: string;
+	/** Celebration and event reminders. */
+	reminders: boolean;
+	/** News of food not tasted yet becoming available in the area. */
+	new_food: boolean;
 }
 
 export const savePushSubscription = (subscription: PushSubscriptionJSON, target: PushTarget) =>

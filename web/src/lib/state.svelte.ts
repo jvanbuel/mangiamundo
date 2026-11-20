@@ -25,6 +25,8 @@ const LOCATION_KEY = 'mangiamundo.location';
 const PROJECTION_KEY = 'mangiamundo.projection';
 const THEME_KEY = 'mangiamundo.theme';
 const RECENTS_KEY = 'mangiamundo.recentAreas';
+/** Which notifications this browser's push subscription is for. */
+const PUSH_KEY = 'mangiamundo.push';
 /** Areas kept as recent, including the current one; the picker shows the others. */
 const MAX_RECENTS = 6;
 
@@ -80,7 +82,9 @@ export const app = $state({
 	tab: 'countries' as 'countries' | 'badges',
 	celebrations: [] as Celebration[],
 	/** Web Push reminders: on, off, not possible here, or possible once installed (iPhone). */
-	reminders: 'off' as 'on' | 'off' | 'unsupported' | 'install',
+	reminders: 'off' as PushChoice,
+	/** News of food not tasted yet becoming available nearby, the same way. */
+	newFood: 'off' as PushChoice,
 	remindersBusy: false,
 	toasts: [] as Toast[],
 	/** Areas used lately, newest first, for switching back quickly. */
@@ -259,33 +263,67 @@ async function loadPlace(id: string) {
 	}
 }
 
+type PushChoice = 'on' | 'off' | 'unsupported' | 'install';
+
+/** What the subscription is for. Subscriptions from before the choice were for reminders. */
+function pushChoices(): { reminders: boolean; newFood: boolean } {
+	return load<{ reminders: boolean; newFood: boolean }>(PUSH_KEY) ?? { reminders: true, newFood: false };
+}
+
 async function checkReminders() {
-	if (push.needsInstallForPush()) app.reminders = 'install';
-	else if (!push.pushSupported()) app.reminders = 'unsupported';
-	else app.reminders = (await push.currentSubscription()) && Notification.permission === 'granted' ? 'on' : 'off';
+	const unavailable: PushChoice | null = push.needsInstallForPush() ? 'install' : !push.pushSupported() ? 'unsupported' : null;
+	if (unavailable) {
+		app.reminders = app.newFood = unavailable;
+		return;
+	}
+	const subscribed = (await push.currentSubscription()) && Notification.permission === 'granted';
+	const choices = pushChoices();
+	app.reminders = subscribed && choices.reminders ? 'on' : 'off';
+	app.newFood = subscribed && choices.newFood ? 'on' : 'off';
 }
 
 function pushTarget() {
-	return { area: app.location!.area.id };
+	return { area: app.location!.area.id, reminders: app.reminders === 'on', new_food: app.newFood === 'on' };
 }
 
-export async function toggleReminders() {
+/** Subscribes for what is on, or unsubscribes when nothing is. */
+async function changePush(reminders: boolean, newFood: boolean, title: string, text: string) {
 	if (!app.location || app.remindersBusy) return;
 	app.remindersBusy = true;
 	try {
-		if (app.reminders === 'on') {
-			await push.disableReminders();
-			app.reminders = 'off';
+		if (reminders || newFood) {
+			await push.enablePush({ area: app.location.area.id, reminders, new_food: newFood });
 		} else {
-			await push.enableReminders(pushTarget());
-			app.reminders = 'on';
-			toast(null, 'Reminders on', 'We will let you know when a country near you has something to celebrate.');
+			await push.disablePush();
 		}
+		localStorage.setItem(PUSH_KEY, JSON.stringify({ reminders, newFood }));
+		const turnedOn = (reminders && app.reminders !== 'on') || (newFood && app.newFood !== 'on');
+		app.reminders = reminders ? 'on' : 'off';
+		app.newFood = newFood ? 'on' : 'off';
+		if (turnedOn) toast(null, title, text);
 	} catch (error) {
-		toast(null, 'Could not change reminders', message(error));
+		toast(null, 'Could not change notifications', message(error));
 	} finally {
 		app.remindersBusy = false;
 	}
+}
+
+export function toggleReminders() {
+	return changePush(
+		app.reminders !== 'on',
+		app.newFood === 'on',
+		'Reminders on',
+		'We will let you know when a country near you has something to celebrate.'
+	);
+}
+
+export function toggleNewFood() {
+	return changePush(
+		app.reminders === 'on',
+		app.newFood !== 'on',
+		'New food alerts on',
+		"We will let you know when food from a country you haven't tasted shows up near you."
+	);
 }
 
 export function setProjection(projection: 'globe' | 'mercator') {
@@ -411,7 +449,7 @@ export async function refresh() {
 	loadServer();
 	const location = app.location;
 	if (!location) return;
-	if (app.reminders === 'on') void push.updateReminders(pushTarget()).catch(() => undefined);
+	if (app.reminders === 'on' || app.newFood === 'on') void push.updatePush(pushTarget()).catch(() => undefined);
 	void api
 		.celebrations(location.area.id)
 		.then((list) => {

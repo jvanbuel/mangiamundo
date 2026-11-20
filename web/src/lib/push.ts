@@ -27,9 +27,10 @@ export async function currentSubscription(): Promise<PushSubscription | null> {
 	return (await (await registration()).pushManager.getSubscription()) ?? null;
 }
 
-/** Asks for permission if needed, subscribes, and tells the server where the user is. */
-export async function enableReminders(target: Omit<api.PushTarget, 'timezone'>): Promise<void> {
-	if (!pushSupported()) throw new Error('This browser cannot show reminders.');
+/** Asks for permission if needed, subscribes, and tells the server where the user is and
+ * which notifications they want. */
+export async function enablePush(target: Omit<api.PushTarget, 'timezone'>): Promise<void> {
+	if (!pushSupported()) throw new Error('This browser cannot show notifications.');
 	const permission = await Notification.requestPermission();
 	if (permission !== 'granted') throw new Error('Notifications are blocked for this site.');
 	const reg = await registration();
@@ -46,7 +47,7 @@ export async function enableReminders(target: Omit<api.PushTarget, 'timezone'>):
 }
 
 /** Keeps the server's copy in step after the user moves to another area. */
-export async function updateReminders(target: Omit<api.PushTarget, 'timezone'>): Promise<void> {
+export async function updatePush(target: Omit<api.PushTarget, 'timezone'>): Promise<void> {
 	const subscription = await currentSubscription();
 	if (!subscription || Notification.permission !== 'granted') return;
 	await api.savePushSubscription(subscription.toJSON(), {
@@ -55,7 +56,7 @@ export async function updateReminders(target: Omit<api.PushTarget, 'timezone'>):
 	});
 }
 
-export async function disableReminders(): Promise<void> {
+export async function disablePush(): Promise<void> {
 	const subscription = await currentSubscription();
 	if (!subscription) return;
 	await api.deletePushSubscription(subscription.endpoint).catch(() => undefined);

@@ -313,6 +313,44 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/push/device": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Turns on news of food not tasted yet becoming available in the area, for the iOS or
+         *     Android app. Call it again when the token or the area changes. A 404 when the server
+         *     can't send to that platform.
+         */
+        put: operations["register_device"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/push/device/delete": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Turns off news for an app's device token. */
+        post: operations["unregister_device"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/push/key": {
         parameters: {
             query?: never;
@@ -338,7 +376,7 @@ export interface paths {
             cookie?: never;
         };
         get?: never;
-        /** Subscribes a browser to reminders. */
+        /** Subscribes a browser to reminders and, when asked, news of food new to the area. */
         put: operations["subscribe"];
         post?: never;
         delete?: never;
@@ -581,6 +619,18 @@ export interface components {
             /** @description The current day where the place is. */
             today: boolean;
         };
+        /** @description An app's device token for push notifications, plus the user's area. */
+        DeviceBody: {
+            /** @description The area to send news for. */
+            area: string;
+            platform: components["schemas"]["Platform"];
+            /** @description A development build of the iOS app, whose token is for the APNs sandbox. */
+            sandbox?: boolean;
+            /** @description IANA name. News goes out from 10:00 in this zone. */
+            timezone: string;
+            /** @description From APNs (hex) or FCM. */
+            token: string;
+        };
         Discover: components["schemas"]["Summary"] & {
             area: components["schemas"]["AreaView"];
             events: components["schemas"]["EventProgress"][];
@@ -752,6 +802,8 @@ export interface components {
              */
             visits: components["schemas"]["Visit"][];
         };
+        /** @enum {string} */
+        Platform: "ios" | "android";
         Profile: {
             /**
              * Format: int32
@@ -811,6 +863,13 @@ export interface components {
             area: string;
             endpoint: string;
             keys: components["schemas"]["SubscribeKeys"];
+            /** @description News of food not tasted yet becoming available in the area. */
+            new_food?: boolean;
+            /**
+             * @description Celebration and event reminders.
+             * @default true
+             */
+            reminders: boolean;
             /** @description IANA name. Reminders go out from 10:00 in this zone. */
             timezone: string;
         };
@@ -828,6 +887,9 @@ export interface components {
             places_visited: number;
             profile: components["schemas"]["Profile"];
             world: components["schemas"]["GroupProgress"];
+        };
+        UnregisterBody: {
+            token: string;
         };
         UnsubscribeBody: {
             endpoint: string;
@@ -1379,6 +1441,68 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["VisitResult"];
                 };
+            };
+            /** @description An error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    register_device: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DeviceBody"];
+            };
+        };
+        responses: {
+            /** @description Registered */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description An error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    unregister_device: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UnregisterBody"];
+            };
+        };
+        responses: {
+            /** @description Unregistered */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
             /** @description An error */
             default: {

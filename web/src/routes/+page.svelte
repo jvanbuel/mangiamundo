@@ -15,7 +15,7 @@
 	import MapPin from '@lucide/svelte/icons/map-pin';
 	import Navigation from '@lucide/svelte/icons/navigation';
 	import Settings from '@lucide/svelte/icons/settings';
-	import { app, init, lookAgainNearby, refresh, select, setProjection, setTheme, toast, type Theme } from '#lib/state.svelte.ts';
+	import { app, init, lookAgainNearby, refresh, select, setProjection, setTheme, toast, toggleNewFood, type Theme } from '#lib/state.svelte.ts';
 
 	let pickerOpen = $state(false);
 	let settingsOpen = $state(false);
@@ -126,6 +126,31 @@
 		{#if settingsOpen}
 			<div class="card settings">
 				<h2>Settings</h2>
+				{#if app.location}
+					<div class="setting">
+						<div>
+							<p class="label" id="new-food-label">New food near me</p>
+							<p class="muted" id="new-food-note">
+								{#if app.newFood === 'install'}
+									To get notifications on iPhone, add Mangiamundo to your home screen first.
+								{:else if app.newFood === 'unsupported'}
+									This browser can't show notifications.
+								{:else}
+									A notification when food from a country you haven't tasted shows up in {app.location.area.name}.
+								{/if}
+							</p>
+						</div>
+						<button
+							class="switch"
+							role="switch"
+							aria-checked={app.newFood === 'on'}
+							aria-labelledby="new-food-label"
+							aria-describedby="new-food-note"
+							disabled={app.remindersBusy || (app.newFood !== 'on' && app.newFood !== 'off')}
+							onclick={toggleNewFood}
+						><span></span></button>
+					</div>
+				{/if}
 				<p><a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">Map data © OpenStreetMap contributors</a></p>
 				<p class="build">Web {version}{app.server ? ` · Server ${app.server}` : ''}</p>
 			</div>
@@ -314,6 +339,58 @@
 		display: flex;
 		padding: 4px;
 		color: var(--muted);
+	}
+
+	.setting {
+		display: flex;
+		align-items: center;
+		gap: 12px;
+		margin-bottom: 12px;
+	}
+
+	.setting p {
+		margin: 0;
+	}
+
+	.setting .label {
+		font-weight: 700;
+	}
+
+	.setting .muted {
+		font-size: 13px;
+	}
+
+	.switch {
+		flex: none;
+		margin-left: auto;
+		width: 44px;
+		height: 26px;
+		padding: 3px;
+		border-radius: 999px;
+		background: var(--line);
+		transition: background 0.15s;
+	}
+
+	.switch span {
+		display: block;
+		width: 20px;
+		height: 20px;
+		border-radius: 50%;
+		background: #fff;
+		box-shadow: 0 1px 2px rgb(0 0 0 / 0.25);
+		transition: transform 0.15s;
+	}
+
+	.switch[aria-checked='true'] {
+		background: var(--accent);
+	}
+
+	.switch[aria-checked='true'] span {
+		transform: translateX(18px);
+	}
+
+	.switch:disabled {
+		opacity: 0.5;
 	}
 
 	.settings p.build {
