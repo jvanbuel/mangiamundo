@@ -309,6 +309,12 @@ data class Reward(
 @Serializable
 internal data class SeenBody(val ids: List<String>)
 
+@Serializable
+internal data class DeviceBody(val platform: String, val token: String, val area: String, val timezone: String)
+
+@Serializable
+internal data class DeviceTokenBody(val token: String)
+
 /** `POST /api/places` sends the place with its reward next to its fields. */
 @Serializable
 internal data class RewardOnly(val reward: Reward)

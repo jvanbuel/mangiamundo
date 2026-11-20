@@ -78,6 +78,17 @@ fun AppScreen(vm: AppViewModel = viewModel()) {
     val notifications = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
         vm.setReminders(granted)
     }
+    val newFoodPermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+        vm.setNewFood(granted)
+    }
+    val toggleNewFood = {
+        when {
+            vm.newFoodOn -> vm.setNewFood(false)
+            Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU && !Notifications.allowed(context) ->
+                newFoodPermission.launch(Manifest.permission.POST_NOTIFICATIONS)
+            else -> vm.setNewFood(true)
+        }
+    }
     val toggleReminders = {
         when {
             vm.remindersOn -> vm.setReminders(false)
@@ -317,7 +328,13 @@ fun AppScreen(vm: AppViewModel = viewModel()) {
 
     if (settingsOpen) {
         ModalBottomSheet(onDismissRequest = { settingsOpen = false }, containerColor = colors.panel) {
-            Box(Modifier.padding(start = 16.dp, end = 16.dp, bottom = 24.dp)) { SettingsPanel(vm.server) }
+            Box(Modifier.padding(start = 16.dp, end = 16.dp, bottom = 24.dp)) { SettingsPanel(
+                    vm.server,
+                    area = vm.location?.area?.name,
+                    newFoodOn = vm.newFoodOn,
+                    newFoodBusy = vm.newFoodBusy,
+                    onToggleNewFood = toggleNewFood,
+                ) }
         }
     }
 }

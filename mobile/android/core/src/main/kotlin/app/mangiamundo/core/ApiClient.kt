@@ -96,6 +96,21 @@ class ApiClient(private val baseUrl: String, private val tokens: TokenStore) {
         authed("PUT", "/api/additions/seen", json.encodeToString(SeenBody.serializer(), SeenBody(ids)))
     }
 
+    /**
+     * Turns on news of food not tasted yet showing up in the area, sent through Firebase to
+     * this FCM token. Call again when the token or the area changes. Fails with status 404
+     * when the server can't send to Android.
+     */
+    suspend fun registerDevice(fcmToken: String, areaId: String) {
+        val body = DeviceBody("android", fcmToken, areaId, java.util.TimeZone.getDefault().id)
+        authed("PUT", "/api/push/device", json.encodeToString(DeviceBody.serializer(), body))
+    }
+
+    /** Turns that news off again. */
+    suspend fun unregisterDevice(fcmToken: String) {
+        authed("POST", "/api/push/device/delete", json.encodeToString(DeviceTokenBody.serializer(), DeviceTokenBody(fcmToken)))
+    }
+
     /** Cities and postal codes matching what someone typed. */
     suspend fun searchAreas(query: String): List<Area> =
         json.decodeFromString(request("GET", "/api/areas?q=${encode(query)}"))

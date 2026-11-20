@@ -36,6 +36,11 @@ class Settings(context: Context) : TokenStore {
         get() = prefs.getBoolean("reminders", false)
         set(value) = prefs.edit { putBoolean("reminders", value) }
 
+    /** The user asked for news of food they haven't tasted showing up nearby. */
+    var newFoodOn: Boolean
+        get() = prefs.getBoolean("newFood", false)
+        set(value) = prefs.edit { putBoolean("newFood", value) }
+
     var projection: ProjectionKind
         get() = if (prefs.getString("projection", null) == "flat") ProjectionKind.FLAT else ProjectionKind.GLOBE
         set(value) = prefs.edit { putString("projection", if (value == ProjectionKind.FLAT) "flat" else "globe") }

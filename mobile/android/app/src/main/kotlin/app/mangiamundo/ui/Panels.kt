@@ -1,5 +1,8 @@
 package app.mangiamundo.ui
 
+import androidx.compose.material3.Switch
+import androidx.compose.ui.semantics.Role
+import androidx.compose.foundation.selection.toggleable
 import android.content.ActivityNotFoundException
 import android.content.Intent
 import android.net.Uri
@@ -290,11 +293,37 @@ fun Note(text: String) {
 
 /** Rarely needed things, kept off the main screen. */
 @Composable
-fun SettingsPanel(server: String?) {
+fun SettingsPanel(
+    server: String?,
+    area: String? = null,
+    newFoodOn: Boolean = false,
+    newFoodBusy: Boolean = false,
+    onToggleNewFood: () -> Unit = {},
+) {
     val colors = LocalAppColors.current
     val context = LocalContext.current
     Column {
         Text("Settings", style = MaterialTheme.typography.titleLarge, color = colors.text)
+        if (area != null) {
+            Row(
+                Modifier
+                    .padding(top = 16.dp)
+                    .fillMaxWidth()
+                    .toggleable(value = newFoodOn, enabled = !newFoodBusy, role = Role.Switch, onValueChange = { onToggleNewFood() }),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Column(Modifier.weight(1f).padding(end = 12.dp)) {
+                    Text("New food near me", color = colors.text, fontWeight = FontWeight.Bold)
+                    Text(
+                        "A notification when food from a country you haven't tasted shows up in $area.",
+                        color = colors.muted,
+                        style = MaterialTheme.typography.bodySmall,
+                    )
+                }
+                // The row handles taps, so the switch itself is only a picture of the state.
+                Switch(checked = newFoodOn, onCheckedChange = null, enabled = !newFoodBusy)
+            }
+        }
         Text(
             "Map data © OpenStreetMap contributors",
             color = colors.accent,

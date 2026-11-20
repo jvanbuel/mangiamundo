@@ -6,6 +6,12 @@ plugins {
     id("app.cash.paparazzi")
 }
 
+// Push (news of new food) needs the Firebase project's config, downloaded from the Firebase
+// console. Without it the app builds and runs, but can't turn that news on.
+if (file("google-services.json").exists()) {
+    apply(plugin = "com.google.gms.google-services")
+}
+
 /** The commit shown in the app, to tell old builds apart. */
 fun gitCommit(): String = providers.exec {
     commandLine("git", "describe", "--always", "--dirty")
@@ -63,6 +69,8 @@ dependencies {
     implementation("androidx.core:core-ktx:1.16.0")
     implementation("androidx.core:core-splashscreen:1.0.1")
     implementation("androidx.work:work-runtime-ktx:2.10.1")
+    implementation(platform("com.google.firebase:firebase-bom:33.16.0"))
+    implementation("com.google.firebase:firebase-messaging")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.10.2")
     // Street map for placing a new restaurant; open source, no API key.
     implementation("org.maplibre.gl:android-sdk:11.11.0")

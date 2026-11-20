@@ -46,9 +46,10 @@ class MainActivity : ComponentActivity() {
         handle(intent)
     }
 
-    /** A tapped reminder says which country or tab to open. */
+    /** A tapped reminder says which country or tab to open; news of new food has a link. */
     private fun handle(intent: Intent) {
         val country = intent.getStringExtra(Notifications.EXTRA_COUNTRY)
+            ?: Push.countryIn(intent.getStringExtra(Push.EXTRA_URL))
         val badges = intent.getBooleanExtra(Notifications.EXTRA_BADGES, false)
         if (country != null || badges) vm.openFromNotification(country, badges)
     }

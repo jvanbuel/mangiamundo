@@ -6,6 +6,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import app.mangiamundo.core.ApiException
 import app.mangiamundo.core.ApiClient
 import app.mangiamundo.core.Camera
 import app.mangiamundo.core.Catalog
@@ -71,6 +72,10 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
 
     var celebrations by mutableStateOf<List<Celebration>>(emptyList()); private set
     var remindersOn by mutableStateOf(settings.remindersOn && Notifications.allowed(application)); private set
+
+    /** News of food not tasted yet showing up nearby, by push. */
+    var newFoodOn by mutableStateOf(settings.newFoodOn && Notifications.allowed(application)); private set
+    var newFoodBusy by mutableStateOf(false); private set
     /** 0 = countries, 1 = badges. */
     var tab by mutableStateOf(0)
     /** The server's version and commit; null until it answers, "not reached" after a failure. */
@@ -107,6 +112,8 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
                 return@launch
             }
             if (location == null) settings.legacyLocation?.let { (lat, lng, fromGps) -> moveLegacy(lat, lng, fromGps) }
+            // The token can change while the app isn't running; keep the server's copy current.
+            syncNewFood()
             // Without a location the welcome screen shows right away; refresh() sets it otherwise.
             if (location != null) refresh() else ready = true
             // Follow the device when there is no location yet or the last one came from GPS.
@@ -162,6 +169,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         discover = null
         celebrations = emptyList()
         settings.location = target
+        syncNewFood()
         closePlace()
         select(null)
         refresh()
@@ -302,6 +310,52 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
             Notifications.cancelAll(app)
             if (on) messageChannel.trySend("Notifications are turned off for Mangiamundo in your settings.")
         }
+    }
+
+    /** Call after the notification permission was granted (or with false when refused). */
+    fun setNewFood(on: Boolean) {
+        val app = getApplication<Application>()
+        if (newFoodBusy) return
+        if (on && !Notifications.allowed(app)) {
+            messageChannel.trySend("Notifications are turned off for Mangiamundo in your settings.")
+            return
+        }
+        if (!Push.available(app)) {
+            messageChannel.trySend("New food alerts aren't available in this version of the app.")
+            return
+        }
+        val area = location?.area?.id ?: return
+        newFoodBusy = true
+        viewModelScope.launch {
+            try {
+                if (on) {
+                    Push.createChannel(app)
+                    api.registerDevice(Push.token(), area)
+                    messageChannel.trySend("New food alerts on. We will let you know when food you haven't tasted shows up nearby.")
+                } else {
+                    runCatching { api.unregisterDevice(Push.token()) }
+                    Push.deleteToken()
+                }
+                newFoodOn = on
+                settings.newFoodOn = on
+            } catch (e: ApiException) {
+                messageChannel.trySend(
+                    if (e.status == 404) "New food alerts aren't available yet." else "Could not change new food alerts: ${e.message}",
+                )
+            } catch (e: Exception) {
+                messageChannel.trySend("Could not change new food alerts: ${e.message}")
+            } finally {
+                newFoodBusy = false
+            }
+        }
+    }
+
+    /** Tells the server the current token and area, when the user opted in. */
+    private fun syncNewFood() {
+        val app = getApplication<Application>()
+        val area = location?.area?.id ?: return
+        if (!newFoodOn || !Push.available(app)) return
+        viewModelScope.launch { runCatching { api.registerDevice(Push.token(), area) } }
     }
 
     private fun rescheduleReminders() {
