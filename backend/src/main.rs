@@ -20,6 +20,7 @@ async fn main() -> anyhow::Result<()> {
     let pusher = push::Pusher::load(&db, config.vapid_private_key.clone(), config.vapid_subject.clone()).await?;
     let state = AppState {
         loads: Default::default(),
+        limits: Default::default(),
         db,
         places,
         areas,

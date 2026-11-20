@@ -29,7 +29,7 @@ use chrono_tz::Tz;
 
 use crate::calendar::{self, Celebration};
 use crate::game::{self, Lifetime, PlaceRow, Summary};
-use crate::providers::{AreaInfo, Located};
+use crate::providers::{AreaInfo, Located, Lookup};
 use crate::store::{self, Area, HoursStatus, PlaceView, Visit};
 use crate::{catalog, geo, hours, AppState};
 
@@ -63,6 +63,8 @@ fn api_router() -> (Router<AppState>, utoipa::openapi::OpenApi) {
         .routes(routes!(countries))
         .routes(routes!(discover))
         .routes(routes!(places, add_place))
+        .routes(routes!(refresh_place))
+        .routes(routes!(refresh_nearby))
         .routes(routes!(additions))
         .routes(routes!(mark_additions_seen))
         .routes(routes!(place))
@@ -375,6 +377,27 @@ struct LoadStep {
 struct Load {
     running: usize,
     step: Option<LoadStep>,
+}
+
+/// Recent requests per user and kind, for rate limits. In memory: the server runs as one
+/// machine, and a restart forgetting them is harmless.
+#[derive(Clone, Default)]
+pub struct Limits(Arc<Mutex<HashMap<(String, &'static str), Vec<i64>>>>);
+
+impl Limits {
+    /// Counts the request and returns true when `user` made fewer than `max` requests of this
+    /// kind in the `window` seconds before `now`.
+    fn allow(&self, user: &str, kind: &'static str, max: usize, window: i64, now: i64) -> bool {
+        let mut all = self.0.lock().unwrap();
+        // ponytail: entries of users who stopped asking stay until restart; a few bytes each.
+        let times = all.entry((user.to_string(), kind)).or_default();
+        times.retain(|&at| at > now - window);
+        let allowed = times.len() < max;
+        if allowed {
+            times.push(now);
+        }
+        allowed
+    }
 }
 
 /// Areas being fetched right now, by area id. In memory: the server runs as one machine.
@@ -873,6 +896,114 @@ fn missing_place_note(place: &store::NewPlace) -> String {
         text += &format!("\nAddress: {address}\n");
     }
     text + "\nCould someone check and add it?"
+}
+
+/// What a refresh from OpenStreetMap found.
+#[derive(Serialize, ToSchema)]
+struct RefreshResult {
+    status: store::Refreshed,
+    /// The place as it is now; `null` when it is gone.
+    #[schema(required = true)]
+    place: Option<PlaceView>,
+}
+
+/// Reads one place again from OpenStreetMap and applies it straight away, instead of at the
+/// next daily import: for an edit someone just made there. A place that is gone (deleted,
+/// closed, or no longer serving a national cuisine) is hidden from every list. At most 5 a
+/// minute.
+#[utoipa::path(
+    post, path = "/api/places/{place_id}/refresh", tag = "game",
+    params(("place_id" = String, Path, description = "An OpenStreetMap place id, like `osm-node-123`."), PlaceQuery),
+    security(("token" = [])),
+    responses((status = 200, body = RefreshResult), (status = "default", description = "An error", body = ErrorBody)),
+)]
+async fn refresh_place(
+    State(state): State<AppState>,
+    User(user): User,
+    Path(place_id): Path<String>,
+    Query(query): Query<PlaceQuery>,
+) -> ApiResult<RefreshResult> {
+    if osm_link(&place_id).is_none() {
+        return Err(ApiError::BadRequest("only OpenStreetMap places can be refreshed".into()));
+    }
+    store::place_summary(&state.db, &place_id, &user).await?.ok_or(ApiError::NotFound("place"))?;
+    let now = state.now();
+    if !state.limits.allow(&user, "refresh_place", 5, 60, now) {
+        return Err(ApiError::TooManyRequests("you refreshed 5 places this minute; try again in a moment"));
+    }
+    let lookup = state.places.place(&place_id).await.map_err(ApiError::Upstream)?;
+    let status = store::refresh_place(&state.db, &place_id, &lookup, now).await?;
+    let place = match lookup {
+        Lookup::Gone => None,
+        Lookup::Found(_) => store::place(&state.db, &place_id, Some(&user)).await?.map(|mut place| {
+            let (from_lat, from_lng) = match (query.lat, query.lng) {
+                (Some(lat), Some(lng)) => (lat, lng),
+                _ => (place.lat, place.lng),
+            };
+            complete(&mut place, from_lat, from_lng, now);
+            if let Some(h) = &mut place.hours {
+                h.week = hours::week(&h.raw, place.lat, place.lng, now);
+            }
+            place
+        }),
+    };
+    tracing::info!(place_id, ?status, "place refreshed from osm");
+    Ok(Json(RefreshResult { status, place }))
+}
+
+/// How far around the user a nearby refresh looks.
+const NEARBY_RADIUS_M: f64 = 150.0;
+
+#[derive(Deserialize, IntoParams)]
+#[into_params(parameter_in = Query)]
+struct NearbyQuery {
+    /// Where the user is.
+    lat: f64,
+    lng: f64,
+}
+
+/// What a nearby refresh found.
+#[derive(Serialize, ToSchema)]
+struct NearbyResult {
+    /// Places that weren't listed before, nearest first.
+    added: Vec<PlaceView>,
+    /// Pending additions, anyone's, now matched to one of the places found.
+    matched: u32,
+}
+
+/// Asks OpenStreetMap for restaurants within 150 m and adds the new ones straight away,
+/// instead of at the next daily import: for a place someone just mapped there. Pending
+/// additions that match one are confirmed as by the import. At most 5 an hour.
+#[utoipa::path(
+    post, path = "/api/places/nearby/refresh", tag = "game", params(NearbyQuery),
+    security(("token" = [])),
+    responses((status = 200, body = NearbyResult), (status = "default", description = "An error", body = ErrorBody)),
+)]
+async fn refresh_nearby(
+    State(state): State<AppState>,
+    User(user): User,
+    Query(query): Query<NearbyQuery>,
+) -> ApiResult<NearbyResult> {
+    let (lat, lng) = (query.lat, query.lng);
+    if !(-90.0..=90.0).contains(&lat) || !(-180.0..=180.0).contains(&lng) {
+        return Err(ApiError::BadRequest("lat/lng out of range".into()));
+    }
+    let now = state.now();
+    if !state.limits.allow(&user, "refresh_nearby", 5, 3600, now) {
+        return Err(ApiError::TooManyRequests("you looked again 5 times this hour; try again later"));
+    }
+    let found = state.places.nearby(lat, lng, NEARBY_RADIUS_M).await.map_err(ApiError::Upstream)?;
+    let (new, matched) = store::add_nearby(&state.db, &found, now).await?;
+    let mut added = Vec::new();
+    for id in new {
+        if let Some(mut place) = store::place(&state.db, &id, Some(&user)).await? {
+            complete(&mut place, lat, lng, now);
+            added.push(place);
+        }
+    }
+    added.sort_by_key(|p| p.distance_m);
+    tracing::info!(found = found.len(), added = added.len(), matched, "nearby places refreshed from osm");
+    Ok(Json(NearbyResult { added, matched: matched as u32 }))
 }
 
 #[derive(Deserialize, IntoParams)]

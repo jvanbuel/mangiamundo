@@ -1,4 +1,4 @@
-import type { AddPlace, AddedPlace, Addition, Area, AreaProgress, Catalog, Celebration, Discover, Health, Located, Place, VisitResult } from './types';
+import type { AddPlace, AddedPlace, Addition, NearbyResult, RefreshResult, Area, AreaProgress, Catalog, Celebration, Discover, Health, Located, Place, VisitResult } from './types';
 
 const BASE = import.meta.env.VITE_API_BASE ?? '';
 const TOKEN_KEY = 'mangiamundo.token';
@@ -99,6 +99,17 @@ export const reportClosed = (placeId: string) =>
 
 /** Adds a restaurant OpenStreetMap lacks. Only this user sees it until OSM has it. */
 export const addPlace = (place: AddPlace) => authed<AddedPlace>('POST', '/api/places', place);
+
+/** Reads a place again from OpenStreetMap, for an edit made there since the daily import. */
+export const refreshPlace = (placeId: string, from: { lat: number; lng: number } | null) =>
+	authed<RefreshResult>(
+		'POST',
+		`/api/places/${encodeURIComponent(placeId)}/refresh${from ? `?lat=${from.lat}&lng=${from.lng}` : ''}`
+	);
+
+/** Asks OpenStreetMap for restaurants within 150 m of `at`, for one just mapped there. */
+export const refreshNearby = (at: { lat: number; lng: number }) =>
+	authed<NearbyResult>('POST', `/api/places/nearby/refresh?lat=${at.lat}&lng=${at.lng}`);
 
 /** The restaurants this user added, newest first, with their rewards. */
 export const additions = () => authed<Addition[]>('GET', '/api/additions');

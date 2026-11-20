@@ -112,6 +112,22 @@ final class ContractTests: XCTestCase {
         XCTAssertEqual(additions[0].id, "user-0123456789abcdef0123456789abcdef")
     }
 
+    func testDecodesRefreshResults() throws {
+        let decoder = JSONDecoder()
+        decoder.keyDecodingStrategy = .convertFromSnakeCase
+        let gone = try decoder.decode(RefreshResult.self, from: Data(#"{"status":"gone","place":null}"#.utf8))
+        XCTAssertEqual(gone.status, .gone)
+        XCTAssertNil(gone.place)
+        let updated = try decoder.decode(
+            RefreshResult.self,
+            from: Data(#"{"status":"updated","place":{"id":"osm-node-1","name":"Lalibela","lat":50.88,"lng":4.7,"address":null,"url":null,"cuisine":"ethiopian","hours":null,"countries":["ET"],"distance_m":0,"visits":[],"osm_url":null}}"#.utf8)
+        )
+        XCTAssertEqual(updated.place?.name, "Lalibela")
+        XCTAssertEqual(try decoder.decode(RefreshResult.self, from: Data(#"{"status":"later","place":null}"#.utf8)).status, .unknown)
+        let nearby = try decoder.decode(NearbyResult.self, from: Data(#"{"added":[],"matched":1}"#.utf8))
+        XCTAssertEqual(nearby.matched, 1)
+    }
+
     func testRewardsReadAsSentences() throws {
         let catalog = try decode(Catalog.self, "countries")
         XCTAssertEqual(

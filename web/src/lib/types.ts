@@ -24,6 +24,9 @@ export type AddPlace = Schemas['AddPlace'];
 export type AddedPlace = Schemas['AddedPlace'];
 export type Bonus = Schemas['Bonus'];
 export type Addition = Schemas['Addition'];
+/** What reading a place again from OpenStreetMap found. */
+export type RefreshResult = Schemas['RefreshResult'];
+export type NearbyResult = Schemas['NearbyResult'];
 export type Visit = Schemas['Visit'];
 export type Day = Schemas['Day'];
 export type VisitResult = Schemas['VisitResult'];

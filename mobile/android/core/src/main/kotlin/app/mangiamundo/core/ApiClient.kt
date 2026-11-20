@@ -78,6 +78,16 @@ class ApiClient(private val baseUrl: String, private val tokens: TokenStore) {
     internal fun decodeAdded(text: String): AddedPlace =
         AddedPlace(json.decodeFromString<Place>(text), json.decodeFromString<RewardOnly>(text).reward)
 
+    /** Reads a place again from OpenStreetMap, for an edit made there since the daily import. */
+    suspend fun refreshPlace(placeId: String, from: Pair<Double, Double>?): RefreshResult {
+        val position = from?.let { "?lat=${it.first}&lng=${it.second}" }.orEmpty()
+        return json.decodeFromString(authed("POST", "/api/places/${encode(placeId)}/refresh$position"))
+    }
+
+    /** Asks OpenStreetMap for restaurants within 150 m of (lat, lng), for one just mapped there. */
+    suspend fun refreshNearby(lat: Double, lng: Double): NearbyResult =
+        json.decodeFromString(authed("POST", "/api/places/nearby/refresh?lat=$lat&lng=$lng"))
+
     /** The restaurants this user added, newest first, with their rewards. */
     suspend fun additions(): List<Addition> = json.decodeFromString(authed("GET", "/api/additions"))
 

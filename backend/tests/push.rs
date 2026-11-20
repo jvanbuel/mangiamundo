@@ -82,6 +82,7 @@ async fn sends_each_reminder_once_in_the_subscribers_morning() {
     let clock = now.clone();
     let state = AppState {
         loads: Default::default(),
+        limits: Default::default(),
         db: db.clone(),
         places: Arc::new(Demo),
         areas: Arc::new(Demo),

@@ -38,6 +38,22 @@ pub trait PlacesProvider: Send + Sync {
     fn expected_secs(&self, _area: &Boundary) -> f64 {
         20.0
     }
+    /// One place read again from the source, by its id.
+    async fn place(&self, _id: &str) -> anyhow::Result<Lookup> {
+        anyhow::bail!("{} places can't be read one at a time", self.name())
+    }
+    /// Places serving a national cuisine within `radius_m` of a point.
+    async fn nearby(&self, _lat: f64, _lng: f64, _radius_m: f64) -> anyhow::Result<Vec<FoundPlace>> {
+        anyhow::bail!("{} can't search around a point", self.name())
+    }
+}
+
+/// A place read again from its source.
+#[derive(Debug, Clone, PartialEq)]
+pub enum Lookup {
+    Found(FoundPlace),
+    /// Deleted, closed, no longer a restaurant, or its cuisine maps to no country.
+    Gone,
 }
 
 #[derive(Debug, Clone, Copy, Serialize, PartialEq, Eq, utoipa::ToSchema)]

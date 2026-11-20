@@ -837,6 +837,29 @@
         ],
         "type": "object"
       },
+      "NearbyResult": {
+        "description": "What a nearby refresh found.",
+        "properties": {
+          "added": {
+            "description": "Places that weren't listed before, nearest first.",
+            "items": {
+              "$ref": "#/components/schemas/PlaceView"
+            },
+            "type": "array"
+          },
+          "matched": {
+            "description": "Pending additions, anyone's, now matched to one of the places found.",
+            "format": "int32",
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "added",
+          "matched"
+        ],
+        "type": "object"
+      },
       "Notification": {
         "properties": {
           "body": {
@@ -1012,6 +1035,39 @@
           "public_key"
         ],
         "type": "object"
+      },
+      "RefreshResult": {
+        "description": "What a refresh from OpenStreetMap found.",
+        "properties": {
+          "place": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/PlaceView",
+                "description": "The place as it is now; `null` when it is gone."
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "status": {
+            "$ref": "#/components/schemas/Refreshed"
+          }
+        },
+        "required": [
+          "status",
+          "place"
+        ],
+        "type": "object"
+      },
+      "Refreshed": {
+        "description": "What reading a place again from OpenStreetMap changed.",
+        "enum": [
+          "updated",
+          "unchanged",
+          "gone"
+        ],
+        "type": "string"
       },
       "Reward": {
         "description": "XP for an added restaurant, granted once OpenStreetMap has it.",
@@ -1786,6 +1842,62 @@
         ]
       }
     },
+    "/api/places/nearby/refresh": {
+      "post": {
+        "operationId": "refresh_nearby",
+        "parameters": [
+          {
+            "description": "Where the user is.",
+            "in": "query",
+            "name": "lat",
+            "required": true,
+            "schema": {
+              "format": "double",
+              "type": "number"
+            }
+          },
+          {
+            "in": "query",
+            "name": "lng",
+            "required": true,
+            "schema": {
+              "format": "double",
+              "type": "number"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NearbyResult"
+                }
+              }
+            }
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "An error"
+          }
+        },
+        "security": [
+          {
+            "token": []
+          }
+        ],
+        "summary": "Asks OpenStreetMap for restaurants within 150 m and adds the new ones straight away,\ninstead of at the next daily import: for a place someone just mapped there. Pending\nadditions that match one are confirmed as by the import. At most 5 an hour.",
+        "tags": [
+          "game"
+        ]
+      }
+    },
     "/api/places/{place_id}": {
       "get": {
         "operationId": "place",
@@ -1887,6 +1999,71 @@
           }
         ],
         "summary": "\"This place has closed\": hides it for the reporter now, and for everyone after more reports.",
+        "tags": [
+          "game"
+        ]
+      }
+    },
+    "/api/places/{place_id}/refresh": {
+      "post": {
+        "operationId": "refresh_place",
+        "parameters": [
+          {
+            "description": "An OpenStreetMap place id, like `osm-node-123`.",
+            "in": "path",
+            "name": "place_id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Where the user is, for the distance. Without it the distance is 0.",
+            "in": "query",
+            "name": "lat",
+            "required": false,
+            "schema": {
+              "format": "double",
+              "type": "number"
+            }
+          },
+          {
+            "in": "query",
+            "name": "lng",
+            "required": false,
+            "schema": {
+              "format": "double",
+              "type": "number"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RefreshResult"
+                }
+              }
+            }
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "An error"
+          }
+        },
+        "security": [
+          {
+            "token": []
+          }
+        ],
+        "summary": "Reads one place again from OpenStreetMap and applies it straight away, instead of at the\nnext daily import: for an edit someone just made there. A place that is gone (deleted,\nclosed, or no longer serving a national cuisine) is hidden from every list. At most 5 a\nminute.",
         "tags": [
           "game"
         ]
