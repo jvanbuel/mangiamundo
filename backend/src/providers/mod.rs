@@ -33,7 +33,11 @@ pub trait PlacesProvider: Send + Sync {
     fn name(&self) -> &'static str;
     /// All places serving a national cuisine inside the area's outline. `on_next_server` is
     /// called when the provider starts asking another server, for the progress wheel.
-    async fn search(&self, area: &Boundary, on_next_server: &(dyn Fn() + Send + Sync)) -> anyhow::Result<Vec<FoundPlace>>;
+    async fn search(
+        &self,
+        area: &Boundary,
+        on_next_server: &(dyn Fn() + Send + Sync),
+    ) -> anyhow::Result<Vec<FoundPlace>>;
     /// About how long `search` takes for this area, for the progress wheel.
     fn expected_secs(&self, _area: &Boundary) -> f64 {
         20.0
@@ -43,7 +47,12 @@ pub trait PlacesProvider: Send + Sync {
         anyhow::bail!("{} places can't be read one at a time", self.name())
     }
     /// Places serving a national cuisine within `radius_m` of a point.
-    async fn nearby(&self, _lat: f64, _lng: f64, _radius_m: f64) -> anyhow::Result<Vec<FoundPlace>> {
+    async fn nearby(
+        &self,
+        _lat: f64,
+        _lng: f64,
+        _radius_m: f64,
+    ) -> anyhow::Result<Vec<FoundPlace>> {
         anyhow::bail!("{} can't search around a point", self.name())
     }
 }
@@ -105,7 +114,11 @@ pub trait AreaDirectory: Send + Sync {
     /// An area's outline, or `None` when the id is not a city or postal code.
     async fn boundary(&self, id: &str) -> anyhow::Result<Option<Boundary>>;
     /// Quick suggestions while someone types, nearest first when `near` is known.
-    async fn suggest(&self, query: &str, _near: Option<(f64, f64)>) -> anyhow::Result<Vec<AreaInfo>> {
+    async fn suggest(
+        &self,
+        query: &str,
+        _near: Option<(f64, f64)>,
+    ) -> anyhow::Result<Vec<AreaInfo>> {
         self.search(query).await
     }
 }
@@ -121,7 +134,10 @@ pub fn build(config: &Config) -> anyhow::Result<(Arc<dyn PlacesProvider>, Arc<dy
     Ok(match config.provider {
         ProviderKind::Demo => (Arc::new(demo::Demo), Arc::new(demo::Demo)),
         ProviderKind::Osm => (
-            Arc::new(osm::Overpass::new(http.clone(), config.overpass_urls.clone())),
+            Arc::new(osm::Overpass::new(
+                http.clone(),
+                config.overpass_urls.clone(),
+            )),
             Arc::new(osm::Nominatim::new(http, config.nominatim_url.clone())),
         ),
     })

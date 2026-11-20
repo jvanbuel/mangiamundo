@@ -67,7 +67,11 @@ pub enum Delivery {
 
 impl Pusher {
     /// Uses the key in `VAPID_PRIVATE_KEY`, or one stored in the database, creating it on first run.
-    pub async fn load(db: &SqlitePool, configured: Option<String>, subject: String) -> anyhow::Result<Self> {
+    pub async fn load(
+        db: &SqlitePool,
+        configured: Option<String>,
+        subject: String,
+    ) -> anyhow::Result<Self> {
         let private_key = match configured {
             Some(key) => key,
             None => match store::setting(db, "vapid_private_key").await? {
@@ -84,12 +88,24 @@ impl Pusher {
                 .map_err(|e| anyhow::anyhow!("invalid VAPID key: {e}"))?
                 .get_public_key(),
         );
-        let http = reqwest::Client::builder().timeout(StdDuration::from_secs(20)).build()?;
-        Ok(Self { http, private_key, public_key, subject })
+        let http = reqwest::Client::builder()
+            .timeout(StdDuration::from_secs(20))
+            .build()?;
+        Ok(Self {
+            http,
+            private_key,
+            public_key,
+            subject,
+        })
     }
 
-    pub async fn send(&self, to: &Subscription, notification: &Notification) -> anyhow::Result<Delivery> {
-        let info = SubscriptionInfo::new(to.endpoint.as_str(), to.p256dh.as_str(), to.auth.as_str());
+    pub async fn send(
+        &self,
+        to: &Subscription,
+        notification: &Notification,
+    ) -> anyhow::Result<Delivery> {
+        let info =
+            SubscriptionInfo::new(to.endpoint.as_str(), to.p256dh.as_str(), to.auth.as_str());
         let mut signature = VapidSignatureBuilder::from_base64(&self.private_key, &info)?;
         signature.add_claim("sub", self.subject.as_str());
         let payload = serde_json::to_vec(notification)?;
@@ -108,7 +124,10 @@ impl Pusher {
         match response.status().as_u16() {
             200..=299 => Ok(Delivery::Sent),
             404 | 410 => Ok(Delivery::Gone),
-            status => anyhow::bail!("push service answered {status}: {}", response.text().await.unwrap_or_default()),
+            status => anyhow::bail!(
+                "push service answered {status}: {}",
+                response.text().await.unwrap_or_default()
+            ),
         }
     }
 }
@@ -131,7 +150,9 @@ fn new_private_key() -> anyhow::Result<String> {
 fn cuisine_names(codes: &[&str], last_word: &str) -> String {
     let names: Vec<String> = codes
         .iter()
-        .filter_map(|code| catalog::cuisine_adjective(code).or_else(|| Some(catalog::country(code)?.name.clone())))
+        .filter_map(|code| {
+            catalog::cuisine_adjective(code).or_else(|| Some(catalog::country(code)?.name.clone()))
+        })
         .collect();
     match names.as_slice() {
         [] => String::new(),
@@ -141,12 +162,19 @@ fn cuisine_names(codes: &[&str], last_word: &str) -> String {
 }
 
 fn places(n: u32) -> String {
-    if n == 1 { "1 place".into() } else { format!("{n} places") }
+    if n == 1 {
+        "1 place".into()
+    } else {
+        format!("{n} places")
+    }
 }
 
 /// The reminder for a celebration, or None when none of its countries has places nearby.
 /// The apps use the same text for the notifications they schedule themselves.
-pub fn celebration_notification(celebration: &calendar::Celebration, counts: &HashMap<String, u32>) -> Option<Notification> {
+pub fn celebration_notification(
+    celebration: &calendar::Celebration,
+    counts: &HashMap<String, u32>,
+) -> Option<Notification> {
     let nearby: Vec<&str> = celebration
         .countries
         .iter()
@@ -155,7 +183,11 @@ pub fn celebration_notification(celebration: &calendar::Celebration, counts: &Ha
         .collect();
     let first = *nearby.first()?;
     let total: u32 = nearby.iter().map(|c| counts[*c]).sum();
-    let when = if celebration.ends > celebration.starts { "starts today" } else { "is today" };
+    let when = if celebration.ends > celebration.starts {
+        "starts today"
+    } else {
+        "is today"
+    };
     Some(Notification {
         title: format!("{} {when}", celebration.title),
         body: format!(
@@ -170,9 +202,16 @@ pub fn celebration_notification(celebration: &calendar::Celebration, counts: &Ha
 }
 
 /// The alert for food from `countries` newly in the area, or None when there are none.
-pub fn new_food_notification(countries: &[&str], counts: &HashMap<String, u32>, area: &str) -> Option<Notification> {
+pub fn new_food_notification(
+    countries: &[&str],
+    counts: &HashMap<String, u32>,
+    area: &str,
+) -> Option<Notification> {
     let first = *countries.first()?;
-    let total: u32 = countries.iter().map(|c| counts.get(*c).copied().unwrap_or(0)).sum();
+    let total: u32 = countries
+        .iter()
+        .map(|c| counts.get(*c).copied().unwrap_or(0))
+        .sum();
     let them = if countries.len() == 1 { "it" } else { "them" };
     Some(Notification {
         title: format!("{} food is now near you", cuisine_names(countries, "and")),
@@ -183,7 +222,11 @@ pub fn new_food_notification(countries: &[&str], counts: &HashMap<String, u32>, 
 }
 
 /// Sends one notification. None when it failed and the next pass should try again.
-async fn deliver(pusher: &Pusher, to: &Subscription, notification: &Notification) -> Option<Delivery> {
+async fn deliver(
+    pusher: &Pusher,
+    to: &Subscription,
+    notification: &Notification,
+) -> Option<Delivery> {
     match pusher.send(to, notification).await {
         Ok(delivery) => Some(delivery),
         Err(error) => {
@@ -203,12 +246,19 @@ async fn due(
     let mut out = Vec::new();
     for celebration in calendar::starting_on(day) {
         if let Some(notification) = celebration_notification(&celebration, counts) {
-            out.push((format!("celebration:{}:{day}", celebration.id), notification));
+            out.push((
+                format!("celebration:{}:{day}", celebration.id),
+                notification,
+            ));
         }
     }
 
     for event in calendar::events() {
-        let nearby: u32 = event.countries.iter().map(|c| counts.get(c).copied().unwrap_or(0)).sum();
+        let nearby: u32 = event
+            .countries
+            .iter()
+            .map(|c| counts.get(c).copied().unwrap_or(0))
+            .sum();
         if nearby == 0 {
             continue;
         }
@@ -223,7 +273,9 @@ async fn due(
                 },
             ));
         } else if event.ends - Duration::days(LAST_CHANCE_DAYS - 1) == day {
-            let done = store::visits_between(&state.db, user, &event.countries, event.starts, event.ends).await?;
+            let done =
+                store::visits_between(&state.db, user, &event.countries, event.starts, event.ends)
+                    .await?;
             if done < event.target {
                 let left = event.target - done;
                 out.push((
@@ -253,11 +305,23 @@ pub async fn run_once(state: &AppState, pusher: &Pusher) -> anyhow::Result<usize
         }
         // Only look at areas already in the cache, and refresh a stale one from the local
         // OpenStreetMap copy at most: never call a provider from here.
-        let Some(area_id) = &sub.area_id else { continue };
-        let Some(area) = store::find_area(&state.db, area_id).await? else { continue };
+        let Some(area_id) = &sub.area_id else {
+            continue;
+        };
+        let Some(area) = store::find_area(&state.db, area_id).await? else {
+            continue;
+        };
         if state.now() - area.fetched_at >= state.cache_ttl_secs {
             if let Some(found) = osm::from_import(&state.db, &area.boundary).await? {
-                store::save_area(&state.db, &store::Area { fetched_at: state.now(), ..area.clone() }, &found).await?;
+                store::save_area(
+                    &state.db,
+                    &store::Area {
+                        fetched_at: state.now(),
+                        ..area.clone()
+                    },
+                    &found,
+                )
+                .await?;
             }
         }
         let mut counts: HashMap<String, u32> = HashMap::new();
@@ -283,10 +347,17 @@ pub async fn run_once(state: &AppState, pusher: &Pusher) -> anyhow::Result<usize
         if !gone {
             let mut present: Vec<String> = counts.keys().cloned().collect();
             present.sort();
-            let new = store::take_new_countries(&state.db, &sub.endpoint, area_id, &present).await?;
+            let new =
+                store::take_new_countries(&state.db, &sub.endpoint, area_id, &present).await?;
             let visited = store::visited_countries(&state.db, &user).await?;
-            let untried: Vec<&str> = new.iter().filter(|c| !visited.contains(c)).map(String::as_str).collect();
-            if let Some(notification) = new_food_notification(&untried, &counts, &area.boundary.info.name) {
+            let untried: Vec<&str> = new
+                .iter()
+                .filter(|c| !visited.contains(c))
+                .map(String::as_str)
+                .collect();
+            if let Some(notification) =
+                new_food_notification(&untried, &counts, &area.boundary.info.name)
+            {
                 match deliver(pusher, &sub, &notification).await {
                     Some(Delivery::Sent) => sent += 1,
                     Some(Delivery::Gone) => gone = true,
@@ -336,7 +407,10 @@ mod tests {
     fn names_cuisines_naturally() {
         assert_eq!(cuisine_names(&["LB"], "or"), "Lebanese");
         assert_eq!(cuisine_names(&["CN", "VN"], "or"), "Chinese or Vietnamese");
-        assert_eq!(cuisine_names(&["CN", "KR", "VN"], "or"), "Chinese, Korean or Vietnamese");
+        assert_eq!(
+            cuisine_names(&["CN", "KR", "VN"], "or"),
+            "Chinese, Korean or Vietnamese"
+        );
     }
 
     #[test]

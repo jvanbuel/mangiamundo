@@ -37,7 +37,9 @@ const HOURS: &[Option<&str>] = &[
     None,
 ];
 
-const NAMES: &[&str] = &["Casa", "Chez", "Little", "Golden", "Mama's", "Old Town", "Royal", "Taste of"];
+const NAMES: &[&str] = &[
+    "Casa", "Chez", "Little", "Golden", "Mama's", "Old Town", "Royal", "Taste of",
+];
 
 struct City {
     slug: &'static str,
@@ -50,29 +52,108 @@ struct City {
 }
 
 const CITIES: &[City] = &[
-    City { slug: "amsterdam", name: "Amsterdam", country: "Netherlands", lat: 52.3676, lng: 4.9041, codes: ["1011", "1091"] },
-    City { slug: "antwerp", name: "Antwerp", country: "Belgium", lat: 51.2194, lng: 4.4025, codes: ["2000", "2060"] },
-    City { slug: "berlin", name: "Berlin", country: "Germany", lat: 52.52, lng: 13.405, codes: ["10115", "10243"] },
-    City { slug: "brussels", name: "Brussels", country: "Belgium", lat: 50.8503, lng: 4.3517, codes: ["1000", "1040"] },
-    City { slug: "ghent", name: "Ghent", country: "Belgium", lat: 51.0543, lng: 3.7174, codes: ["9000", "9050"] },
-    City { slug: "leuven", name: "Leuven", country: "Belgium", lat: 50.8798, lng: 4.7005, codes: ["3000", "3010"] },
-    City { slug: "london", name: "London", country: "United Kingdom", lat: 51.5072, lng: -0.1276, codes: ["WC2N", "E1"] },
-    City { slug: "new-york", name: "New York", country: "United States", lat: 40.7128, lng: -74.006, codes: ["10007", "10002"] },
-    City { slug: "paris", name: "Paris", country: "France", lat: 48.8566, lng: 2.3522, codes: ["75001", "75011"] },
-    City { slug: "tokyo", name: "Tokyo", country: "Japan", lat: 35.6762, lng: 139.6503, codes: ["100-0001", "130-0001"] },
+    City {
+        slug: "amsterdam",
+        name: "Amsterdam",
+        country: "Netherlands",
+        lat: 52.3676,
+        lng: 4.9041,
+        codes: ["1011", "1091"],
+    },
+    City {
+        slug: "antwerp",
+        name: "Antwerp",
+        country: "Belgium",
+        lat: 51.2194,
+        lng: 4.4025,
+        codes: ["2000", "2060"],
+    },
+    City {
+        slug: "berlin",
+        name: "Berlin",
+        country: "Germany",
+        lat: 52.52,
+        lng: 13.405,
+        codes: ["10115", "10243"],
+    },
+    City {
+        slug: "brussels",
+        name: "Brussels",
+        country: "Belgium",
+        lat: 50.8503,
+        lng: 4.3517,
+        codes: ["1000", "1040"],
+    },
+    City {
+        slug: "ghent",
+        name: "Ghent",
+        country: "Belgium",
+        lat: 51.0543,
+        lng: 3.7174,
+        codes: ["9000", "9050"],
+    },
+    City {
+        slug: "leuven",
+        name: "Leuven",
+        country: "Belgium",
+        lat: 50.8798,
+        lng: 4.7005,
+        codes: ["3000", "3010"],
+    },
+    City {
+        slug: "london",
+        name: "London",
+        country: "United Kingdom",
+        lat: 51.5072,
+        lng: -0.1276,
+        codes: ["WC2N", "E1"],
+    },
+    City {
+        slug: "new-york",
+        name: "New York",
+        country: "United States",
+        lat: 40.7128,
+        lng: -74.006,
+        codes: ["10007", "10002"],
+    },
+    City {
+        slug: "paris",
+        name: "Paris",
+        country: "France",
+        lat: 48.8566,
+        lng: 2.3522,
+        codes: ["75001", "75011"],
+    },
+    City {
+        slug: "tokyo",
+        name: "Tokyo",
+        country: "Japan",
+        lat: 35.6762,
+        lng: 139.6503,
+        codes: ["100-0001", "130-0001"],
+    },
 ];
 
 impl City {
     /// About 7 by 7 km around the centre.
     fn bbox(&self) -> Bbox {
         let dlng = 0.03 / self.lat.to_radians().cos();
-        Bbox { south: self.lat - 0.03, west: self.lng - dlng, north: self.lat + 0.03, east: self.lng + dlng }
+        Bbox {
+            south: self.lat - 0.03,
+            west: self.lng - dlng,
+            north: self.lat + 0.03,
+            east: self.lng + dlng,
+        }
     }
 
     fn half(&self, index: usize) -> Bbox {
         let b = self.bbox();
         let middle = self.lng;
-        if index == 0 { Bbox { east: middle, ..b } } else { Bbox { west: middle, ..b } }
+        if index == 0 {
+            Bbox { east: middle, ..b }
+        } else {
+            Bbox { west: middle, ..b }
+        }
     }
 
     fn info(&self) -> AreaInfo {
@@ -100,15 +181,26 @@ impl City {
 
     fn boundaries(&self) -> [Boundary; 3] {
         [
-            Boundary { info: self.info(), shape: Shape::rect(self.bbox()) },
-            Boundary { info: self.postal_code(0), shape: Shape::rect(self.half(0)) },
-            Boundary { info: self.postal_code(1), shape: Shape::rect(self.half(1)) },
+            Boundary {
+                info: self.info(),
+                shape: Shape::rect(self.bbox()),
+            },
+            Boundary {
+                info: self.postal_code(0),
+                shape: Shape::rect(self.half(0)),
+            },
+            Boundary {
+                info: self.postal_code(1),
+                shape: Shape::rect(self.half(1)),
+            },
         ]
     }
 
     /// The city's restaurants; a postal code shows the ones inside it.
     fn places(&self) -> Vec<FoundPlace> {
-        let seed = self.slug.bytes().fold(0xcbf2_9ce4_8422_2325u64, |h, b| (h ^ b as u64).wrapping_mul(0x100_0000_01b3));
+        let seed = self.slug.bytes().fold(0xcbf2_9ce4_8422_2325u64, |h, b| {
+            (h ^ b as u64).wrapping_mul(0x100_0000_01b3)
+        });
         let mut rng = Rng(seed);
         let b = self.bbox();
         let mut places = Vec::new();
@@ -131,7 +223,8 @@ impl City {
                     address: Some(format!("{} Demo Street", 1 + rng.next() % 200)),
                     url: None,
                     cuisine: Some(cuisine.osm[0].to_string()),
-                    opening_hours: HOURS[(rng.next() % HOURS.len() as u64) as usize].map(str::to_string),
+                    opening_hours: HOURS[(rng.next() % HOURS.len() as u64) as usize]
+                        .map(str::to_string),
                     countries: vec![cuisine.country],
                 });
             }
@@ -141,7 +234,9 @@ impl City {
 }
 
 fn city_of(id: &str) -> Option<&'static City> {
-    CITIES.iter().find(|c| id == format!("demo-{}", c.slug) || id.starts_with(&format!("demo-{}-", c.slug)))
+    CITIES
+        .iter()
+        .find(|c| id == format!("demo-{}", c.slug) || id.starts_with(&format!("demo-{}-", c.slug)))
 }
 
 #[async_trait]
@@ -150,9 +245,19 @@ impl PlacesProvider for Demo {
         "demo"
     }
 
-    async fn search(&self, area: &Boundary, _on_next_server: &(dyn Fn() + Send + Sync)) -> anyhow::Result<Vec<FoundPlace>> {
-        let Some(city) = city_of(&area.info.id) else { return Ok(Vec::new()) };
-        Ok(city.places().into_iter().filter(|p| area.shape.contains(p.lat, p.lng)).collect())
+    async fn search(
+        &self,
+        area: &Boundary,
+        _on_next_server: &(dyn Fn() + Send + Sync),
+    ) -> anyhow::Result<Vec<FoundPlace>> {
+        let Some(city) = city_of(&area.info.id) else {
+            return Ok(Vec::new());
+        };
+        Ok(city
+            .places()
+            .into_iter()
+            .filter(|p| area.shape.contains(p.lat, p.lng))
+            .collect())
     }
 }
 
@@ -160,20 +265,35 @@ impl PlacesProvider for Demo {
 impl AreaDirectory for Demo {
     async fn search(&self, query: &str) -> anyhow::Result<Vec<AreaInfo>> {
         let needle = query.trim().to_lowercase();
-        let cities = CITIES.iter().filter(|c| c.name.to_lowercase().contains(&needle)).map(City::info);
+        let cities = CITIES
+            .iter()
+            .filter(|c| c.name.to_lowercase().contains(&needle))
+            .map(City::info);
         let codes = CITIES.iter().flat_map(|c| {
-            (0..2).filter(|&i| c.codes[i].to_lowercase().starts_with(&needle)).map(|i| c.postal_code(i)).collect::<Vec<_>>()
+            (0..2)
+                .filter(|&i| c.codes[i].to_lowercase().starts_with(&needle))
+                .map(|i| c.postal_code(i))
+                .collect::<Vec<_>>()
         });
         Ok(cities.chain(codes).collect())
     }
 
     async fn locate(&self, lat: f64, lng: f64) -> anyhow::Result<Located> {
-        let Some(city) = CITIES.iter().find(|c| Shape::rect(c.bbox()).contains(lat, lng)) else {
+        let Some(city) = CITIES
+            .iter()
+            .find(|c| Shape::rect(c.bbox()).contains(lat, lng))
+        else {
             return Ok(Located::default());
         };
         let [_, west, east] = city.boundaries();
-        let postal_code = [west, east].into_iter().find(|b| b.shape.contains(lat, lng)).map(|b| b.info);
-        Ok(Located { city: Some(city.info()), postal_code })
+        let postal_code = [west, east]
+            .into_iter()
+            .find(|b| b.shape.contains(lat, lng))
+            .map(|b| b.info);
+        Ok(Located {
+            city: Some(city.info()),
+            postal_code,
+        })
     }
 
     async fn boundary(&self, id: &str) -> anyhow::Result<Option<Boundary>> {
@@ -191,10 +311,16 @@ mod tests {
         let west = Demo.boundary("demo-leuven-3000").await.unwrap().unwrap();
         let east = Demo.boundary("demo-leuven-3010").await.unwrap().unwrap();
         let all = PlacesProvider::search(&Demo, &city, &|| ()).await.unwrap();
-        let (w, e) = (PlacesProvider::search(&Demo, &west, &|| ()).await.unwrap(), PlacesProvider::search(&Demo, &east, &|| ()).await.unwrap());
+        let (w, e) = (
+            PlacesProvider::search(&Demo, &west, &|| ()).await.unwrap(),
+            PlacesProvider::search(&Demo, &east, &|| ()).await.unwrap(),
+        );
         assert!(all.len() > 20);
         assert_eq!(w.len() + e.len(), all.len());
-        assert!(w.iter().all(|p| all.contains(p)), "same ids in the city and its postal codes");
+        assert!(
+            w.iter().all(|p| all.contains(p)),
+            "same ids in the city and its postal codes"
+        );
         assert!(Demo.boundary("demo-nowhere").await.unwrap().is_none());
     }
 

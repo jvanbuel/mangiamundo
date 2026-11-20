@@ -71,10 +71,14 @@ impl Config {
                 .unwrap_or(7)
                 * 86_400,
             vapid_private_key: var("VAPID_PRIVATE_KEY"),
-            vapid_subject: var("VAPID_SUBJECT").unwrap_or_else(|| "mailto:hello@mangiamundo.app".into()),
+            vapid_subject: var("VAPID_SUBJECT")
+                .unwrap_or_else(|| "mailto:hello@mangiamundo.app".into()),
             osm_notes_url: var("OSM_NOTES_URL"),
             osm_notes_token: var("OSM_NOTES_TOKEN"),
-            push_interval_secs: var("PUSH_INTERVAL_SECS").map(|v| v.parse()).transpose()?.unwrap_or(600),
+            push_interval_secs: var("PUSH_INTERVAL_SECS")
+                .map(|v| v.parse())
+                .transpose()?
+                .unwrap_or(600),
             static_dir: Some(PathBuf::from(
                 var("STATIC_DIR").unwrap_or_else(|| "../web/build".into()),
             )),

@@ -36,8 +36,8 @@ pub const CONTINENTS: &[(&str, &str)] = &[
 pub fn countries() -> &'static [Country] {
     static DATA: OnceLock<Vec<Country>> = OnceLock::new();
     DATA.get_or_init(|| {
-        let mut all: Vec<Country> =
-            serde_json::from_str(include_str!("../data/countries.json")).expect("data/countries.json is valid");
+        let mut all: Vec<Country> = serde_json::from_str(include_str!("../data/countries.json"))
+            .expect("data/countries.json is valid");
         for c in &mut all {
             c.cuisine = cuisine_tag(&c.code);
         }
@@ -111,14 +111,28 @@ pub const CUISINES: &[Cuisine] = &[
     c("AM", &["armenian"]),
     c("AZ", &["azerbaijani"]),
     c("BD", &["bangladeshi"]),
-    c("CN", &["chinese", "sichuan", "cantonese", "dim_sum", "hotpot"]),
+    c(
+        "CN",
+        &["chinese", "sichuan", "cantonese", "dim_sum", "hotpot"],
+    ),
     c("ID", &["indonesian"]),
     c("IL", &["israeli"]),
     c("IN", &["indian", "south_indian", "punjabi"]),
     c("IQ", &["iraqi"]),
     c("IR", &["persian", "iranian"]),
     c("JO", &["jordanian"]),
-    c("JP", &["japanese", "sushi", "ramen", "udon", "soba", "yakitori", "okonomiyaki"]),
+    c(
+        "JP",
+        &[
+            "japanese",
+            "sushi",
+            "ramen",
+            "udon",
+            "soba",
+            "yakitori",
+            "okonomiyaki",
+        ],
+    ),
     c("KH", &["cambodian"]),
     c("KR", &["korean"]),
     c("KZ", &["kazakh"]),
@@ -193,7 +207,10 @@ pub fn cuisine_adjective(country: &str) -> Option<String> {
         tag.split('_')
             .map(|word| {
                 let mut chars = word.chars();
-                chars.next().map(|first| first.to_uppercase().chain(chars).collect::<String>()).unwrap_or_default()
+                chars
+                    .next()
+                    .map(|first| first.to_uppercase().chain(chars).collect::<String>())
+                    .unwrap_or_default()
             })
             .collect::<Vec<_>>()
             .join(" "),
@@ -229,7 +246,11 @@ mod tests {
     #[test]
     fn every_cuisine_points_at_a_known_country() {
         for cu in CUISINES {
-            assert!(country(cu.country).is_some(), "unknown country {}", cu.country);
+            assert!(
+                country(cu.country).is_some(),
+                "unknown country {}",
+                cu.country
+            );
             assert!(!cu.osm.is_empty());
         }
     }
@@ -249,7 +270,11 @@ mod tests {
     #[test]
     fn every_country_has_a_known_continent() {
         for co in countries() {
-            assert!(CONTINENTS.iter().any(|(code, _)| *code == co.continent), "{}", co.code);
+            assert!(
+                CONTINENTS.iter().any(|(code, _)| *code == co.continent),
+                "{}",
+                co.code
+            );
         }
     }
 
@@ -263,7 +288,10 @@ mod tests {
     #[test]
     fn parses_multi_valued_tags() {
         assert_eq!(countries_for_cuisine_tag("italian;pizza"), vec!["IT"]);
-        assert_eq!(countries_for_cuisine_tag("Thai; vietnamese"), vec!["TH", "VN"]);
+        assert_eq!(
+            countries_for_cuisine_tag("Thai; vietnamese"),
+            vec!["TH", "VN"]
+        );
         assert_eq!(countries_for_cuisine_tag("Sri Lankan"), vec!["LK"]);
         assert!(countries_for_cuisine_tag("burger;regional").is_empty());
     }

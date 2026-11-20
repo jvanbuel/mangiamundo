@@ -25,8 +25,16 @@ fn parse(raw: &str, lat: f64, lng: f64) -> Option<(OpeningHours<TzLocation<Tz>>,
     let tz = *locale.get_timezone();
     // Mappers often write "Mo-Tu, Th-Sa 12:00-14:00", where ", " would start a new rule
     // that opens Mo-Tu all day. Read it as a list first, then as written.
-    let parsed = raw.replace(", ", ",").parse::<OpeningHours>().or_else(|_| raw.parse());
-    Some((parsed.ok()?.with_context(Context::default().with_locale(locale)), tz))
+    let parsed = raw
+        .replace(", ", ",")
+        .parse::<OpeningHours>()
+        .or_else(|_| raw.parse());
+    Some((
+        parsed
+            .ok()?
+            .with_context(Context::default().with_locale(locale)),
+        tz,
+    ))
 }
 
 /// Whether a place is open at `now` (Unix time), and a short line such as
@@ -41,7 +49,9 @@ pub fn status(raw: &str, lat: f64, lng: f64, now: i64) -> Option<(bool, String)>
         RuleKind::Unknown => return None,
     };
     // A change more than a week away is not worth mentioning ("24/7", "closed for good").
-    let next = hours.next_change(now).filter(|t| *t - now < TimeDelta::days(7));
+    let next = hours
+        .next_change(now)
+        .filter(|t| *t - now < TimeDelta::days(7));
     // Closing just after midnight still reads as tonight; opening tomorrow needs the day.
     let when = |t: DateTime<chrono_tz::Tz>| {
         let tonight = open && t - now < TimeDelta::hours(12);
@@ -64,17 +74,31 @@ pub fn status(raw: &str, lat: f64, lng: f64, now: i64) -> Option<(bool, String)>
 /// hours can't be parsed or say "unknown" for part of the week.
 pub fn week(raw: &str, lat: f64, lng: f64, now: i64) -> Option<Vec<Day>> {
     let (hours, tz) = parse(raw, lat, lng)?;
-    let today = DateTime::from_timestamp(now, 0)?.with_timezone(&tz).date_naive();
+    let today = DateTime::from_timestamp(now, 0)?
+        .with_timezone(&tz)
+        .date_naive();
     let monday = today - TimeDelta::days(today.weekday().num_days_from_monday().into());
     // The Sunday before and the Monday after too, for ranges that cross midnight.
-    let days: Vec<Vec<TimeRange>> =
-        (-1..=7).map(|i| hours.schedule_at(monday + TimeDelta::days(i)).into_iter().collect()).collect();
+    let days: Vec<Vec<TimeRange>> = (-1..=7)
+        .map(|i| {
+            hours
+                .schedule_at(monday + TimeDelta::days(i))
+                .into_iter()
+                .collect()
+        })
+        .collect();
     // "unknown" hours would read as closed; clients show the raw text instead.
-    if days[1..8].iter().flatten().any(|r| r.kind == RuleKind::Unknown) {
+    if days[1..8]
+        .iter()
+        .flatten()
+        .any(|r| r.kind == RuleKind::Unknown)
+    {
         return None;
     }
-    let days: Vec<Vec<TimeRange>> =
-        days.into_iter().map(|d| d.into_iter().filter(|r| r.kind == RuleKind::Open).collect()).collect();
+    let days: Vec<Vec<TimeRange>> = days
+        .into_iter()
+        .map(|d| d.into_iter().filter(|r| r.kind == RuleKind::Open).collect())
+        .collect();
     Some(
         (0..7)
             .map(|i| {
@@ -95,9 +119,17 @@ const DAY_END: u16 = 24 * 60;
 /// The open ranges of a day as text, joining a late range with its continuation after
 /// midnight and leaving out the continuation of the day before.
 fn spans(before: &[TimeRange], day: &[TimeRange], after: &[TimeRange]) -> Vec<String> {
-    let mins = |r: &TimeRange| (r.range.start.mins_from_midnight(), r.range.end.mins_from_midnight());
+    let mins = |r: &TimeRange| {
+        (
+            r.range.start.mins_from_midnight(),
+            r.range.end.mins_from_midnight(),
+        )
+    };
     // A range up to 24:00 that started that day, followed by one from 00:00 the next day.
-    let crosses = |late: Option<&TimeRange>, early: Option<&TimeRange>| match (late.map(mins), early.map(mins)) {
+    let crosses = |late: Option<&TimeRange>, early: Option<&TimeRange>| match (
+        late.map(mins),
+        early.map(mins),
+    ) {
         (Some((start, DAY_END)), Some((0, end))) => start > 0 && end < DAY_END,
         _ => false,
     };
@@ -129,29 +161,50 @@ mod tests {
 
     #[test]
     fn open_with_closing_time_in_local_time() {
-        assert_eq!(at("Mo-Fr 11:00-14:00", MONDAY_NOON), Some((true, "Open until 14:00".into())));
+        assert_eq!(
+            at("Mo-Fr 11:00-14:00", MONDAY_NOON),
+            Some((true, "Open until 14:00".into()))
+        );
     }
 
     #[test]
     fn closed_until_later_today_or_another_day() {
-        assert_eq!(at("Mo 18:00-22:00", MONDAY_NOON), Some((false, "Closed · opens 18:00".into())));
-        assert_eq!(at("Tu-Su 11:30-22:00", MONDAY_NOON), Some((false, "Closed · opens Tue 11:30".into())));
+        assert_eq!(
+            at("Mo 18:00-22:00", MONDAY_NOON),
+            Some((false, "Closed · opens 18:00".into()))
+        );
+        assert_eq!(
+            at("Tu-Su 11:30-22:00", MONDAY_NOON),
+            Some((false, "Closed · opens Tue 11:30".into()))
+        );
     }
 
     #[test]
     fn reads_comma_space_as_a_list() {
         // 13:00 on a Monday: lunch, not "open all day Monday".
-        assert_eq!(at("Mo-Tu, Th-Sa 12:00-14:30, 18:00-22:00", MONDAY_NOON), Some((true, "Open until 14:30".into())));
+        assert_eq!(
+            at("Mo-Tu, Th-Sa 12:00-14:30, 18:00-22:00", MONDAY_NOON),
+            Some((true, "Open until 14:30".into()))
+        );
         // A genuine second rule still works.
-        assert_eq!(at("Mo-Su 12:00-22:00, Mo off", MONDAY_NOON).map(|s| s.0), Some(false));
+        assert_eq!(
+            at("Mo-Su 12:00-22:00, Mo off", MONDAY_NOON).map(|s| s.0),
+            Some(false)
+        );
     }
 
     #[test]
     fn opening_tomorrow_names_the_day() {
         // 21:00 on Monday in Leuven.
         let monday_evening = MONDAY_NOON + 8 * 3600;
-        assert_eq!(at("Tu-Sa 08:00-21:30", monday_evening), Some((false, "Closed · opens Tue 08:00".into())));
-        assert_eq!(at("Mo 18:00-02:00", monday_evening), Some((true, "Open until 02:00".into())));
+        assert_eq!(
+            at("Tu-Sa 08:00-21:30", monday_evening),
+            Some((false, "Closed · opens Tue 08:00".into()))
+        );
+        assert_eq!(
+            at("Mo 18:00-02:00", monday_evening),
+            Some((true, "Open until 02:00".into()))
+        );
     }
 
     #[test]
@@ -164,8 +217,14 @@ mod tests {
     #[test]
     fn uses_the_restaurants_time_zone() {
         // 12:00 UTC is 21:00 in Tokyo.
-        assert_eq!(status("Mo 11:00-14:00", 35.68, 139.65, MONDAY_NOON).map(|s| s.0), Some(false));
-        assert_eq!(status("Mo 20:00-23:00", 35.68, 139.65, MONDAY_NOON).map(|s| s.0), Some(true));
+        assert_eq!(
+            status("Mo 11:00-14:00", 35.68, 139.65, MONDAY_NOON).map(|s| s.0),
+            Some(false)
+        );
+        assert_eq!(
+            status("Mo 20:00-23:00", 35.68, 139.65, MONDAY_NOON).map(|s| s.0),
+            Some(true)
+        );
     }
 
     fn open_times(raw: &str) -> Vec<(String, bool, Vec<String>)> {
@@ -180,7 +239,14 @@ mod tests {
     fn week_runs_monday_to_sunday_and_marks_today() {
         let days = open_times("Mo-Fr 11:00-14:00, 18:00-22:00");
         assert_eq!(days.len(), 7);
-        assert_eq!(days[0], ("Monday".into(), true, vec!["11:00-14:00".into(), "18:00-22:00".into()]));
+        assert_eq!(
+            days[0],
+            (
+                "Monday".into(),
+                true,
+                vec!["11:00-14:00".into(), "18:00-22:00".into()]
+            )
+        );
         assert_eq!(days[6], ("Sunday".into(), false, vec![]));
         // Wednesday 21:00 UTC is Wednesday in Leuven, and already Thursday in Tokyo.
         let wednesday = MONDAY_NOON + 2 * 86_400 + 9 * 3600;
@@ -202,9 +268,17 @@ mod tests {
 
     #[test]
     fn week_of_always_open_and_unreadable_hours() {
-        assert!(open_times("24/7").iter().all(|d| d.2 == vec!["24 hours".to_string()]));
+        assert!(open_times("24/7")
+            .iter()
+            .all(|d| d.2 == vec!["24 hours".to_string()]));
         assert!(week("not hours at all", LEUVEN.0, LEUVEN.1, MONDAY_NOON).is_none());
         assert!(week("Mo-Su 10:00-18:00 unknown", LEUVEN.0, LEUVEN.1, MONDAY_NOON).is_none());
-        assert!(week("Mo-Fr 11:00-14:00; Sa unknown", LEUVEN.0, LEUVEN.1, MONDAY_NOON).is_none());
+        assert!(week(
+            "Mo-Fr 11:00-14:00; Sa unknown",
+            LEUVEN.0,
+            LEUVEN.1,
+            MONDAY_NOON
+        )
+        .is_none());
     }
 }
