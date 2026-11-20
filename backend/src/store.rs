@@ -535,7 +535,9 @@ pub async fn save_push_subscription(
         "INSERT INTO push_subscriptions (endpoint, user_id, p256dh, auth, area_id, timezone, created_at)
          VALUES (?, ?, ?, ?, ?, ?, ?)
          ON CONFLICT(endpoint) DO UPDATE SET user_id = excluded.user_id, p256dh = excluded.p256dh,
-             auth = excluded.auth, area_id = excluded.area_id, timezone = excluded.timezone",
+             auth = excluded.auth, area_id = excluded.area_id, timezone = excluded.timezone,
+             -- Another area starts over from what is there, even one known before.
+             known_area_id = CASE WHEN area_id IS excluded.area_id THEN known_area_id END",
     )
     .bind(&sub.endpoint)
     .bind(user)

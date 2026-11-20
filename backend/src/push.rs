@@ -5,7 +5,7 @@
 //! notification, but only when the subscriber's area has places of that country. It also
 //! says when food from a country the subscriber hasn't eaten yet appears in their area.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::time::Duration as StdDuration;
 
 use base64::engine::general_purpose::URL_SAFE_NO_PAD;
@@ -18,6 +18,7 @@ use web_push::{
     WebPushMessageBuilder,
 };
 
+use crate::game::PlaceRow;
 use crate::{calendar, catalog, providers::osm, store, AppState};
 
 /// Reminders are sent from this local hour until the end of the evening.
@@ -202,16 +203,20 @@ pub fn celebration_notification(
 }
 
 /// The alert for food from `countries` newly in the area, or None when there are none.
+///
+/// `rows` are the area's places; one serving several of the countries counts once.
 pub fn new_food_notification(
     countries: &[&str],
-    counts: &HashMap<String, u32>,
+    rows: &[PlaceRow],
     area: &str,
 ) -> Option<Notification> {
     let first = *countries.first()?;
-    let total: u32 = countries
+    let serving: HashSet<&str> = rows
         .iter()
-        .map(|c| counts.get(*c).copied().unwrap_or(0))
-        .sum();
+        .filter(|r| countries.contains(&r.country.as_str()))
+        .map(|r| r.place_id.as_str())
+        .collect();
+    let total = serving.len() as u32;
     let them = if countries.len() == 1 { "it" } else { "them" };
     Some(Notification {
         title: format!("{} food is now near you", cuisine_names(countries, "and")),
@@ -324,9 +329,10 @@ pub async fn run_once(state: &AppState, pusher: &Pusher) -> anyhow::Result<usize
                 .await?;
             }
         }
+        let rows = store::area_rows(&state.db, area_id, None).await?;
         let mut counts: HashMap<String, u32> = HashMap::new();
-        for row in store::area_rows(&state.db, area_id, None).await? {
-            *counts.entry(row.country).or_default() += 1;
+        for row in &rows {
+            *counts.entry(row.country.clone()).or_default() += 1;
         }
 
         let mut gone = false;
@@ -347,16 +353,17 @@ pub async fn run_once(state: &AppState, pusher: &Pusher) -> anyhow::Result<usize
         if !gone {
             let mut present: Vec<String> = counts.keys().cloned().collect();
             present.sort();
+            // Read before marking, so a failure here leaves the countries for the next pass.
+            let visited = store::visited_countries(&state.db, &user).await?;
             let new =
                 store::take_new_countries(&state.db, &sub.endpoint, area_id, &present).await?;
-            let visited = store::visited_countries(&state.db, &user).await?;
             let untried: Vec<&str> = new
                 .iter()
                 .filter(|c| !visited.contains(c))
                 .map(String::as_str)
                 .collect();
             if let Some(notification) =
-                new_food_notification(&untried, &counts, &area.boundary.info.name)
+                new_food_notification(&untried, &rows, &area.boundary.info.name)
             {
                 match deliver(pusher, &sub, &notification).await {
                     Some(Delivery::Sent) => sent += 1,
@@ -415,14 +422,26 @@ mod tests {
 
     #[test]
     fn groups_new_food_in_one_alert() {
-        let counts = HashMap::from([("ET".to_string(), 1), ("PE".to_string(), 2)]);
-        let one = new_food_notification(&["ET"], &counts, "Leuven").unwrap();
-        assert_eq!(one.title, "Ethiopian food is now near you");
+        let row = |place: &str, country: &str| PlaceRow {
+            place_id: place.into(),
+            country: country.into(),
+            visited: false,
+        };
+        // "b" serves both and counts once.
+        let rows = [
+            row("a", "ET"),
+            row("b", "PE"),
+            row("b", "ET"),
+            row("c", "PE"),
+            row("d", "JP"),
+        ];
+        let one = new_food_notification(&["JP"], &rows, "Leuven").unwrap();
+        assert_eq!(one.title, "Japanese food is now near you");
         assert_eq!(one.body, "1 place in Leuven. You haven't tried it yet.");
-        let two = new_food_notification(&["ET", "PE"], &counts, "Leuven").unwrap();
+        let two = new_food_notification(&["ET", "PE"], &rows, "Leuven").unwrap();
         assert_eq!(two.title, "Ethiopian and Peruvian food is now near you");
         assert_eq!(two.body, "3 places in Leuven. You haven't tried them yet.");
         assert_eq!(two.url, "/?country=ET");
-        assert!(new_food_notification(&[], &counts, "Leuven").is_none());
+        assert!(new_food_notification(&[], &rows, "Leuven").is_none());
     }
 }
