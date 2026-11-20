@@ -53,6 +53,21 @@ The backend address is the `APIBaseURL` entry in `project.yml` (default
 Both apps schedule local notifications for the celebrations and limited-time events
 the server lists for the user's area (10:00 on the first day, plus a last-days nudge
 for unfinished events). The dates are known in advance, so no push service is
-involved: no Firebase project or Apple push certificate is needed. The plan is
-recomputed whenever progress or location changes.
+involved. The plan is recomputed whenever progress or location changes.
+
+## New food alerts
+
+News of food from a country the user hasn't tasted showing up nearby can't be known in
+advance, so the server sends it by push: APNs on iOS, Firebase Cloud Messaging on
+Android. It is opt-in with a switch in the settings; turning it on sends the device
+token and area to `PUT /api/push/device`. See the main README for the keys the server
+needs.
+
+- **Android:** Firebase is configured by `android/app/google-services.json`, from the
+  Firebase console. Without it the app still builds (the Google services plugin is only
+  applied when the file exists) and the switch says the alerts aren't available.
+  Messaging auto-init is off, so no token is created until the user opts in.
+- **iOS:** the app has the `aps-environment` entitlement; the App ID needs the Push
+  Notifications capability, which automatic signing adds. Debug builds use the APNs
+  sandbox. Push doesn't reach the simulator from a server, so test on a device.
 

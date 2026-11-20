@@ -83,18 +83,34 @@ stale, so changes in OpenStreetMap show up within about a day.
 - `GET /api/celebrations` lists what is coming up for countries that have places in
   the area, including the reminder text.
 
-Reminders: the native apps schedule local notifications themselves. The web app uses
-Web Push: the server generates a VAPID key on first start (or reads
+Celebration reminders: the native apps schedule local notifications themselves. The web
+app uses Web Push: the server generates a VAPID key on first start (or reads
 `VAPID_PRIVATE_KEY`), and every `PUSH_INTERVAL_SECS` (default 600, 0 turns it off)
-sends due reminders from 10:00 in each subscriber's time zone. Subscribers also hear
-when food from a country they haven't tasted becomes available in their area ("Ethiopian
-food is now near you"): the server remembers the countries each subscriber's area had
-when they subscribed, and announces newcomers together in one notification. A country
-that disappears for less than four weeks isn't announced again when it comes back. A
-stale area inside the Belgium box is rebuilt from the local OSM copy for this; elsewhere
-the push loop never asks Overpass, so news waits until someone opens the area. Set `VAPID_SUBJECT`
+sends due reminders from 10:00 in each subscriber's time zone. Set `VAPID_SUBJECT`
 to a `mailto:` or `https:` contact for push services. Browsers only allow push on
 HTTPS (or localhost), and iPhones only for apps added to the home screen.
+
+New food alerts ("Ethiopian food is now near you") are opt-in, with a switch in the
+settings of the web app and both native apps. The server remembers the countries each
+subscriber's area had when they subscribed, and announces newcomers they haven't tasted
+together in one notification. A country that disappears for less than four weeks isn't
+announced again when it comes back. A stale area inside the Belgium box is rebuilt from
+the local OSM copy for this; elsewhere the push loop never asks Overpass, so news waits
+until someone opens the area. Browsers get them by Web Push; the apps register their
+device tokens (`PUT /api/push/device`) and get them through Apple's and Google's push
+services, which the server only uses when configured:
+
+- **iOS (APNs):** in the Apple developer portal, under Keys, create a key with Apple Push
+  Notifications service enabled and download the `.p8` file. Then
+  `fly secrets set APNS_KEY="$(cat AuthKey_XXXXXXXXXX.p8)" APNS_KEY_ID=XXXXXXXXXX APNS_TEAM_ID=3L3LXDY2VY`.
+  `APNS_TOPIC` is the bundle id (default `app.mangiamundo`). Debug builds register for
+  the APNs sandbox, release builds for production; one key serves both.
+- **Android (FCM):** create a Firebase project, add an Android app with package
+  `app.mangiamundo`, and put its `google-services.json` in `mobile/android/app/` (it holds
+  no secrets and is committed). Then, under Project settings → Service accounts, generate
+  a private key and `fly secrets set FCM_SERVICE_ACCOUNT="$(cat key.json)"`.
+
+Until then the switch in that app says the alerts aren't available yet.
 
 ## How the game works
 
