@@ -1,22 +1,28 @@
-//! Web Push: celebration and event reminders for browsers, and news of food from a
-//! country the subscriber hasn't tasted yet becoming available in their area.
+//! Push notifications: celebration and event reminders for browsers (Web Push), and, for
+//! those who opt in, news of food from a country they haven't tasted yet becoming available
+//! in their area, for browsers and for the iOS (APNs) and Android (FCM) apps. The apps
+//! schedule celebration reminders themselves.
 //!
 //! Every few minutes the server looks at each subscription in the subscriber's own
 //! time zone. From 10:00 on the day a celebration or event starts it sends one
 //! notification, but only when the subscriber's area has places of that country.
 
 use std::collections::{HashMap, HashSet};
+use std::sync::Arc;
 use std::time::Duration as StdDuration;
 
 use base64::engine::general_purpose::URL_SAFE_NO_PAD;
 use base64::Engine;
 use chrono::{Duration, NaiveDate, Timelike};
-use serde::{Deserialize, Serialize};
+use serde::Serialize;
 use sqlx::{Row, SqlitePool};
 use web_push::{
     request_builder, ContentEncoding, SubscriptionInfo, VapidSignatureBuilder,
     WebPushMessageBuilder,
 };
+
+pub mod apns;
+pub mod fcm;
 
 use crate::providers::osm;
 use crate::store::Area;
@@ -42,17 +48,81 @@ pub struct Pusher {
     pub public_key: String,
     /// Contact for push services: a `mailto:` or `https:` URL.
     subject: String,
+    /// For the iOS app, when an APNs key is configured.
+    pub apns: Option<Arc<apns::Apns>>,
+    /// For the Android app, when a Firebase service account is configured.
+    pub fcm: Option<Arc<fcm::Fcm>>,
 }
 
-#[derive(Debug, Clone, Deserialize, Serialize)]
+/// The apps the server can send to: those with a key configured.
+#[derive(Debug, Clone, Copy, Default)]
+pub struct Apps {
+    pub ios: bool,
+    pub android: bool,
+}
+
+/// Where a subscription's notifications go.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Kind {
+    /// A browser, through its push service.
+    Web,
+    /// The iOS app, through APNs.
+    Apns,
+    /// A development build of the iOS app, through the APNs sandbox.
+    ApnsSandbox,
+    /// The Android app, through FCM.
+    Fcm,
+}
+
+impl Kind {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Kind::Web => "web",
+            Kind::Apns => "apns",
+            Kind::ApnsSandbox => "apns-sandbox",
+            Kind::Fcm => "fcm",
+        }
+    }
+
+    pub fn parse(value: &str) -> Option<Self> {
+        Some(match value {
+            "web" => Kind::Web,
+            "apns" => Kind::Apns,
+            "apns-sandbox" => Kind::ApnsSandbox,
+            "fcm" => Kind::Fcm,
+            _ => return None,
+        })
+    }
+
+    /// The `endpoint` an app's device token is stored under.
+    pub fn endpoint(self, device_token: &str) -> String {
+        format!("{}:{device_token}", self.as_str())
+    }
+}
+
+#[derive(Debug, Clone)]
 pub struct Subscription {
+    pub kind: Kind,
+    /// A browser's push URL, or `<kind>:<device token>` for an app.
     pub endpoint: String,
+    /// Web Push keys; empty for apps.
     pub p256dh: String,
     pub auth: String,
-    /// The area reminders are about; `None` for subscriptions from before areas, until
+    /// The area notifications are about; `None` for subscriptions from before areas, until
     /// the app subscribes again.
     pub area_id: Option<String>,
     pub timezone: String,
+    /// Celebration and event reminders. Always off for apps, which schedule them themselves.
+    pub reminders: bool,
+    /// News of food not tasted yet becoming available in the area.
+    pub new_food: bool,
+}
+
+impl Subscription {
+    /// The app's device token, after the `<kind>:` prefix.
+    fn device_token(&self) -> &str {
+        self.endpoint.split_once(':').map_or("", |(_, token)| token)
+    }
 }
 
 #[derive(Debug, Serialize, utoipa::ToSchema)]
@@ -92,10 +162,39 @@ impl Pusher {
                 .get_public_key(),
         );
         let http = reqwest::Client::builder().timeout(StdDuration::from_secs(20)).build()?;
-        Ok(Self { http, private_key, public_key, subject })
+        Ok(Self { http, private_key, public_key, subject, apns: None, fcm: None })
+    }
+
+    pub fn apps(&self) -> Apps {
+        Apps { ios: self.apns.is_some(), android: self.fcm.is_some() }
+    }
+
+    /// Whether notifications of this kind can be sent.
+    pub fn handles(&self, kind: Kind) -> bool {
+        match kind {
+            Kind::Web => true,
+            Kind::Apns | Kind::ApnsSandbox => self.apns.is_some(),
+            Kind::Fcm => self.fcm.is_some(),
+        }
     }
 
     pub async fn send(&self, to: &Subscription, notification: &Notification) -> anyhow::Result<Delivery> {
+        // Apple and Google check the signed time against their clocks, so use the real one.
+        let now = store::now();
+        match to.kind {
+            Kind::Web => self.send_web(to, notification).await,
+            Kind::Apns | Kind::ApnsSandbox => match &self.apns {
+                Some(apns) => apns.send(to.device_token(), to.kind == Kind::ApnsSandbox, notification, now).await,
+                None => anyhow::bail!("APNs is not configured"),
+            },
+            Kind::Fcm => match &self.fcm {
+                Some(fcm) => fcm.send(to.device_token(), notification, now).await,
+                None => anyhow::bail!("FCM is not configured"),
+            },
+        }
+    }
+
+    async fn send_web(&self, to: &Subscription, notification: &Notification) -> anyhow::Result<Delivery> {
         let info = SubscriptionInfo::new(to.endpoint.as_str(), to.p256dh.as_str(), to.auth.as_str());
         let mut signature = VapidSignatureBuilder::from_base64(&self.private_key, &info)?;
         signature.add_claim("sub", self.subject.as_str());
@@ -280,6 +379,9 @@ pub async fn run_once(state: &AppState, pusher: &Pusher) -> anyhow::Result<usize
     let now = chrono::DateTime::from_timestamp(state.now(), 0).unwrap_or_default();
     let mut sent = 0;
     for (user, sub) in store::push_subscriptions(&state.db).await? {
+        if !pusher.handles(sub.kind) {
+            continue;
+        }
         let zone: chrono_tz::Tz = sub.timezone.parse().unwrap_or(chrono_tz::UTC);
         let local = now.with_timezone(&zone);
         let Some(area_id) = &sub.area_id else { continue };
@@ -302,14 +404,20 @@ pub async fn run_once(state: &AppState, pusher: &Pusher) -> anyhow::Result<usize
             continue;
         }
 
-        let mut due: Vec<Due> = due(state, &user, local.date_naive(), &counts)
-            .await?
-            .into_iter()
-            .map(|(dedupe, notification)| Due { notification, dedupe: Some(dedupe), announces: vec![] })
-            .collect();
+        let mut due: Vec<Due> = Vec::new();
+        if sub.reminders && sub.kind == Kind::Web {
+            for (dedupe, notification) in self::due(state, &user, local.date_naive(), &counts).await? {
+                due.push(Due { notification, dedupe: Some(dedupe), announces: vec![] });
+            }
+        }
         if let Some(known) = known {
-            if let Some(announcement) = new_countries(state, &user, &sub.endpoint, &area, &places, &present, &known).await? {
-                due.push(announcement);
+            if sub.new_food {
+                if let Some(announcement) = new_countries(state, &user, &sub.endpoint, &area, &places, &present, &known).await? {
+                    due.push(announcement);
+                }
+            } else {
+                // Keep up with the area, so opting in later starts from now.
+                store::see_known_countries(&state.db, &sub.endpoint, &present, state.now()).await?;
             }
         }
 
@@ -399,18 +507,21 @@ pub async fn run(state: AppState, pusher: Pusher, every: StdDuration) {
     }
 }
 
-/// Reads a subscription row.
-pub(crate) fn subscription_from_row(row: &sqlx::sqlite::SqliteRow) -> (String, Subscription) {
-    (
+/// Reads a subscription row; `None` for a kind this version doesn't know.
+pub(crate) fn subscription_from_row(row: &sqlx::sqlite::SqliteRow) -> Option<(String, Subscription)> {
+    Some((
         row.get("user_id"),
         Subscription {
+            kind: Kind::parse(row.get("kind"))?,
             endpoint: row.get("endpoint"),
             p256dh: row.get("p256dh"),
             auth: row.get("auth"),
             area_id: row.get("area_id"),
             timezone: row.get("timezone"),
+            reminders: row.get("reminders"),
+            new_food: row.get("new_food"),
         },
-    )
+    ))
 }
 
 #[cfg(test)]

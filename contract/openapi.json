@@ -498,6 +498,37 @@
         ],
         "type": "object"
       },
+      "DeviceBody": {
+        "description": "An app's device token for push notifications, plus the user's area.",
+        "properties": {
+          "area": {
+            "description": "The area to send news for.",
+            "type": "string"
+          },
+          "platform": {
+            "$ref": "#/components/schemas/Platform"
+          },
+          "sandbox": {
+            "description": "A development build of the iOS app, whose token is for the APNs sandbox.",
+            "type": "boolean"
+          },
+          "timezone": {
+            "description": "IANA name. News goes out from 10:00 in this zone.",
+            "type": "string"
+          },
+          "token": {
+            "description": "From APNs (hex) or FCM.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "platform",
+          "token",
+          "area",
+          "timezone"
+        ],
+        "type": "object"
+      },
       "Discover": {
         "allOf": [
           {
@@ -973,6 +1004,13 @@
         ],
         "type": "object"
       },
+      "Platform": {
+        "enum": [
+          "ios",
+          "android"
+        ],
+        "type": "string"
+      },
       "Profile": {
         "properties": {
           "added": {
@@ -1136,6 +1174,15 @@
           "keys": {
             "$ref": "#/components/schemas/SubscribeKeys"
           },
+          "new_food": {
+            "description": "News of food not tasted yet becoming available in the area.",
+            "type": "boolean"
+          },
+          "reminders": {
+            "default": true,
+            "description": "Celebration and event reminders.",
+            "type": "boolean"
+          },
           "timezone": {
             "description": "IANA name. Reminders go out from 10:00 in this zone.",
             "type": "string"
@@ -1209,6 +1256,17 @@
           "places_visited",
           "badges",
           "profile"
+        ],
+        "type": "object"
+      },
+      "UnregisterBody": {
+        "properties": {
+          "token": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "token"
         ],
         "type": "object"
       },
@@ -2141,6 +2199,84 @@
         ]
       }
     },
+    "/api/push/device": {
+      "put": {
+        "operationId": "register_device",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DeviceBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": "Registered"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "An error"
+          }
+        },
+        "security": [
+          {
+            "token": []
+          }
+        ],
+        "summary": "Turns on news of food not tasted yet becoming available in the area, for the iOS or\nAndroid app. Call it again when the token or the area changes. A 404 when the server\ncan't send to that platform.",
+        "tags": [
+          "push"
+        ]
+      }
+    },
+    "/api/push/device/delete": {
+      "post": {
+        "operationId": "unregister_device",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UnregisterBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": "Unregistered"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "An error"
+          }
+        },
+        "security": [
+          {
+            "token": []
+          }
+        ],
+        "summary": "Turns off news for an app's device token.",
+        "tags": [
+          "push"
+        ]
+      }
+    },
     "/api/push/key": {
       "get": {
         "operationId": "push_key",
@@ -2204,7 +2340,7 @@
             "token": []
           }
         ],
-        "summary": "Subscribes a browser to reminders.",
+        "summary": "Subscribes a browser to reminders and, when asked, news of food new to the area.",
         "tags": [
           "push"
         ]

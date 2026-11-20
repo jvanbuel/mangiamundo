@@ -49,6 +49,7 @@ async fn app_with_notes(
         cache_ttl_secs: 3600,
         clock: Arc::new(move || clock.load(Ordering::Relaxed)),
         push_key: None,
+        push_apps: Default::default(),
         osm_notes_url,
         osm_notes_token,
     });
@@ -1018,6 +1019,7 @@ async fn app_with_osm() -> (Router, Arc<AtomicI64>, Arc<FakeOsm>, sqlx::SqlitePo
         cache_ttl_secs: 3600,
         clock: Arc::new(move || clock.load(Ordering::Relaxed)),
         push_key: None,
+        push_apps: Default::default(),
         osm_notes_url: None,
         osm_notes_token: None,
     });

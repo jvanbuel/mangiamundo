@@ -75,6 +75,8 @@ fn api_router() -> (Router<AppState>, utoipa::openapi::OpenApi) {
         .routes(routes!(push_key))
         .routes(routes!(subscribe))
         .routes(routes!(unsubscribe))
+        .routes(routes!(register_device))
+        .routes(routes!(unregister_device))
         .routes(routes!(search_areas))
         .routes(routes!(locate_area))
         .routes(routes!(suggest_areas))
@@ -1199,6 +1201,17 @@ struct SubscribeBody {
     area: String,
     /// IANA name. Reminders go out from 10:00 in this zone.
     timezone: String,
+    /// Celebration and event reminders.
+    #[serde(default = "yes")]
+    #[schema(default = true)]
+    reminders: bool,
+    /// News of food not tasted yet becoming available in the area.
+    #[serde(default)]
+    new_food: bool,
+}
+
+fn yes() -> bool {
+    true
 }
 
 #[derive(Deserialize, ToSchema)]
@@ -1207,7 +1220,7 @@ struct SubscribeKeys {
     auth: String,
 }
 
-/// Subscribes a browser to reminders.
+/// Subscribes a browser to reminders and, when asked, news of food new to the area.
 #[utoipa::path(
     put, path = "/api/push/subscription", tag = "push", request_body = SubscribeBody,
     security(("token" = [])),
@@ -1228,11 +1241,14 @@ async fn subscribe(
         return Err(ApiError::BadRequest("unknown time zone".into()));
     }
     let subscription = crate::push::Subscription {
+        kind: crate::push::Kind::Web,
         endpoint: body.endpoint,
         p256dh: body.keys.p256dh,
         auth: body.keys.auth,
         area_id: Some(resolve_area(&state, &body.area).await?.id().to_string()),
         timezone: body.timezone,
+        reminders: body.reminders,
+        new_food: body.new_food,
     };
     store::save_push_subscription(&state.db, &user, &subscription, state.now()).await?;
     Ok(StatusCode::NO_CONTENT)
@@ -1256,6 +1272,102 @@ async fn unsubscribe(
     JsonBody(body): JsonBody<UnsubscribeBody>,
 ) -> Result<StatusCode, ApiError> {
     store::remove_user_push_subscription(&state.db, &user, &body.endpoint).await?;
+    Ok(StatusCode::NO_CONTENT)
+}
+
+#[derive(Deserialize, Clone, Copy, ToSchema)]
+#[serde(rename_all = "snake_case")]
+enum Platform {
+    Ios,
+    Android,
+}
+
+/// An app's device token for push notifications, plus the user's area.
+#[derive(Deserialize, ToSchema)]
+struct DeviceBody {
+    platform: Platform,
+    /// From APNs (hex) or FCM.
+    token: String,
+    /// A development build of the iOS app, whose token is for the APNs sandbox.
+    #[serde(default)]
+    sandbox: bool,
+    /// The area to send news for.
+    area: String,
+    /// IANA name. News goes out from 10:00 in this zone.
+    timezone: String,
+}
+
+/// Device tokens are hex (APNs) or base64url with colons (FCM).
+fn valid_device_token(token: &str) -> bool {
+    (1..=4096).contains(&token.len())
+        && token.bytes().all(|b| b.is_ascii_alphanumeric() || matches!(b, b':' | b'-' | b'_'))
+}
+
+/// Turns on news of food not tasted yet becoming available in the area, for the iOS or
+/// Android app. Call it again when the token or the area changes. A 404 when the server
+/// can't send to that platform.
+#[utoipa::path(
+    put, path = "/api/push/device", tag = "push", request_body = DeviceBody,
+    security(("token" = [])),
+    responses((status = 204, description = "Registered"), (status = "default", description = "An error", body = ErrorBody)),
+)]
+async fn register_device(
+    State(state): State<AppState>,
+    User(user): User,
+    JsonBody(body): JsonBody<DeviceBody>,
+) -> Result<StatusCode, ApiError> {
+    let kind = match (body.platform, body.sandbox) {
+        (Platform::Ios, false) => crate::push::Kind::Apns,
+        (Platform::Ios, true) => crate::push::Kind::ApnsSandbox,
+        (Platform::Android, _) => crate::push::Kind::Fcm,
+    };
+    let available = match body.platform {
+        Platform::Ios => state.push_apps.ios,
+        Platform::Android => state.push_apps.android,
+    };
+    if !available {
+        return Err(ApiError::NotFound("push"));
+    }
+    if !valid_device_token(&body.token) {
+        return Err(ApiError::BadRequest("invalid device token".into()));
+    }
+    if body.timezone.parse::<chrono_tz::Tz>().is_err() {
+        return Err(ApiError::BadRequest("unknown time zone".into()));
+    }
+    let subscription = crate::push::Subscription {
+        kind,
+        endpoint: kind.endpoint(&body.token),
+        p256dh: String::new(),
+        auth: String::new(),
+        area_id: Some(resolve_area(&state, &body.area).await?.id().to_string()),
+        timezone: body.timezone,
+        reminders: false,
+        new_food: true,
+    };
+    store::save_push_subscription(&state.db, &user, &subscription, state.now()).await?;
+    Ok(StatusCode::NO_CONTENT)
+}
+
+#[derive(Deserialize, ToSchema)]
+struct UnregisterBody {
+    token: String,
+}
+
+/// Turns off news for an app's device token.
+#[utoipa::path(
+    post, path = "/api/push/device/delete", tag = "push", request_body = UnregisterBody,
+    security(("token" = [])),
+    responses((status = 204, description = "Unregistered"), (status = "default", description = "An error", body = ErrorBody)),
+)]
+async fn unregister_device(
+    State(state): State<AppState>,
+    User(user): User,
+    JsonBody(body): JsonBody<UnregisterBody>,
+) -> Result<StatusCode, ApiError> {
+    use crate::push::Kind;
+    for kind in [Kind::Apns, Kind::ApnsSandbox, Kind::Fcm] {
+        store::remove_user_push_subscription(&state.db, &user, &kind.endpoint(&body.token)).await?;
+    }
     Ok(StatusCode::NO_CONTENT)
 }
 

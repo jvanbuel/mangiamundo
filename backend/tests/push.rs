@@ -90,6 +90,7 @@ async fn sends_each_reminder_once_in_the_subscribers_morning() {
         cache_ttl_secs: 365 * 86_400,
         clock: Arc::new(move || clock.load(Ordering::Relaxed)),
         push_key: Some(pusher.public_key.clone()),
+        push_apps: Default::default(),
         osm_notes_url: None,
         osm_notes_token: None,
     };
@@ -207,6 +208,7 @@ async fn announces_food_new_to_the_area_once() {
         cache_ttl_secs: 86_400,
         clock: Arc::new(move || clock.load(Ordering::Relaxed)),
         push_key: Some(pusher.public_key.clone()),
+        push_apps: Default::default(),
         osm_notes_url: None,
         osm_notes_token: None,
     };
@@ -246,7 +248,17 @@ async fn announces_food_new_to_the_area_once() {
         &app, "PUT", "/api/push/subscription", Some(&token),
         Some(serde_json::json!({
             "endpoint": endpoint, "keys": { "p256dh": p256dh, "auth": auth },
-            "area": "demo-leuven", "timezone": "UTC",
+            "area": "demo-leuven", "timezone": "UTC", "new_food": true,
+        })),
+    )
+    .await;
+    // Someone else who didn't opt in, and turned celebration reminders off too.
+    let (p256dh, auth) = browser_keys();
+    call(
+        &app, "PUT", "/api/push/subscription", Some(&token),
+        Some(serde_json::json!({
+            "endpoint": format!("{push_url}/push/quiet"), "keys": { "p256dh": p256dh, "auth": auth },
+            "area": "demo-leuven", "timezone": "UTC", "reminders": false,
         })),
     )
     .await;
@@ -279,6 +291,8 @@ async fn announces_food_new_to_the_area_once() {
     assert_eq!(run_once(&state, &pusher).await.unwrap(), 1);
     assert!(known(&db, &endpoint).await.iter().any(|c| c == fresh));
     assert_eq!(run_once(&state, &pusher).await.unwrap(), 0);
+    assert!(service.received.lock().unwrap().iter().all(|(id, _, _)| id == "news"), "not opted in");
+    assert!(known(&db, &format!("{push_url}/push/quiet")).await.iter().any(|c| c == fresh), "kept up quietly");
 
     // Gone for a week and back: not announced again.
     store::replace_imported(&db, osm::IMPORT_BBOX, &both[..1]).await.unwrap();

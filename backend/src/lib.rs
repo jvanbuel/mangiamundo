@@ -25,6 +25,8 @@ pub struct AppState {
     pub clock: Arc<dyn Fn() -> i64 + Send + Sync>,
     /// The VAPID public key browsers subscribe with, when Web Push is enabled.
     pub push_key: Option<String>,
+    /// The apps the server can send push notifications to.
+    pub push_apps: push::Apps,
     /// OSM Notes API endpoint for reporting closed places to OpenStreetMap. Off when unset.
     pub osm_notes_url: Option<String>,
     /// Posts notes as the Mangiamundo OSM account when set, anonymously otherwise.

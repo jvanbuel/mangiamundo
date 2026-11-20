@@ -23,6 +23,15 @@ pub struct Config {
     pub vapid_private_key: Option<String>,
     /// Contact sent to push services: a `mailto:` or `https:` URL.
     pub vapid_subject: String,
+    /// Contents of the APNs `.p8` key, for the iOS app. No iOS push when unset.
+    pub apns_key: Option<String>,
+    pub apns_key_id: Option<String>,
+    pub apns_team_id: Option<String>,
+    /// The iOS app's bundle id.
+    pub apns_topic: String,
+    /// Contents of a Firebase service account key (JSON), for the Android app. No Android
+    /// push when unset.
+    pub fcm_service_account: Option<String>,
     /// Seconds between passes over push subscriptions; 0 turns reminders off.
     pub push_interval_secs: u64,
     /// Where closed places are reported to OpenStreetMap. Unset in development, so
@@ -72,6 +81,11 @@ impl Config {
                 * 86_400,
             vapid_private_key: var("VAPID_PRIVATE_KEY"),
             vapid_subject: var("VAPID_SUBJECT").unwrap_or_else(|| "mailto:hello@mangiamundo.app".into()),
+            apns_key: var("APNS_KEY"),
+            apns_key_id: var("APNS_KEY_ID"),
+            apns_team_id: var("APNS_TEAM_ID"),
+            apns_topic: var("APNS_TOPIC").unwrap_or_else(|| "app.mangiamundo".into()),
+            fcm_service_account: var("FCM_SERVICE_ACCOUNT"),
             osm_notes_url: var("OSM_NOTES_URL"),
             osm_notes_token: var("OSM_NOTES_TOKEN"),
             push_interval_secs: var("PUSH_INTERVAL_SECS").map(|v| v.parse()).transpose()?.unwrap_or(600),

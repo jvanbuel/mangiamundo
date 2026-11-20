@@ -463,20 +463,26 @@ pub async fn set_setting(db: &SqlitePool, key: &str, value: &str) -> sqlx::Resul
     Ok(())
 }
 
-/// Adds a browser subscription, or moves an existing one to a new user, area or time zone.
+/// Adds a subscription, or moves an existing one to a new user, area, time zone or choice
+/// of notifications.
 pub async fn save_push_subscription(db: &SqlitePool, user: &str, sub: &crate::push::Subscription, at: i64) -> sqlx::Result<()> {
     sqlx::query(
-        "INSERT INTO push_subscriptions (endpoint, user_id, p256dh, auth, area_id, timezone, created_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?)
-         ON CONFLICT(endpoint) DO UPDATE SET user_id = excluded.user_id, p256dh = excluded.p256dh,
-             auth = excluded.auth, area_id = excluded.area_id, timezone = excluded.timezone",
+        "INSERT INTO push_subscriptions
+             (endpoint, kind, user_id, p256dh, auth, area_id, timezone, reminders, new_food, created_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+         ON CONFLICT(endpoint) DO UPDATE SET kind = excluded.kind, user_id = excluded.user_id,
+             p256dh = excluded.p256dh, auth = excluded.auth, area_id = excluded.area_id,
+             timezone = excluded.timezone, reminders = excluded.reminders, new_food = excluded.new_food",
     )
     .bind(&sub.endpoint)
+    .bind(sub.kind.as_str())
     .bind(user)
     .bind(&sub.p256dh)
     .bind(&sub.auth)
     .bind(&sub.area_id)
     .bind(&sub.timezone)
+    .bind(sub.reminders)
+    .bind(sub.new_food)
     .bind(at)
     .execute(db)
     .await?;
@@ -500,7 +506,7 @@ pub async fn remove_user_push_subscription(db: &SqlitePool, user: &str, endpoint
 
 pub async fn push_subscriptions(db: &SqlitePool) -> sqlx::Result<Vec<(String, crate::push::Subscription)>> {
     let rows = sqlx::query("SELECT * FROM push_subscriptions").fetch_all(db).await?;
-    Ok(rows.iter().map(crate::push::subscription_from_row).collect())
+    Ok(rows.iter().filter_map(crate::push::subscription_from_row).collect())
 }
 
 /// Records that a reminder is being sent. False when it was sent before.
