@@ -382,7 +382,10 @@ struct Load {
 /// Recent requests per user and kind, for rate limits. In memory: the server runs as one
 /// machine, and a restart forgetting them is harmless.
 #[derive(Clone, Default)]
-pub struct Limits(Arc<Mutex<HashMap<(String, &'static str), Vec<i64>>>>);
+pub struct Limits(Arc<Mutex<HashMap<LimitKey, Vec<i64>>>>);
+
+/// A user id and the kind of request.
+type LimitKey = (String, &'static str);
 
 impl Limits {
     /// Counts the request and returns true when `user` made fewer than `max` requests of this
