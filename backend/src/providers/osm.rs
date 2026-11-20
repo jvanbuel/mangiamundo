@@ -258,8 +258,14 @@ fn parse_api(kind: &str, id: u64, body: &str) -> anyhow::Result<Lookup> {
     };
     if kind == "way" && !coords.is_empty() {
         let (lats, lngs): (Vec<f64>, Vec<f64>) = coords.into_iter().unzip();
-        let mid = |v: &[f64]| (v.iter().cloned().fold(f64::MAX, f64::min) + v.iter().cloned().fold(f64::MIN, f64::max)) / 2.0;
-        el.center = Some(Center { lat: mid(&lats), lon: mid(&lngs) });
+        let min = |v: &[f64]| v.iter().cloned().fold(f64::MAX, f64::min);
+        let max = |v: &[f64]| v.iter().cloned().fold(f64::MIN, f64::max);
+        // No building is half a world wide: it crosses the antimeridian, where the plain
+        // midpoint lands on the other side. Rare enough to leave to Overpass.
+        if max(&lngs) - min(&lngs) > 180.0 {
+            anyhow::bail!("way {id} crosses the antimeridian");
+        }
+        el.center = Some(Center { lat: (min(&lats) + max(&lats)) / 2.0, lon: (min(&lngs) + max(&lngs)) / 2.0 });
     }
     // Same filter as the Overpass element query.
     let amenity = el.tags.get("amenity").map(String::as_str);
@@ -632,6 +638,10 @@ mod tests {
             {"type":"way","id":9,"nodes":[1,2],"tags":{"amenity":"cafe","name":"Kissa","cuisine":"japanese"}}]}"#;
         let Lookup::Found(place) = parse_api("way", 9, way).unwrap() else { panic!("not found") };
         assert_eq!((place.id.as_str(), place.lat, place.lng), ("osm-way-9", 50.1, 4.2));
+
+        // Across the antimeridian: an error, so Overpass answers instead.
+        let wrapped = way.replace(r#""lon":4.0"#, r#""lon":179.999"#).replace(r#""lon":4.4"#, r#""lon":-179.999"#);
+        assert!(parse_api("way", 9, &wrapped).is_err());
 
         // No longer a restaurant, or closed: gone, as the Overpass query would say.
         let shop = node.replace("restaurant", "shop");
