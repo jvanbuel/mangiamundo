@@ -513,6 +513,58 @@ pub async fn mark_push_sent(db: &SqlitePool, endpoint: &str, key: &str, at: i64)
     Ok(done.rows_affected() > 0)
 }
 
+/// Marks the countries in `present` as told, returning those that were not yet.
+///
+/// The first look at an area, after subscribing or moving, marks them all and returns none.
+pub async fn take_new_countries(db: &SqlitePool, endpoint: &str, area_id: &str, present: &[String]) -> sqlx::Result<Vec<String>> {
+    let mut tx = db.begin().await?;
+    let moved = sqlx::query("UPDATE push_subscriptions SET known_area_id = ?2 WHERE endpoint = ?1 AND known_area_id IS NOT ?2")
+        .bind(endpoint)
+        .bind(area_id)
+        .execute(&mut *tx)
+        .await?
+        .rows_affected()
+        > 0;
+    if moved {
+        sqlx::query("DELETE FROM push_known_countries WHERE endpoint = ?").bind(endpoint).execute(&mut *tx).await?;
+    }
+    let mut new = Vec::new();
+    for country in present {
+        let done = sqlx::query("INSERT OR IGNORE INTO push_known_countries (endpoint, country) VALUES (?, ?)")
+            .bind(endpoint)
+            .bind(country)
+            .execute(&mut *tx)
+            .await?;
+        if done.rows_affected() > 0 && !moved {
+            new.push(country.clone());
+        }
+    }
+    tx.commit().await?;
+    Ok(new)
+}
+
+/// Undoes `take_new_countries` when telling the subscriber failed.
+pub async fn forget_countries(db: &SqlitePool, endpoint: &str, countries: &[String]) -> sqlx::Result<()> {
+    for country in countries {
+        sqlx::query("DELETE FROM push_known_countries WHERE endpoint = ? AND country = ?")
+            .bind(endpoint)
+            .bind(country)
+            .execute(db)
+            .await?;
+    }
+    Ok(())
+}
+
+/// Every country the user has checked in at a place of.
+pub async fn visited_countries(db: &SqlitePool, user: &str) -> sqlx::Result<Vec<String>> {
+    sqlx::query_scalar(
+        "SELECT DISTINCT pc.country FROM visits v JOIN place_countries pc ON pc.place_id = v.place_id WHERE v.user_id = ?",
+    )
+    .bind(user)
+    .fetch_all(db)
+    .await
+}
+
 pub async fn unmark_push_sent(db: &SqlitePool, endpoint: &str, key: &str) -> sqlx::Result<()> {
     sqlx::query("DELETE FROM push_sent WHERE endpoint = ? AND key = ?").bind(endpoint).bind(key).execute(db).await?;
     Ok(())

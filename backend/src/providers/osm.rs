@@ -370,6 +370,17 @@ fn covered(b: Bbox) -> bool {
     b.south >= i.south && b.north <= i.north && b.west >= i.west && b.east <= i.east
 }
 
+/// The places in an area from the local copy, or `None` when the copy doesn't cover it.
+pub async fn from_import(db: &SqlitePool, area: &Boundary) -> anyhow::Result<Option<Vec<FoundPlace>>> {
+    let bbox = area.shape.bbox();
+    if !covered(bbox) || store::setting(db, IMPORTED_AT).await?.is_none() {
+        return Ok(None);
+    }
+    let mut places = store::imported_in(db, bbox).await?;
+    places.retain(|p| area.shape.contains(p.lat, p.lng));
+    Ok(Some(places))
+}
+
 /// Answers from the local copy where it covers the area, and asks Overpass elsewhere.
 pub struct WithImport {
     db: SqlitePool,
@@ -390,13 +401,10 @@ impl PlacesProvider for WithImport {
     }
 
     async fn search(&self, area: &Boundary, on_next_server: &(dyn Fn() + Send + Sync)) -> anyhow::Result<Vec<FoundPlace>> {
-        let bbox = area.shape.bbox();
-        if covered(bbox) && store::setting(&self.db, IMPORTED_AT).await?.is_some() {
-            let mut places = store::imported_in(&self.db, bbox).await?;
-            places.retain(|p| area.shape.contains(p.lat, p.lng));
-            return Ok(places);
+        match from_import(&self.db, area).await? {
+            Some(places) => Ok(places),
+            None => self.live.search(area, on_next_server).await,
         }
-        self.live.search(area, on_next_server).await
     }
 
     fn expected_secs(&self, area: &Boundary) -> f64 {
