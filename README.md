@@ -86,7 +86,13 @@ stale, so changes in OpenStreetMap show up within about a day.
 Reminders: the native apps schedule local notifications themselves. The web app uses
 Web Push: the server generates a VAPID key on first start (or reads
 `VAPID_PRIVATE_KEY`), and every `PUSH_INTERVAL_SECS` (default 600, 0 turns it off)
-sends due reminders from 10:00 in each subscriber's time zone. Set `VAPID_SUBJECT`
+sends due reminders from 10:00 in each subscriber's time zone. Subscribers also hear
+when food from a country they haven't tasted becomes available in their area ("Ethiopian
+food is now near you"): the server remembers the countries each subscriber's area had
+when they subscribed, and announces newcomers together in one notification. A country
+that disappears for less than four weeks isn't announced again when it comes back. A
+stale area inside the Belgium box is rebuilt from the local OSM copy for this; elsewhere
+the push loop never asks Overpass, so news waits until someone opens the area. Set `VAPID_SUBJECT`
 to a `mailto:` or `https:` contact for push services. Browsers only allow push on
 HTTPS (or localhost), and iPhones only for apps added to the home screen.
 

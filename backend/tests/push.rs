@@ -12,8 +12,9 @@ use base64::engine::general_purpose::URL_SAFE_NO_PAD;
 use base64::Engine;
 use http_body_util::BodyExt;
 use mangiamundo::providers::demo::Demo;
+use mangiamundo::providers::osm;
 use mangiamundo::push::{run_once, Pusher};
-use mangiamundo::{api, store, AppState};
+use mangiamundo::{api, catalog, store, AppState};
 use serde_json::Value;
 use tower::ServiceExt;
 
@@ -164,4 +165,137 @@ async fn sends_each_reminder_once_in_the_subscribers_morning() {
     ).await;
     assert_eq!(status, StatusCode::NO_CONTENT);
     assert!(store::push_subscriptions(&db).await.unwrap().iter().all(|(_, s)| !s.endpoint.ends_with("/utc")));
+}
+
+/// A restaurant in the local OpenStreetMap copy, in the middle of demo Leuven.
+fn imported(id: &str, country: &str, n: usize) -> mangiamundo::providers::FoundPlace {
+    let tag = catalog::cuisine_tag(country).unwrap();
+    mangiamundo::providers::FoundPlace {
+        id: format!("osm-node-{id}"),
+        name: format!("{id} {n}"),
+        lat: 50.8798 + n as f64 * 0.001,
+        lng: 4.7005,
+        address: None,
+        url: None,
+        cuisine: Some(tag.into()),
+        opening_hours: None,
+        countries: catalog::countries_for_cuisine_tag(tag),
+    }
+}
+
+async fn known(db: &sqlx::SqlitePool, endpoint: &str) -> Vec<String> {
+    sqlx::query_scalar("SELECT country FROM push_known_countries WHERE endpoint = ? ORDER BY country")
+        .bind(endpoint)
+        .fetch_all(db)
+        .await
+        .unwrap()
+}
+
+#[tokio::test]
+async fn announces_food_new_to_the_area_once() {
+    let db = store::connect("sqlite::memory:").await.unwrap();
+    let pusher = Pusher::load(&db, None, "mailto:test@example.com".into()).await.unwrap();
+    let night = START + 11 * 3600; // 23:00 UTC
+    let now = Arc::new(AtomicI64::new(night));
+    let clock = now.clone();
+    let state = AppState {
+        loads: Default::default(),
+        limits: Default::default(),
+        db: db.clone(),
+        places: Arc::new(Demo),
+        areas: Arc::new(Demo),
+        cache_ttl_secs: 86_400,
+        clock: Arc::new(move || clock.load(Ordering::Relaxed)),
+        push_key: Some(pusher.public_key.clone()),
+        osm_notes_url: None,
+        osm_notes_token: None,
+    };
+    let app = api::router(state.clone());
+    let (push_url, service) = fake_push_service().await;
+    let token = call(&app, "POST", "/api/session", None, None).await.1["token"].as_str().unwrap().to_string();
+    let user = store::user_for_token(&db, &token).await.unwrap().unwrap();
+
+    // Leuven's countries, and a Brussels place of a country Leuven lacks, which the user ate at.
+    call(&app, "GET", "/api/discover?area=demo-leuven", None, None).await;
+    call(&app, "GET", "/api/discover?area=demo-brussels", None, None).await;
+    let leuven: Vec<String> = store::area_country_places(&db, "demo-leuven").await.unwrap().into_iter().map(|(c, _)| c).collect();
+    let tasted = store::area_country_places(&db, "demo-brussels")
+        .await
+        .unwrap()
+        .into_iter()
+        .map(|(c, _)| c)
+        .find(|c| !leuven.contains(c) && catalog::cuisine_tag(c).is_some())
+        .expect("a Brussels country Leuven lacks");
+    let place: String = sqlx::query_scalar(
+        "SELECT pc.place_id FROM place_countries pc JOIN area_places ap ON ap.place_id = pc.place_id
+         WHERE ap.area_id = 'demo-brussels' AND pc.country = ?",
+    )
+    .bind(&tasted)
+    .fetch_one(&db)
+    .await
+    .unwrap();
+    store::add_visit(&db, &user, &place, false, night, chrono::NaiveDate::from_ymd_opt(2026, 11, 16).unwrap()).await.unwrap();
+    let fresh = ["ET", "PE", "GE", "ER"]
+        .into_iter()
+        .find(|c| !leuven.iter().any(|l| l == c) && *c != tasted)
+        .unwrap();
+
+    let endpoint = format!("{push_url}/push/news");
+    let (p256dh, auth) = browser_keys();
+    call(
+        &app, "PUT", "/api/push/subscription", Some(&token),
+        Some(serde_json::json!({
+            "endpoint": endpoint, "keys": { "p256dh": p256dh, "auth": auth },
+            "area": "demo-leuven", "timezone": "UTC",
+        })),
+    )
+    .await;
+
+    // Subscribing takes what the area has, even at night, and announces none of it.
+    assert_eq!(run_once(&state, &pusher).await.unwrap(), 0);
+    let mut expected = leuven.clone();
+    expected.sort();
+    expected.dedup();
+    assert_eq!(known(&db, &endpoint).await, expected);
+
+    // The local OpenStreetMap copy now has both new countries in Leuven.
+    store::set_setting(&db, "osm_import_at", &night.to_string()).await.unwrap();
+    let both = [imported("a", &tasted, 0), imported("b", fresh, 1), imported("c", fresh, 2)];
+    store::replace_imported(&db, osm::IMPORT_BBOX, &both).await.unwrap();
+
+    // Next morning the stale area is rebuilt from the copy. The country the user already
+    // tasted becomes known quietly. The push service is down, so the new one waits.
+    let morning = START + 22 * 3600 + 1800; // 10:30 UTC on the 17th
+    now.store(morning, Ordering::Relaxed);
+    service.status.store(500, Ordering::Relaxed);
+    assert_eq!(run_once(&state, &pusher).await.unwrap(), 0);
+    let areas = store::find_area(&db, "demo-leuven").await.unwrap().unwrap();
+    assert_eq!(areas.fetched_at, morning, "rebuilt from the local copy");
+    let k = known(&db, &endpoint).await;
+    assert!(k.contains(&tasted) && !k.iter().any(|c| c == fresh));
+
+    // Once it is back, one notification goes out, and only once.
+    service.status.store(201, Ordering::Relaxed);
+    assert_eq!(run_once(&state, &pusher).await.unwrap(), 1);
+    assert!(known(&db, &endpoint).await.iter().any(|c| c == fresh));
+    assert_eq!(run_once(&state, &pusher).await.unwrap(), 0);
+
+    // Gone for a week and back: not announced again.
+    store::replace_imported(&db, osm::IMPORT_BBOX, &both[..1]).await.unwrap();
+    now.store(morning + 86_400, Ordering::Relaxed);
+    assert_eq!(run_once(&state, &pusher).await.unwrap(), 0);
+    store::replace_imported(&db, osm::IMPORT_BBOX, &both).await.unwrap();
+    now.store(morning + 8 * 86_400, Ordering::Relaxed);
+    assert_eq!(run_once(&state, &pusher).await.unwrap(), 0);
+
+    // Gone for over four weeks and back: announced again.
+    store::replace_imported(&db, osm::IMPORT_BBOX, &both[..1]).await.unwrap();
+    now.store(morning + 9 * 86_400, Ordering::Relaxed);
+    run_once(&state, &pusher).await.unwrap();
+    now.store(morning + 40 * 86_400, Ordering::Relaxed);
+    run_once(&state, &pusher).await.unwrap();
+    assert!(!known(&db, &endpoint).await.iter().any(|c| c == fresh), "forgotten");
+    store::replace_imported(&db, osm::IMPORT_BBOX, &both).await.unwrap();
+    now.store(morning + 41 * 86_400, Ordering::Relaxed);
+    assert_eq!(run_once(&state, &pusher).await.unwrap(), 1);
 }

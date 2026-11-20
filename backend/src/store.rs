@@ -1,5 +1,6 @@
 //! SQLite persistence and the area cache.
 
+use std::collections::HashSet;
 use std::str::FromStr;
 use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -515,6 +516,94 @@ pub async fn mark_push_sent(db: &SqlitePool, endpoint: &str, key: &str, at: i64)
 
 pub async fn unmark_push_sent(db: &SqlitePool, endpoint: &str, key: &str) -> sqlx::Result<()> {
     sqlx::query("DELETE FROM push_sent WHERE endpoint = ? AND key = ?").bind(endpoint).bind(key).execute(db).await?;
+    Ok(())
+}
+
+/// The places of each country in an area, as everyone sees them: (country, place name).
+pub async fn area_country_places(db: &SqlitePool, area_id: &str) -> sqlx::Result<Vec<(String, String)>> {
+    let sql = format!(
+        "SELECT pc.country, p.name
+         FROM area_places ap
+         JOIN places p ON p.id = ap.place_id
+         JOIN place_countries pc ON pc.place_id = p.id
+         WHERE ap.area_id = ?2 AND {VISIBLE}
+         ORDER BY pc.country, p.name"
+    );
+    sqlx::query_as(&sql).bind(None::<&str>).bind(area_id).fetch_all(db).await
+}
+
+/// Every country `user` has eaten the food of, anywhere.
+pub async fn visited_countries(db: &SqlitePool, user: &str) -> sqlx::Result<HashSet<String>> {
+    let rows: Vec<String> = sqlx::query_scalar(
+        "SELECT DISTINCT pc.country FROM visits v JOIN place_countries pc ON pc.place_id = v.place_id WHERE v.user_id = ?",
+    )
+    .bind(user)
+    .fetch_all(db)
+    .await?;
+    Ok(rows.into_iter().collect())
+}
+
+/// The countries a subscriber's area is known to have, or `None` when they were taken for
+/// another area or not taken yet.
+pub async fn known_countries(db: &SqlitePool, endpoint: &str, area_id: &str) -> sqlx::Result<Option<HashSet<String>>> {
+    let known_area: Option<Option<String>> =
+        sqlx::query_scalar("SELECT known_area FROM push_subscriptions WHERE endpoint = ?")
+            .bind(endpoint)
+            .fetch_optional(db)
+            .await?;
+    if known_area.flatten().as_deref() != Some(area_id) {
+        return Ok(None);
+    }
+    let rows: Vec<String> = sqlx::query_scalar("SELECT country FROM push_known_countries WHERE endpoint = ?")
+        .bind(endpoint)
+        .fetch_all(db)
+        .await?;
+    Ok(Some(rows.into_iter().collect()))
+}
+
+/// Takes the known countries afresh for `area_id`.
+pub async fn reset_known_countries(db: &SqlitePool, endpoint: &str, area_id: &str, countries: &[&str], at: i64) -> sqlx::Result<()> {
+    let mut tx = db.begin().await?;
+    sqlx::query("DELETE FROM push_known_countries WHERE endpoint = ?").bind(endpoint).execute(&mut *tx).await?;
+    sqlx::query("UPDATE push_subscriptions SET known_area = ? WHERE endpoint = ?")
+        .bind(area_id)
+        .bind(endpoint)
+        .execute(&mut *tx)
+        .await?;
+    see_countries(&mut tx, endpoint, countries, at).await?;
+    tx.commit().await
+}
+
+/// Records that the subscriber's area has these countries now.
+pub async fn see_known_countries(db: &SqlitePool, endpoint: &str, countries: &[&str], at: i64) -> sqlx::Result<()> {
+    let mut tx = db.begin().await?;
+    see_countries(&mut tx, endpoint, countries, at).await?;
+    tx.commit().await
+}
+
+async fn see_countries(tx: &mut sqlx::SqliteConnection, endpoint: &str, countries: &[&str], at: i64) -> sqlx::Result<()> {
+    for country in countries {
+        sqlx::query(
+            "INSERT INTO push_known_countries (endpoint, country, last_seen) VALUES (?, ?, ?)
+             ON CONFLICT(endpoint, country) DO UPDATE SET last_seen = excluded.last_seen",
+        )
+        .bind(endpoint)
+        .bind(country)
+        .bind(at)
+        .execute(&mut *tx)
+        .await?;
+    }
+    Ok(())
+}
+
+/// Forgets the known countries last seen before `before`, so they are announced again if
+/// they ever come back.
+pub async fn forget_known_countries(db: &SqlitePool, endpoint: &str, before: i64) -> sqlx::Result<()> {
+    sqlx::query("DELETE FROM push_known_countries WHERE endpoint = ? AND last_seen < ?")
+        .bind(endpoint)
+        .bind(before)
+        .execute(db)
+        .await?;
     Ok(())
 }
 
