@@ -25,16 +25,9 @@ struct AreaProgressView: View {
 
     var body: some View {
         VStack(spacing: 10) {
-            ZStack {
-                Circle().stroke(Theme.line, lineWidth: 8)
-                Circle()
-                    .trim(from: 0, to: CGFloat(progress.percent) / 100)
-                    .stroke(Theme.accent, style: StrokeStyle(lineWidth: 8, lineCap: .round))
-                    .rotationEffect(.degrees(-90))
-                Text("\(progress.percent)%").font(Theme.font(.title3, .extraBold))
-            }
-            .frame(width: 84, height: 84)
-            .animation(.easeOut(duration: 0.4), value: progress.percent)
+            ProgressRing(fraction: Double(progress.percent) / 100)
+                .overlay { Text("\(progress.percent)%").font(Theme.font(.title3, .extraBold)) }
+                .frame(width: 84, height: 84)
             Text(progress.text)
                 .font(Theme.font(.subheadline, .bold))
                 .foregroundStyle(Theme.muted)
@@ -49,23 +42,48 @@ struct AreaProgressView: View {
     }
 }
 
+/// The accent arc on a track that shows loading: filled to `fraction`, or spinning while it is nil.
+struct ProgressRing: View {
+    var fraction: Double?
+    var lineWidth: CGFloat = 8
+    @State private var spinning = false
+
+    var body: some View {
+        ZStack {
+            Circle().stroke(Theme.line, lineWidth: lineWidth)
+            Circle()
+                .trim(from: 0, to: fraction ?? 0.3)
+                .stroke(Theme.accent, style: StrokeStyle(lineWidth: lineWidth, lineCap: .round))
+                .rotationEffect(.degrees(spinning ? 270 : -90))
+        }
+        .animation(.easeOut(duration: 0.4), value: fraction)
+        .onAppear {
+            guard fraction == nil else { return }
+            withAnimation(.linear(duration: 0.9).repeatForever(autoreverses: false)) { spinning = true }
+        }
+    }
+}
+
 /// A solid, pressable button face on a darker lower edge; the face drops onto the edge while pressed.
 struct ChunkyButtonStyle: ButtonStyle {
     var face = Theme.accent
     var content = Theme.onAccent
+    /// A smaller button, for secondary actions.
+    var small = false
 
     func makeBody(configuration: Configuration) -> some View {
         let pressed = configuration.isPressed
+        let edge: CGFloat = small ? 2 : 3
         configuration.label
-            .font(Theme.font(.subheadline, .extraBold))
+            .font(Theme.font(small ? .footnote : .subheadline, .extraBold))
             .foregroundStyle(content)
-            .padding(.horizontal, 14)
-            .padding(.vertical, 9)
-            .background(face, in: RoundedRectangle(cornerRadius: 12))
-            .offset(y: pressed ? 3 : 0)
-            .padding(.bottom, 3)
+            .padding(.horizontal, small ? 10 : 14)
+            .padding(.vertical, small ? 6 : 9)
+            .background(face, in: RoundedRectangle(cornerRadius: small ? 9 : 12))
+            .offset(y: pressed ? edge : 0)
+            .padding(.bottom, edge)
             .background(alignment: .bottom) {
-                RoundedRectangle(cornerRadius: 12).fill(face).brightness(-0.18)
+                RoundedRectangle(cornerRadius: small ? 9 : 12).fill(face).brightness(-0.18)
             }
     }
 }
@@ -917,30 +935,53 @@ struct PlaceDetail: View {
                 Divider().overlay(Theme.line)
             }
 
-            VStack(alignment: .leading, spacing: 4) {
-                Button("Closed for good?") { confirmingClosed = true }
+            VStack(alignment: .leading, spacing: 10) {
+                HStack(spacing: 8) {
+                    if let link = place.osmUrl, let url = URL(string: link) {
+                        // A phone-friendly OSM editor when one is installed, otherwise the website.
+                        let editor = EditorApp.installed
+                        Button {
+                            // Read again when the user comes back from editing.
+                            model.editingOnOsm(place.id)
+                            // Checked again on tap: the app may have been uninstalled since the label was drawn.
+                            openURL(EditorApp.installed?.link(name: place.name, lat: place.lat, lng: place.lng) ?? url)
+                        } label: {
+                            Label("Edit", systemImage: "pencil")
+                        }
+                        .accessibilityLabel("Something wrong? Edit " + (editor.map { "in \($0.name)" } ?? "on OpenStreetMap"))
+                        Button {
+                            Task { await model.refreshPlace(place.id) }
+                        } label: {
+                            Label {
+                                Text("Refresh")
+                            } icon: {
+                                if model.refreshingPlace == place.id {
+                                    ProgressRing(lineWidth: 2.5).frame(width: 13, height: 13)
+                                } else {
+                                    Image(systemName: "arrow.clockwise")
+                                }
+                            }
+                        }
+                        .disabled(model.refreshingPlace != nil)
+                        .accessibilityLabel(model.refreshingPlace == place.id ? "Refreshing from OpenStreetMap" : "Refresh from OpenStreetMap")
+                    }
+                    Button { confirmingClosed = true } label: {
+                        Label("Closed?", systemImage: "xmark.circle")
+                    }
+                    .buttonStyle(ChunkyButtonStyle(face: Theme.panelRaised, content: Theme.danger, small: true))
                     .disabled(model.busyPlace != nil)
-                if let link = place.osmUrl, let url = URL(string: link) {
-                    // A phone-friendly OSM editor when one is installed, otherwise the website.
-                    let editor = EditorApp.installed
-                    Button("Something wrong? Edit " + (editor.map { "in \($0.name)" } ?? "on OpenStreetMap")) {
-                        // Read again when the user comes back from editing.
-                        model.editingOnOsm(place.id)
-                        // Checked again on tap: the app may have been uninstalled since the label was drawn.
-                        openURL(EditorApp.installed?.link(name: place.name, lat: place.lat, lng: place.lng) ?? url)
-                    }
-                    Button(model.refreshingPlace == place.id ? "Refreshing from OpenStreetMap…" : "Refresh from OpenStreetMap") {
-                        Task { await model.refreshPlace(place.id) }
-                    }
-                    .disabled(model.refreshingPlace != nil)
+                    .accessibilityLabel("Closed for good?")
+                }
+                .buttonStyle(ChunkyButtonStyle(face: Theme.panelRaised, content: Theme.text, small: true))
+                if place.osmUrl != nil {
                     Button("Data © OpenStreetMap contributors") {
                         if let copyright = URL(string: "https://www.openstreetmap.org/copyright") { openURL(copyright) }
                     }
+                    .buttonStyle(.plain)
+                    .font(Theme.font(.caption))
+                    .foregroundStyle(Theme.muted)
                 }
             }
-            .buttonStyle(.plain)
-            .font(Theme.font(.caption))
-            .foregroundStyle(Theme.muted)
             .padding(.top, 24)
             .confirmationDialog("Has \(place.name) closed for good?", isPresented: $confirmingClosed, titleVisibility: .visible) {
                 Button("Yes, it closed", role: .destructive) { Task { await model.reportClosed(place) } }

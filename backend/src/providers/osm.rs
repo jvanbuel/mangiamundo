@@ -185,9 +185,14 @@ fn parse(body: &str) -> anyhow::Result<Vec<FoundPlace>> {
     if let Some(remark) = response.remark.as_deref().filter(|r| r.contains("error")) {
         anyhow::bail!("overpass query failed: {remark}");
     }
+    Ok(places(response.elements))
+}
+
+/// The places among OSM elements: named, open, and serving a national cuisine.
+fn places(elements: Vec<Element>) -> Vec<FoundPlace> {
     let today = chrono::Utc::now().format("%Y-%m-%d").to_string();
     let mut places = Vec::new();
-    for el in response.elements {
+    for el in elements {
         let (Some(name), Some(cuisine)) = (el.tags.get("name"), el.tags.get("cuisine")) else {
             continue;
         };
@@ -231,7 +236,65 @@ fn parse(body: &str) -> anyhow::Result<Vec<FoundPlace>> {
             countries,
         });
     }
-    Ok(places)
+    places
+}
+
+/// The main OpenStreetMap API: answers for one element in a fraction of a second, with the
+/// latest edit, where the public Overpass servers can queue a request for half a minute.
+const OSM_API: &str = "https://api.openstreetmap.org/api/0.6";
+
+/// A node, or a way with its nodes (`/way/{id}/full.json`), from the OSM API as a place.
+/// The way gets the centre of its nodes' bounding box, as Overpass's `out center` gives it.
+fn parse_api(kind: &str, id: u64, body: &str) -> anyhow::Result<Lookup> {
+    #[derive(Deserialize)]
+    struct Response {
+        elements: Vec<Element>,
+    }
+    let mut elements = serde_json::from_str::<Response>(body)?.elements;
+    let coords: Vec<(f64, f64)> =
+        elements.iter().filter(|e| e.kind == "node").filter_map(|e| Some((e.lat?, e.lon?))).collect();
+    let Some(mut el) = elements.drain(..).find(|e| e.kind == kind && e.id == id) else {
+        return Ok(Lookup::Gone);
+    };
+    if kind == "way" && !coords.is_empty() {
+        let (lats, lngs): (Vec<f64>, Vec<f64>) = coords.into_iter().unzip();
+        let min = |v: &[f64]| v.iter().cloned().fold(f64::MAX, f64::min);
+        let max = |v: &[f64]| v.iter().cloned().fold(f64::MIN, f64::max);
+        // No building is half a world wide: it crosses the antimeridian, where the plain
+        // midpoint lands on the other side. Rare enough to leave to Overpass.
+        if max(&lngs) - min(&lngs) > 180.0 {
+            anyhow::bail!("way {id} crosses the antimeridian");
+        }
+        el.center = Some(Center { lat: (min(&lats) + max(&lats)) / 2.0, lon: (min(&lngs) + max(&lngs)) / 2.0 });
+    }
+    // Same filter as the Overpass element query.
+    let amenity = el.tags.get("amenity").map(String::as_str);
+    if !matches!(amenity, Some("restaurant" | "fast_food" | "cafe" | "pub" | "bar")) {
+        return Ok(Lookup::Gone);
+    }
+    Ok(places(vec![el]).into_iter().next().map_or(Lookup::Gone, Lookup::Found))
+}
+
+impl Overpass {
+    /// One node or way from the OSM API. `None` for relations, which Overpass reads instead.
+    async fn read_osm_api(&self, id: &str) -> Option<anyhow::Result<Lookup>> {
+        let (kind, n) = id.strip_prefix("osm-")?.split_once('-')?;
+        let n: u64 = n.parse().ok()?;
+        let url = match kind {
+            "node" => format!("{OSM_API}/node/{n}.json"),
+            "way" => format!("{OSM_API}/way/{n}/full.json"),
+            _ => return None,
+        };
+        let answer = async {
+            let response = self.http.get(&url).timeout(Duration::from_secs(10)).send().await?;
+            // Deleted (410) or never there (404).
+            if matches!(response.status().as_u16(), 404 | 410) {
+                return Ok(Lookup::Gone);
+            }
+            parse_api(kind, n, &response.error_for_status()?.text().await?)
+        };
+        Some(answer.await)
+    }
 }
 
 #[async_trait]
@@ -257,6 +320,11 @@ impl PlacesProvider for Overpass {
 
     async fn place(&self, id: &str) -> anyhow::Result<Lookup> {
         let query = element_query(id).ok_or_else(|| anyhow::anyhow!("not an OpenStreetMap place: {id}"))?;
+        match self.read_osm_api(id).await {
+            Some(Ok(lookup)) => return Ok(lookup),
+            Some(Err(error)) => tracing::warn!(id, error = format!("{error:#}"), "osm api failed, asking overpass"),
+            None => {}
+        }
         let places = self.fetch_any(&query, Duration::from_secs(30), Some(Duration::from_secs(8)), &|| ()).await?;
         Ok(places.into_iter().next().map_or(Lookup::Gone, Lookup::Found))
     }
@@ -559,6 +627,29 @@ mod tests {
 
     use super::*;
 
+    #[test]
+    fn osm_api_answers_become_places() {
+        let node = r#"{"version":"0.6","elements":[{"type":"node","id":7,"lat":50.88,"lon":4.70,"tags":{"amenity":"restaurant","name":"Lalibela","cuisine":"ethiopian"}}]}"#;
+        let Lookup::Found(place) = parse_api("node", 7, node).unwrap() else { panic!("not found") };
+        assert_eq!((place.id.as_str(), place.lat, place.countries.clone()), ("osm-node-7", 50.88, vec!["ET"]));
+
+        let way = r#"{"elements":[
+            {"type":"node","id":1,"lat":50.0,"lon":4.0},{"type":"node","id":2,"lat":50.2,"lon":4.4},
+            {"type":"way","id":9,"nodes":[1,2],"tags":{"amenity":"cafe","name":"Kissa","cuisine":"japanese"}}]}"#;
+        let Lookup::Found(place) = parse_api("way", 9, way).unwrap() else { panic!("not found") };
+        assert_eq!((place.id.as_str(), place.lat, place.lng), ("osm-way-9", 50.1, 4.2));
+
+        // Across the antimeridian: an error, so Overpass answers instead.
+        let wrapped = way.replace(r#""lon":4.0"#, r#""lon":179.999"#).replace(r#""lon":4.4"#, r#""lon":-179.999"#);
+        assert!(parse_api("way", 9, &wrapped).is_err());
+
+        // No longer a restaurant, or closed: gone, as the Overpass query would say.
+        let shop = node.replace("restaurant", "shop");
+        assert_eq!(parse_api("node", 7, &shop).unwrap(), Lookup::Gone);
+        let closed = node.replace(r#""cuisine""#, r#""disused":"yes","cuisine""#);
+        assert_eq!(parse_api("node", 7, &closed).unwrap(), Lookup::Gone);
+    }
+
     /// A fake Overpass server: answers with `status` and one restaurant after `delay`.
     async fn fake_server(status: u16, delay: Duration) -> String {
         use axum::http::StatusCode;
@@ -693,6 +784,20 @@ mod tests {
         assert!(query(b, 60).contains("(50.82,4.64,50.94,4.77)"));
         let precise = Bbox { south: 50.8242081, west: 4.000006, north: 50.9440737, east: 4.7704248 };
         assert!(query(precise, 60).contains("(50.8242081,4.000006,50.9440737,4.7704248)"), "no rounding");
+    }
+
+    /// Run by hand: `cargo test -- --ignored osm_api_reads`.
+    #[tokio::test]
+    #[ignore = "talks to the public OpenStreetMap API"]
+    async fn osm_api_reads_a_place_quickly() {
+        let http = reqwest::Client::builder().user_agent("mangiamundo-tests").build().unwrap();
+        // Unreachable Overpass: the answer has to come from the OSM API.
+        let overpass = Overpass::new(http, vec!["http://127.0.0.1:9/api/interpreter".into()]);
+        let started = Instant::now();
+        // An Italian restaurant in Leuven.
+        let lookup = overpass.place("osm-node-365439479").await.unwrap();
+        assert!(matches!(lookup, Lookup::Found(_)), "{lookup:?}");
+        assert!(started.elapsed() < Duration::from_secs(3), "{:?}", started.elapsed());
     }
 
     /// Run by hand: `cargo test -- --ignored nominatim`.
