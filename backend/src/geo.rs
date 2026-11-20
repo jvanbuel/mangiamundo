@@ -32,16 +32,32 @@ impl Shape {
             "MultiPolygon" => Shape(serde_json::from_value(coordinates).ok()?),
             _ => return None,
         };
-        (!shape.0.is_empty() && shape.0.iter().all(|p| p.first().is_some_and(|ring| ring.len() >= 4))).then_some(shape)
+        (!shape.0.is_empty()
+            && shape
+                .0
+                .iter()
+                .all(|p| p.first().is_some_and(|ring| ring.len() >= 4)))
+        .then_some(shape)
     }
 
     /// A rectangle, for made-up areas.
     pub fn rect(b: Bbox) -> Shape {
-        Shape(vec![vec![vec![[b.west, b.south], [b.east, b.south], [b.east, b.north], [b.west, b.north], [b.west, b.south]]]])
+        Shape(vec![vec![vec![
+            [b.west, b.south],
+            [b.east, b.south],
+            [b.east, b.north],
+            [b.west, b.north],
+            [b.west, b.south],
+        ]]])
     }
 
     pub fn bbox(&self) -> Bbox {
-        let mut b = Bbox { south: f64::MAX, west: f64::MAX, north: f64::MIN, east: f64::MIN };
+        let mut b = Bbox {
+            south: f64::MAX,
+            west: f64::MAX,
+            north: f64::MIN,
+            east: f64::MIN,
+        };
         for [lng, lat] in self.0.iter().filter_map(|p| p.first()).flatten() {
             b.south = b.south.min(*lat);
             b.north = b.north.max(*lat);
@@ -54,7 +70,8 @@ impl Shape {
     pub fn contains(&self, lat: f64, lng: f64) -> bool {
         self.0.iter().any(|polygon| {
             let mut rings = polygon.iter();
-            rings.next().is_some_and(|outer| in_ring(outer, lat, lng)) && !rings.any(|hole| in_ring(hole, lat, lng))
+            rings.next().is_some_and(|outer| in_ring(outer, lat, lng))
+                && !rings.any(|hole| in_ring(hole, lat, lng))
         })
     }
 }
@@ -96,7 +113,18 @@ mod tests {
         assert!(shape.contains(50.2, 4.2));
         assert!(!shape.contains(50.5, 4.5), "in the hole");
         assert!(!shape.contains(52.0, 4.5), "outside");
-        assert_eq!(shape.bbox(), Bbox { south: 50.0, west: 4.0, north: 51.0, east: 5.0 });
-        assert!(Shape::from_geojson(&serde_json::json!({"type": "Point", "coordinates": [4.0, 50.0]})).is_none());
+        assert_eq!(
+            shape.bbox(),
+            Bbox {
+                south: 50.0,
+                west: 4.0,
+                north: 51.0,
+                east: 5.0
+            }
+        );
+        assert!(Shape::from_geojson(
+            &serde_json::json!({"type": "Point", "coordinates": [4.0, 50.0]})
+        )
+        .is_none());
     }
 }

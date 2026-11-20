@@ -86,8 +86,9 @@ stale, so changes in OpenStreetMap show up within about a day.
 Reminders: the native apps schedule local notifications themselves. The web app uses
 Web Push: the server generates a VAPID key on first start (or reads
 `VAPID_PRIVATE_KEY`), and every `PUSH_INTERVAL_SECS` (default 600, 0 turns it off)
-sends due reminders from 10:00 in each subscriber's time zone. Set `VAPID_SUBJECT`
-to a `mailto:` or `https:` contact for push services. Browsers only allow push on
+sends due reminders from 10:00 in each subscriber's time zone. It also says when food
+from a country the subscriber hasn't eaten yet appears in their area. Set `VAPID_SUBJECT` to a `mailto:` or `https:` contact for
+push services. Browsers only allow push on
 HTTPS (or localhost), and iPhones only for apps added to the home screen.
 
 ## How the game works

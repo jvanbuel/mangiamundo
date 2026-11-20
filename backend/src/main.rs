@@ -13,11 +13,21 @@ async fn main() -> anyhow::Result<()> {
     let db = store::connect(&config.database_url).await?;
     if config.provider == ProviderKind::Osm {
         // Belgium comes from a daily import, so searches there skip the slow live query.
-        let http = reqwest::Client::builder().user_agent(concat!("mangiamundo/", env!("CARGO_PKG_VERSION"))).build()?;
-        tokio::spawn(osm::run_imports(db.clone(), osm::Overpass::new(http, config.overpass_urls.clone())));
+        let http = reqwest::Client::builder()
+            .user_agent(concat!("mangiamundo/", env!("CARGO_PKG_VERSION")))
+            .build()?;
+        tokio::spawn(osm::run_imports(
+            db.clone(),
+            osm::Overpass::new(http, config.overpass_urls.clone()),
+        ));
         places = Arc::new(osm::WithImport::new(db.clone(), places));
     }
-    let pusher = push::Pusher::load(&db, config.vapid_private_key.clone(), config.vapid_subject.clone()).await?;
+    let pusher = push::Pusher::load(
+        &db,
+        config.vapid_private_key.clone(),
+        config.vapid_subject.clone(),
+    )
+    .await?;
     let state = AppState {
         loads: Default::default(),
         limits: Default::default(),
@@ -34,11 +44,18 @@ async fn main() -> anyhow::Result<()> {
     tracing::info!(provider = state.places.name(), "places provider ready");
 
     if config.push_interval_secs > 0 {
-        tokio::spawn(push::run(state.clone(), pusher, std::time::Duration::from_secs(config.push_interval_secs)));
+        tokio::spawn(push::run(
+            state.clone(),
+            pusher,
+            std::time::Duration::from_secs(config.push_interval_secs),
+        ));
     }
 
     let mut app = api::router(state);
-    if let Some(dir) = config.static_dir.filter(|dir| dir.join("index.html").is_file()) {
+    if let Some(dir) = config
+        .static_dir
+        .filter(|dir| dir.join("index.html").is_file())
+    {
         tracing::info!(dir = %dir.display(), "serving web app");
         app = api::with_web_app(app, &dir);
     }
