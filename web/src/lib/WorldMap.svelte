@@ -100,7 +100,7 @@
 					color('--land')
 				]
 			},
-			borders: { 'line-color': ['case', flag('selected'), color('--text'), color('--ocean')] },
+			borders: { 'line-color': ['case', flag('selected'), color('--text'), color('--map-border')] },
 			'here-halo': { 'circle-color': color('--text') },
 			here: { 'circle-color': color('--text'), 'circle-stroke-color': color('--panel') }
 		};

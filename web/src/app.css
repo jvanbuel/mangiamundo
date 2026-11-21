@@ -13,12 +13,14 @@
 	--on-accent: #ffffff;
 	--danger: #b3261e;
 	/* Map: blue sea, warm land, and a purple "to discover" that is not mistaken for water. */
-	--ocean: #b9d3ec;
+	--ocean: #9cc3ea;
 	--land: #f1ece3;
-	--available: #7c4bc8;
-	--discovered: #e09612;
-	--completed: #2c9150;
-	--on-completed: #0b2a14;
+	--map-border: #d2c9b9;
+	/* Progress gets darker as it fills, so the states differ in lightness, not only hue. */
+	--available: #a98ad9;
+	--discovered: #c46500;
+	--completed: #1b6e3c;
+	--on-completed: #ffffff;
 	--event: #c2417a;
 	--glass: rgb(255 255 255 / 0.92);
 	--shadow: rgb(20 38 58 / 0.16);
@@ -44,9 +46,10 @@
 		--danger: #ff9d8a;
 		--ocean: #08131e;
 		--land: #33465b;
-		--available: #b48cf5;
-		--discovered: #f2b53d;
-		--completed: #54b96f;
+		--map-border: #13202e;
+		--available: #6f5fae;
+		--discovered: #e8a33a;
+		--completed: #a6ecb9;
 		--on-completed: #06210f;
 		--event: #e46a9f;
 		--glass: rgb(19 37 54 / 0.9);
@@ -68,9 +71,10 @@
 	--danger: #ff9d8a;
 	--ocean: #08131e;
 	--land: #33465b;
-	--available: #b48cf5;
-	--discovered: #f2b53d;
-	--completed: #54b96f;
+	--map-border: #13202e;
+	--available: #6f5fae;
+	--discovered: #e8a33a;
+	--completed: #a6ecb9;
 	--on-completed: #06210f;
 	--event: #e46a9f;
 	--glass: rgb(19 37 54 / 0.9);
