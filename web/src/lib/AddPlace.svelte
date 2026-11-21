@@ -89,7 +89,7 @@
 		padding: 9px 12px;
 		border-radius: 10px;
 		border: 1px solid var(--line);
-		background: var(--bg);
+		background: var(--panel);
 		color: var(--text);
 		font: inherit;
 		font-weight: 500;

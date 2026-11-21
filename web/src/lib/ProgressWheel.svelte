@@ -42,10 +42,9 @@
 		align-items: center;
 		gap: 8px;
 		padding: 20px 24px 16px;
-		border-radius: 16px;
-		border: 2px solid var(--line);
-		border-bottom-width: 4px;
+		border-radius: 14px;
 		background: var(--panel);
+		box-shadow: 0 2px 6px var(--shadow), 0 12px 32px var(--shadow);
 	}
 
 	svg {

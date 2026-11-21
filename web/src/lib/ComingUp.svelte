@@ -137,6 +137,7 @@
 		overflow: hidden;
 		border: 2px solid var(--line);
 		border-bottom-width: 3px;
+		background: var(--panel);
 		text-align: center;
 		line-height: 1.1;
 	}

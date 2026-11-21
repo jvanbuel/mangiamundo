@@ -168,7 +168,7 @@
 		padding: 9px 12px;
 		border-radius: 10px;
 		border: 1px solid var(--line);
-		background: var(--bg);
+		background: var(--panel);
 		color: var(--text);
 		font: inherit;
 	}
@@ -176,7 +176,7 @@
 	form button {
 		padding: 0 14px;
 		border-radius: 10px;
-		background: var(--panel-raised);
+		background: var(--panel);
 		border: 1px solid var(--line);
 	}
 
@@ -196,7 +196,7 @@
 	}
 
 	li button:hover {
-		background: var(--panel-raised);
+		background: var(--panel);
 	}
 
 	p {
@@ -266,7 +266,7 @@
 	}
 
 	.options button.on {
-		background: var(--panel-raised);
+		background: var(--panel);
 		color: var(--accent);
 		font-weight: 700;
 	}

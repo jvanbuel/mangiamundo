@@ -40,9 +40,7 @@
 		padding: 12px 14px;
 		border-radius: 16px;
 		background: var(--panel);
-		border: 2px solid var(--line);
-		border-bottom-width: 4px;
-		box-shadow: 0 12px 32px var(--shadow);
+		box-shadow: 0 2px 6px var(--shadow), 0 12px 32px var(--shadow);
 	}
 
 	.icon {

@@ -281,13 +281,11 @@
 		font-size: 13px;
 	}
 
-	/* Panels have a solid outline and a heavier lower edge rather than a soft shadow. */
+	/* Panels sit on a tinted surface. The heavy lower edge is kept for things you can press. */
 	.card {
 		padding: 16px;
-		border-radius: 16px;
-		border: 2px solid var(--line);
-		border-bottom-width: 4px;
-		background: var(--panel);
+		border-radius: 14px;
+		background: var(--panel-raised);
 		transition: opacity 0.2s;
 	}
 
