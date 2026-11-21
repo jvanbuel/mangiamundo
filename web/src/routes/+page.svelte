@@ -87,12 +87,12 @@
 			</div>
 		</div>
 
-		<ul class="legend" aria-label="Legend">
+		{#if app.location}<ul class="legend" aria-label="Legend">
 			<li><span class="swatch available"></span>To discover</li>
 			<li><span class="swatch discovered"></span>Tasted</li>
 			<li><span class="swatch completed"></span>Completed</li>
 			<li><span class="swatch none"></span>None nearby</li>
-		</ul>
+		</ul>{/if}
 	</div>
 
 	<aside>
@@ -159,7 +159,10 @@
 			</div>
 			{@render addEntry()}
 		{:else}
-			<div class="card" class:dim={app.loading}><Passport discover={app.discover} /></div>
+			<!-- Progress is for the overview; a country or place gets the room to itself. -->
+			{#if !selected && !app.placeId}
+				<div class="card" class:dim={app.loading}><Passport discover={app.discover} /></div>
+			{/if}
 
 			{#if app.celebrations.length && !selected && !app.placeId}
 				<div class="card"><ComingUp celebrations={app.celebrations} /></div>
@@ -453,7 +456,7 @@
 	@media (max-width: 760px) {
 		main {
 			grid-template-columns: 1fr;
-			grid-template-rows: 42dvh 1fr;
+			grid-template-rows: 34dvh 1fr;
 		}
 
 		.stage {

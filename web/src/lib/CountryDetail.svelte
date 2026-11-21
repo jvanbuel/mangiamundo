@@ -61,7 +61,7 @@
 					<a class="name" href="?place={encodeURIComponent(place.id)}" onclick={(e) => open(e, place)} {@attach refocus(place.id)}>{place.name}</a>
 					<!-- One line of facts; directions and the website are on the place's own page. -->
 					<span class="muted">
-						{#if now}<span class="hours" class:open={now.open} title={place.hours?.raw}>{now.text}</span> · {/if}{distance(place.distance_m)}{place.address ? ` · ${place.address}` : ''}
+						{#if now}<span class="hours" class:open={now.open} title={place.hours?.raw}>{now.text}</span>{' · '}{/if}{distance(place.distance_m)}{place.address ? ` · ${place.address}` : ''}
 					</span>
 					{#if place.visits[0]?.verified}<span class="verified">Checked in on the spot</span>{/if}
 				</div>
@@ -79,7 +79,7 @@
 		color: var(--muted);
 		font-size: var(--text-sm);
 		font-weight: 700;
-		padding: 12px 0;
+		padding: 12px 8px 12px 0;
 		margin: -8px 0;
 	}
 

@@ -45,6 +45,8 @@
 	/* Over the map, beside the panel, rather than across both. */
 	@media (min-width: 761px) {
 		.toasts {
+			/* Below the map's controls, so it never covers them. */
+			top: 72px;
 			left: calc(400px + (100vw - 400px) / 2);
 		}
 	}

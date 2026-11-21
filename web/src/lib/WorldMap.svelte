@@ -273,8 +273,8 @@
 		const animate = !matchMedia('(prefers-reduced-motion: reduce)').matches;
 		if (box) {
 			const el = map.getContainer();
-			const pad = Math.min(el.clientWidth, el.clientHeight) * 0.2;
-			map.fitBounds(box, { padding: pad, maxZoom: 3.5, duration: animate ? 1200 : 0 });
+			const pad = Math.min(el.clientWidth, el.clientHeight) * 0.3;
+			map.fitBounds(box, { padding: pad, maxZoom: 4.5, duration: animate ? 1200 : 0 });
 		} else if (location) {
 			const zoom = fittingZoom(map.getContainer(), location.lat);
 			map.easeTo({ center: [location.lng, location.lat], zoom, duration: animate ? 1200 : 0 });

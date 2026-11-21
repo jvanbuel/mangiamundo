@@ -129,7 +129,7 @@
 		color: var(--muted);
 		font-size: var(--text-sm);
 		font-weight: 700;
-		padding: 12px 0;
+		padding: 12px 8px 12px 0;
 		margin: -8px 0;
 	}
 

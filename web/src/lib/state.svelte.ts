@@ -506,12 +506,12 @@ function celebrate(before: Discover, after: Discover, place: Place) {
 	}
 	for (const badge of after.badges) {
 		if (badge.earned && !before.badges.find((b) => b.id === badge.id)?.earned) {
-			toast({ badge: badge.kind }, `Badge: ${badge.title}`, badge.description);
+			toast({ badge: badge.kind }, `Badge earned: ${badge.title}`, badge.description);
 		}
 	}
 	for (const event of after.events) {
 		if (event.earned && !before.events.find((e) => e.id === event.id)?.earned) {
-			toast({ badge: 'event' }, `Badge: ${event.title}`, 'Earned while it lasted.');
+			toast({ badge: 'event' }, `Badge earned: ${event.title}`, 'Earned while it lasted.');
 		}
 	}
 	if (after.profile.level > before.profile.level) {
