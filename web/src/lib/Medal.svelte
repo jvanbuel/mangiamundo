@@ -34,14 +34,25 @@
 		pioneer: 'var(--completed)',
 		event: 'var(--event)'
 	};
+	/** Icon colour on each face: white on deep faces, dark ink on light ones. */
+	const INK: Record<MedalKind, string> = {
+		visits: 'var(--on-available)',
+		countries: 'var(--on-available)',
+		completed: 'var(--on-completed)',
+		continent: 'var(--on-discovered)',
+		world: 'var(--on-completed)',
+		everything: 'var(--on-discovered)',
+		pioneer: 'var(--on-completed)',
+		event: 'var(--on-event)'
+	};
 	const Icon = $derived(ICONS[kind]);
 </script>
 
 <span
 	class="medal"
-	class:locked={!earned}
 	style:--size="{size}px"
 	style:--color={earned ? COLORS[kind] : 'var(--line)'}
+	style:--ink={earned ? INK[kind] : 'var(--muted)'}
 	aria-hidden="true"
 >
 	<Icon size={size * 0.44} strokeWidth={2.5} />
@@ -57,11 +68,7 @@
 		place-items: center;
 		border-radius: 50%;
 		background: var(--color);
-		color: #fff;
+		color: var(--ink);
 		box-shadow: inset 0 calc(var(--size) * -0.07) 0 color-mix(in srgb, var(--color) 70%, #000);
-	}
-
-	.medal.locked {
-		color: var(--muted);
 	}
 </style>

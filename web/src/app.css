@@ -21,6 +21,11 @@
 	--discovered: #c46500;
 	--completed: #1b6e3c;
 	--on-completed: #ffffff;
+	--on-available: #241245;
+	--on-discovered: #ffffff;
+	--on-event: #ffffff;
+	/* The empty part of a progress bar: lines are too faint for it. */
+	--track: #b4c1cf;
 	--event: #c2417a;
 	--glass: rgb(255 255 255 / 0.92);
 	--shadow: rgb(20 38 58 / 0.16);
@@ -51,6 +56,14 @@
 		--discovered: #e8a33a;
 		--completed: #a6ecb9;
 		--on-completed: #06210f;
+	--on-available: #ffffff;
+	--on-discovered: #2a1700;
+	--on-event: #2a0716;
+	--track: #2f4c6a;
+		--on-available: #ffffff;
+		--on-discovered: #2a1700;
+		--on-event: #2a0716;
+		--track: #2f4c6a;
 		--event: #e46a9f;
 		--glass: rgb(19 37 54 / 0.9);
 		--shadow: rgb(0 0 0 / 0.45);
@@ -76,6 +89,10 @@
 	--discovered: #e8a33a;
 	--completed: #a6ecb9;
 	--on-completed: #06210f;
+	--on-available: #ffffff;
+	--on-discovered: #2a1700;
+	--on-event: #2a0716;
+	--track: #2f4c6a;
 	--event: #e46a9f;
 	--glass: rgb(19 37 54 / 0.9);
 	--shadow: rgb(0 0 0 / 0.45);
@@ -137,7 +154,7 @@ a {
 .bar {
 	height: 6px;
 	border-radius: 3px;
-	background: var(--line);
+	background: var(--track);
 	overflow: hidden;
 }
 

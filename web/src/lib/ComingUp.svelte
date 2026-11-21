@@ -136,7 +136,7 @@
 	.month {
 		padding: 2px 0;
 		background: var(--event);
-		color: #fff;
+		color: var(--on-event);
 		font-size: 11px;
 		font-weight: 800;
 		text-transform: uppercase;
