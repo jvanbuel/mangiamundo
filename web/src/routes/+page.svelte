@@ -88,10 +88,10 @@
 		</div>
 
 		<ul class="legend" aria-label="Legend">
-			<li><span style:background="var(--available)"></span>To discover</li>
-			<li><span style:background="var(--discovered)"></span>Tasted</li>
-			<li><span style:background="var(--completed)"></span>Completed</li>
-			<li><span style:background="var(--land)"></span>None nearby</li>
+			<li><span class="swatch available"></span>To discover</li>
+			<li><span class="swatch discovered"></span>Tasted</li>
+			<li><span class="swatch completed"></span>Completed</li>
+			<li><span class="swatch none"></span>None nearby</li>
 		</ul>
 	</div>
 
@@ -425,12 +425,28 @@
 		gap: 6px;
 	}
 
-	.legend span {
-		width: 10px;
-		height: 10px;
+	/* The same shapes as the list's status marks, so the states don't rest on colour alone. */
+	.swatch {
+		width: 12px;
+		height: 12px;
+		border-radius: 50%;
+		border: 2px solid var(--available);
+	}
+
+	.swatch.discovered {
+		border-color: var(--discovered);
+		background: linear-gradient(to top, var(--discovered) 50%, transparent 50%);
+	}
+
+	.swatch.completed {
+		border-color: var(--completed);
+		background: var(--completed);
+	}
+
+	.swatch.none {
 		border-radius: 3px;
-		/* Keeps the pale "not in this area" swatch visible on the pill. */
-		box-shadow: inset 0 0 0 1px rgb(0 0 0 / 0.15);
+		border: 1px solid rgb(0 0 0 / 0.15);
+		background: var(--land);
 	}
 
 	@media (max-width: 760px) {

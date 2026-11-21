@@ -1,8 +1,11 @@
 <script lang="ts">
+	import Check from '@lucide/svelte/icons/check';
 	import { country } from './state.svelte';
 	import { statusOf, type Discover } from './types';
 
 	let { discover, onselect }: { discover: Discover; onselect: (code: string) => void } = $props();
+
+	const LABELS = { available: 'To discover', discovered: 'Tasted', completed: 'Completed' } as const;
 
 	const groups = $derived(
 		discover.continents
@@ -30,7 +33,9 @@
 						<span class="flag" aria-hidden="true">{entry.info?.flag}</span>
 						<span class="name">{entry.info?.name ?? entry.code}</span>
 						<span class="count">{entry.visited}/{entry.places}</span>
-						<span class="dot {entry.status}" title={entry.status}></span>
+						<span class="mark {entry.status}" title={LABELS[entry.status]}>
+							{#if entry.status === 'completed'}<Check size={10} strokeWidth={4} aria-hidden="true" />{/if}
+						</span>
 					</button>
 				</li>
 			{/each}
@@ -68,7 +73,7 @@
 	button {
 		width: 100%;
 		display: grid;
-		grid-template-columns: 26px 1fr auto 10px;
+		grid-template-columns: 26px 1fr auto 14px;
 		align-items: center;
 		gap: 10px;
 		padding: 10px 8px;
@@ -91,18 +96,24 @@
 		font-variant-numeric: tabular-nums;
 	}
 
-	.dot {
-		width: 10px;
-		height: 10px;
+	/* Status by shape as well as colour: empty ring, half full, full with a tick. */
+	.mark {
+		width: 14px;
+		height: 14px;
+		display: grid;
+		place-items: center;
 		border-radius: 50%;
-		background: var(--available);
+		border: 2px solid var(--available);
 	}
 
-	.dot.discovered {
-		background: var(--discovered);
+	.mark.discovered {
+		border-color: var(--discovered);
+		background: linear-gradient(to top, var(--discovered) 50%, transparent 50%);
 	}
 
-	.dot.completed {
+	.mark.completed {
+		border-color: var(--completed);
 		background: var(--completed);
+		color: var(--on-completed);
 	}
 </style>
