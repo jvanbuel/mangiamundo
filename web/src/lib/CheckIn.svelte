@@ -48,8 +48,10 @@
 	}
 
 	.check.done {
-		--face: var(--completed);
-		color: var(--on-completed);
+		background: color-mix(in srgb, var(--completed) 14%, var(--panel));
+		color: var(--completed);
+		box-shadow: none;
+		padding: 10px 14px;
 	}
 
 	.check:disabled {

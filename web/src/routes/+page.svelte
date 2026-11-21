@@ -430,7 +430,8 @@
 		width: 12px;
 		height: 12px;
 		border-radius: 50%;
-		border: 2px solid var(--available);
+		border: 2px solid var(--available-edge);
+		background: var(--available);
 	}
 
 	.swatch.discovered {

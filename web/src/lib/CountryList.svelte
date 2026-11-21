@@ -103,7 +103,8 @@
 		display: grid;
 		place-items: center;
 		border-radius: 50%;
-		border: 2px solid var(--available);
+		border: 2px solid var(--available-edge);
+		background: var(--available);
 	}
 
 	.mark.discovered {

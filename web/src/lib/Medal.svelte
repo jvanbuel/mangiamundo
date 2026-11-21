@@ -25,23 +25,23 @@
 		event: PartyPopper
 	};
 	const COLORS: Record<MedalKind, string> = {
-		visits: 'var(--available)',
-		countries: 'var(--available)',
+		visits: 'var(--discovered)',
+		countries: 'var(--discovered)',
 		completed: 'var(--completed)',
-		continent: 'var(--discovered)',
+		continent: 'var(--completed)',
 		world: 'var(--completed)',
-		everything: 'var(--discovered)',
+		everything: 'var(--completed)',
 		pioneer: 'var(--completed)',
 		event: 'var(--event)'
 	};
 	/** Icon colour on each face: white on deep faces, dark ink on light ones. */
 	const INK: Record<MedalKind, string> = {
-		visits: 'var(--on-available)',
-		countries: 'var(--on-available)',
+		visits: 'var(--on-discovered)',
+		countries: 'var(--on-discovered)',
 		completed: 'var(--on-completed)',
-		continent: 'var(--on-discovered)',
+		continent: 'var(--on-completed)',
 		world: 'var(--on-completed)',
-		everything: 'var(--on-discovered)',
+		everything: 'var(--on-completed)',
 		pioneer: 'var(--on-completed)',
 		event: 'var(--on-event)'
 	};

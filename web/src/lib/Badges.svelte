@@ -114,7 +114,7 @@
 		padding: 2px 8px;
 		border-radius: 999px;
 		background: color-mix(in srgb, var(--event) 16%, transparent);
-		color: var(--event);
+		color: var(--event-text);
 		font-size: var(--text-xs);
 		font-weight: 700;
 	}

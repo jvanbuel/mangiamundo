@@ -100,7 +100,13 @@
 					color('--land')
 				]
 			},
-			borders: { 'line-color': ['case', flag('selected'), color('--text'), color('--map-border')] },
+			borders: {
+				'line-color': [
+					'case', flag('selected'), color('--text'),
+					['==', featureState('status', 'none'), 'available'], color('--available-edge'),
+					color('--map-border')
+				]
+			},
 			'here-halo': { 'circle-color': color('--text') },
 			here: { 'circle-color': color('--text'), 'circle-stroke-color': color('--panel') }
 		};
@@ -172,7 +178,7 @@
 							source: SOURCE,
 							paint: {
 								...themed.borders,
-								'line-width': ['case', flag('selected'), 2.5, 0.6] as any
+								'line-width': ['case', flag('selected'), 2, ['==', featureState('status', 'none'), 'available'], 1, 0.6] as any
 							}
 						},
 						{

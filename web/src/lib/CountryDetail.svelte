@@ -146,7 +146,7 @@
 	}
 
 	.hours.open {
-		color: var(--completed);
+		color: var(--text);
 	}
 
 	.info {

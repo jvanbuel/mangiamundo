@@ -190,7 +190,10 @@
 		margin-bottom: 6px;
 	}
 
-	.status.open,
+	.status.open {
+		color: var(--text);
+	}
+
 	.verified {
 		color: var(--completed);
 	}
