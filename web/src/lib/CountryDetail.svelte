@@ -85,7 +85,8 @@
 		color: var(--muted);
 		font-size: var(--text-sm);
 		font-weight: 700;
-		padding: 4px 0;
+		padding: 12px 0;
+		margin: -8px 0;
 	}
 
 	.back:hover {

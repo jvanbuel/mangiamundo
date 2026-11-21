@@ -118,7 +118,8 @@
 		color: var(--muted);
 		font-size: var(--text-sm);
 		font-weight: 700;
-		padding: 4px 0;
+		padding: 12px 0;
+		margin: -8px 0;
 	}
 
 	.back:hover {
@@ -164,6 +165,7 @@
 
 	.actions a {
 		text-decoration: none;
+		padding: 12px 0;
 	}
 
 	section {
@@ -234,6 +236,14 @@
 	footer button {
 		color: inherit;
 		text-decoration: underline;
+		/* A taller hit area than the small text. */
+		display: inline-block;
+		padding: 12px 0;
+		margin: -12px 0;
+	}
+
+	footer p + p {
+		margin-top: 12px;
 	}
 
 	footer button:disabled {

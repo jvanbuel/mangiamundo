@@ -71,7 +71,7 @@
 		grid-template-columns: 26px 1fr auto 10px;
 		align-items: center;
 		gap: 10px;
-		padding: 8px;
+		padding: 10px 8px;
 		border-radius: 10px;
 		text-align: left;
 	}

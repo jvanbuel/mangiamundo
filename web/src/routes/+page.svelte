@@ -306,10 +306,11 @@
 		line-height: 1.25;
 	}
 
+	/* 44px to tap, without pushing the heading around. */
 	.gear {
-		margin-left: auto;
+		margin: -12px -12px -12px auto;
 		display: flex;
-		padding: 4px;
+		padding: 12px;
 		color: var(--muted);
 	}
 

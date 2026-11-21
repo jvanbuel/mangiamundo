@@ -240,7 +240,7 @@
 		width: auto;
 		display: grid;
 		place-items: center;
-		padding: 8px;
+		padding: 14px;
 		color: var(--muted);
 	}
 
