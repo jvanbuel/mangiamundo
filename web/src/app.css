@@ -173,9 +173,11 @@ a {
 	transition: width 0.4s ease;
 }
 
+/* Reduced motion: nothing moves or grows, but fades and colour changes stay, so
+   changes are still noticed. */
 @media (prefers-reduced-motion: reduce) {
 	* {
-		transition: none !important;
+		transition-property: opacity, color, background-color, border-color !important;
 		animation: none !important;
 	}
 }
