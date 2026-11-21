@@ -47,6 +47,41 @@ struct WorldCountry {
 
 struct World {
     let countries: [WorldCountry]
+    /// The countries each one borders: outlines that share a vertex.
+    let neighbours: [String: Set<String>]
+
+    init(countries: [WorldCountry]) {
+        self.countries = countries
+        var at: [SIMD2<Double>: Set<String>] = [:]
+        for country in countries {
+            for ring in country.rings {
+                for i in stride(from: 0, to: ring.count - 1, by: 2) {
+                    at[SIMD2(ring[i], ring[i + 1]), default: []].insert(country.code)
+                }
+            }
+        }
+        var neighbours: [String: Set<String>] = [:]
+        for codes in at.values where codes.count > 1 {
+            for code in codes { neighbours[code, default: []].formUnion(codes.subtracting([code])) }
+        }
+        self.neighbours = neighbours
+    }
+
+    /// Groups `codes` into runs of bordering countries: each code maps to its run's first code.
+    func regions(_ codes: Set<String>) -> [String: String] {
+        var region: [String: String] = [:]
+        for start in codes where region[start] == nil {
+            var queue = [start]
+            region[start] = start
+            while let code = queue.popLast() {
+                for next in neighbours[code] ?? [] where codes.contains(next) && region[next] == nil {
+                    region[next] = start
+                    queue.append(next)
+                }
+            }
+        }
+        return region
+    }
 
     /// The country at a position, or nil over the sea.
     func country(lng: Double, lat: Double) -> WorldCountry? {

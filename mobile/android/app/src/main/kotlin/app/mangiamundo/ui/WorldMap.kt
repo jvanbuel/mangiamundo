@@ -19,6 +19,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.PathFillType
@@ -37,6 +38,7 @@ import app.mangiamundo.core.WorldCountry
 import kotlin.math.PI
 import kotlin.math.cos
 import kotlin.math.max
+import kotlin.math.min
 import kotlin.math.sin
 
 /**
@@ -82,13 +84,24 @@ fun WorldMap(
         animationSpec = infiniteRepeatable(tween(2400, easing = LinearEasing), RepeatMode.Restart),
         label = "phase",
     )
+    // Now and then a rainbow glint sweeps across each diamond: 0 to 1 every 4 seconds.
+    val glint by rememberInfiniteTransition(label = "glint").animateFloat(
+        initialValue = 0f,
+        targetValue = 1f,
+        animationSpec = infiniteRepeatable(tween(4000, easing = LinearEasing), RepeatMode.Restart),
+        label = "sweep",
+    )
 
     // One path per fill colour plus one for all borders, reused across frames.
     val fills = remember { List(4) { Path().apply { fillType = PathFillType.EvenOdd } } }
     val star = remember { Path() }
-    val facets = remember { Path() }
     val globe = remember { Path() }
-    val sparkleAt = remember { ArrayList<Offset>() }
+    // Where each completed country's sparkles go, and how much they shrink to fit it.
+    val sparkleAt = remember { ArrayList<Pair<Offset, Float>>() }
+    // Bordering diamonds shine as one surface: one path per run of completed neighbours
+    // (and per copy of the flat map).
+    val gems = remember { HashMap<String, Path>() }
+    val regions = remember(world, statuses) { world.regions(statuses.filterValues { it == Status.COMPLETED }.keys) }
     val borders = remember { Path() }
     val outline = remember { Path() }
     val ring = remember { Path() }
@@ -133,6 +146,7 @@ fun WorldMap(
         borders.rewind()
         outline.rewind()
         sparkleAt.clear()
+        gems.clear()
 
         // The flat map repeats sideways, so draw the copies that are in view.
         val copies = if (flat) doubleArrayOf(-360.0, 0.0, 360.0) else doubleArrayOf(0.0)
@@ -147,7 +161,10 @@ fun WorldMap(
             var largestCount = 0
             var largestX = 0f
             var largestY = 0f
+            var largestSide = 0f
+            val region = regions[country.code]
             for (shift in copies) {
+                val gem = region?.let { gems.getOrPut("$it $shift") { Path().apply { fillType = PathFillType.EvenOdd } } }
                 if (flat) {
                     projector.project(country.maxLng + shift, 0.0, point)
                     if (point[0] < 0) continue
@@ -160,12 +177,18 @@ fun WorldMap(
                     var seen = 0
                     var sumX = 0f
                     var sumY = 0f
+                    var minX = Float.MAX_VALUE
+                    var minY = Float.MAX_VALUE
+                    var maxX = -Float.MAX_VALUE
+                    var maxY = -Float.MAX_VALUE
                     for (i in coordinates.indices step 2) {
                         if (projector.project(coordinates[i] + shift, coordinates[i + 1], point)) {
                             visible = true
                             seen++
                             sumX += point[0]
                             sumY += point[1]
+                            minX = min(minX, point[0]); maxX = max(maxX, point[0])
+                            minY = min(minY, point[1]); maxY = max(maxY, point[1])
                         }
                         if (i == 0) ring.moveTo(point[0], point[1]) else ring.lineTo(point[0], point[1])
                     }
@@ -174,14 +197,20 @@ fun WorldMap(
                         largestCount = seen
                         largestX = sumX / seen
                         largestY = sumY / seen
+                        largestSide = min(maxX - minX, maxY - minY)
                     }
                     ring.close()
                     fill.addPath(ring)
+                    gem?.addPath(ring)
                     borders.addPath(ring)
                     if (country.code == selected) outline.addPath(ring)
                 }
             }
-            if (largestCount > 0) sparkleAt.add(Offset(largestX, largestY))
+            if (largestCount > 0) {
+                // The cluster is about 42dp across at full size; it shrinks to fit smaller countries.
+                val fit = largestSide / SPARKLE_SPAN.dp.toPx()
+                sparkleAt.add(Offset(largestX, largestY) to fit.coerceIn(0.2f, 1f))
+            }
         }
 
         drawPath(fills[0], colors.land)
@@ -189,20 +218,41 @@ fun WorldMap(
         drawPath(fills[2], colors.discovered)
         drawPath(fills[3], colors.completed)
 
-        // Facets cut into each diamond: a lattice of crossing lines.
-        if (!fills[3].isEmpty) {
-            val box = fills[3].getBounds()
-            val step = 7.dp.toPx()
-            facets.rewind()
-            var x = box.left - box.height
-            while (x < box.right) {
-                facets.moveTo(x, box.top)
-                facets.lineTo(x + box.height, box.bottom)
-                facets.moveTo(x + box.height, box.top)
-                facets.lineTo(x, box.bottom)
-                x += step
+        // Each diamond shines: lit from the top left, deeper towards the bottom right, and now
+        // and then a glint sweeps across it, a white heart with rainbow fringes, like light
+        // split by a cut stone. With animations off the sweep holds before it starts.
+        for (gem in gems.values) {
+            if (gem.isEmpty) continue
+            val box = gem.getBounds()
+            clipPath(gem) {
+                drawRect(
+                    Brush.linearGradient(
+                        0f to Color.White, 0.45f to colors.completed, 1f to colors.completedFacet,
+                        start = box.topLeft, end = box.bottomRight,
+                    ),
+                    box.topLeft, box.size,
+                )
+                if (glint > 0.7f) {
+                    val t = (glint - 0.7f) / 0.3f
+                    val c = Offset(box.left + t * box.width, box.top + t * box.height)
+                    val d = max(box.width, box.height) * 0.18f
+                    drawRect(
+                        Brush.linearGradient(
+                            0f to Color.Red.copy(alpha = 0f),
+                            0.15f to Color.Red.copy(alpha = 0.35f),
+                            0.27f to Color(0xFFFF9500).copy(alpha = 0.45f),
+                            0.38f to Color.Yellow.copy(alpha = 0.55f),
+                            0.5f to Color.White.copy(alpha = 0.9f),
+                            0.62f to Color.Cyan.copy(alpha = 0.55f),
+                            0.73f to Color.Blue.copy(alpha = 0.45f),
+                            0.85f to Color(0xFFAF52DE).copy(alpha = 0.35f),
+                            1f to Color(0xFFAF52DE).copy(alpha = 0f),
+                            start = Offset(c.x - d, c.y - d), end = Offset(c.x + d, c.y + d),
+                        ),
+                        box.topLeft, box.size,
+                    )
+                }
             }
-            clipPath(fills[3]) { drawPath(facets, colors.completedFacet, style = Stroke(0.8.dp.toPx())) }
         }
 
         // Thin borders everywhere; each state's countries get an outline in its own colour.
@@ -225,15 +275,15 @@ fun WorldMap(
 
         // Sparkles: the diamond's edge colour with a white heart. Each flashes on its own
         // beat, growing and brightening quickly and then shrinking back.
-        for (at in sparkleAt) {
+        for ((at, scale) in sparkleAt) {
             SPARKLES.forEachIndexed { i, (dx, dy, tip) ->
-                val c = Offset(at.x + dx.dp.toPx(), at.y + dy.dp.toPx())
+                val c = Offset(at.x + dx.dp.toPx() * scale, at.y + dy.dp.toPx() * scale)
                 // Offset so the phase's starting point, all that shows when animations are off, has
                 // the main sparkle at full size.
                 val wave = max(0f, sin(twinkle + i * 2.1f + (PI / 2).toFloat()))
                 val flash = wave * wave
                 val alpha = 0.25f + 0.75f * flash
-                val size = tip.dp.toPx() * (0.55f + 0.45f * flash)
+                val size = tip.dp.toPx() * scale * (0.55f + 0.45f * flash)
                 drawStar(star, c, size, colors.completedEdge, alpha)
                 drawStar(star, c, size * 0.46f, Color.White, alpha)
             }
@@ -248,7 +298,10 @@ fun WorldMap(
     }
 }
 
-/** Pixel offsets and tip sizes (dp) of a diamond's three sparkles, so small countries get them too. */
+/** Width (dp) of the sparkle cluster at full size. */
+private const val SPARKLE_SPAN = 42f
+
+/** Offsets and tip sizes (dp) of a diamond's three sparkles at full size. */
 private val SPARKLES = listOf(Triple(0f, 0f, 11f), Triple(14f, -12f, 7f), Triple(-16f, 13f, 5.5f))
 
 /** A four-pointed star: tips at [tip] from the centre, sides curving in towards it. */

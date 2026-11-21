@@ -128,16 +128,19 @@ struct WorldMapView: View {
         // Where each completed country's sparkles go: the middle of its largest visible ring,
         // scaled to that ring's size on screen so they stay within the country.
         var sparkleAt: [(point: CGPoint, scale: CGFloat)] = []
-        // Each completed country's shape on its own, so each gets its own shine.
-        var gems: [Path] = []
+        // Bordering diamonds shine as one surface: one path per run of completed neighbours
+        // (and per copy of the flat map).
+        let regions = world.regions(Set(statuses.filter { $0.value == .completed }.keys))
+        var gems: [String: Path] = [:]
 
         // The flat map repeats sideways, so draw the copies that are in view.
         let copies: [Double] = flat ? [-360, 0, 360] : [0]
         for country in world.countries {
             let status = statuses[country.code]
             var largest: (count: Int, sum: CGPoint, box: CGRect) = (0, .zero, .null)
-            var gem = Path()
             for shift in copies {
+                var gem = Path()
+                defer { if !gem.isEmpty, let region = regions[country.code] { gems["\(region) \(shift)", default: Path()].addPath(gem) } }
                 if flat {
                     if projector.project(lng: country.maxLng + shift, lat: 0).point.x < 0 { continue }
                     if projector.project(lng: country.minLng + shift, lat: 0).point.x > size.width { continue }
@@ -170,7 +173,6 @@ struct WorldMapView: View {
                     if country.code == selected { outline.addPath(ring) }
                 }
             }
-            if !gem.isEmpty { gems.append(gem) }
             if largest.count > 0 {
                 let point = CGPoint(x: largest.sum.x / CGFloat(largest.count), y: largest.sum.y / CGFloat(largest.count))
                 let fit = min(largest.box.width, largest.box.height) / Self.sparkleSpan
@@ -186,7 +188,7 @@ struct WorldMapView: View {
 
         // Each diamond shines: lit from the top left, deeper towards the bottom right, and
         // now and then a glint of light sweeps across it (not with Reduce Motion).
-        for gem in gems {
+        for gem in gems.values {
             let box = gem.boundingRect
             context.drawLayer { layer in
                 layer.clip(to: gem, style: evenOdd)
