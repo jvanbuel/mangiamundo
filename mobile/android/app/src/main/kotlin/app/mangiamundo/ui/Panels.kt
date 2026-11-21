@@ -33,6 +33,7 @@ import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.rounded.AddLocationAlt
 import androidx.compose.material.icons.rounded.Celebration
 import androidx.compose.material.icons.rounded.Check
+import androidx.compose.material.icons.rounded.Diamond
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.Notifications
 import androidx.compose.material.icons.rounded.NotificationsActive
@@ -77,6 +78,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.semantics.contentDescription
@@ -176,21 +179,39 @@ fun ChunkyButton(
 }
 
 @Composable
-private fun Bar(fraction: Float, modifier: Modifier = Modifier, color: Color = LocalAppColors.current.accent) {
+private fun Bar(fraction: Float, modifier: Modifier = Modifier, color: Color = LocalAppColors.current.accent) =
+    Bar(fraction, modifier, SolidColor(color))
+
+/** A progress bar; the empty part is outlined, so it shows even at zero. */
+@Composable
+private fun Bar(fraction: Float, modifier: Modifier = Modifier, brush: Brush) {
+    val colors = LocalAppColors.current
     val shape = RoundedCornerShape(50)
-    Box(modifier.height(6.dp).clip(shape).background(LocalAppColors.current.line)) {
-        Box(Modifier.fillMaxHeight().fillMaxWidth(fraction.coerceIn(0f, 1f)).clip(shape).background(color))
+    Box(modifier.height(6.dp).clip(shape).background(colors.track).border(1.dp, colors.trackEdge, shape)) {
+        Box(Modifier.fillMaxHeight().fillMaxWidth(fraction.coerceIn(0f, 1f)).clip(shape).background(brush))
     }
 }
 
 private fun fraction(part: Int, whole: Int) = if (whole == 0) 0f else part.toFloat() / whole
 
+/** A country's state by shape as well as colour: a blue ring, a half-filled gold one, a diamond. */
 @Composable
-private fun statusColor(status: Status): Color = with(LocalAppColors.current) {
-    when (status) {
-        Status.AVAILABLE -> available
-        Status.DISCOVERED -> discovered
-        Status.COMPLETED -> completed
+fun StatusMark(status: Status, size: Dp = 14.dp) {
+    val colors = LocalAppColors.current
+    val ring = when (status) {
+        Status.AVAILABLE -> colors.available
+        Status.DISCOVERED -> colors.discovered
+        Status.COMPLETED -> colors.completedEdge
+    }
+    val fill = when (status) {
+        Status.AVAILABLE -> SolidColor(Color.Transparent)
+        Status.DISCOVERED -> Brush.verticalGradient(0.5f to Color.Transparent, 0.5f to colors.discovered)
+        Status.COMPLETED -> colors.diamond
+    }
+    Box(Modifier.size(size).clip(CircleShape).background(fill).border(2.dp, ring, CircleShape), contentAlignment = Alignment.Center) {
+        if (status == Status.COMPLETED) {
+            Icon(Icons.Rounded.Diamond, contentDescription = null, tint = colors.onCompleted, modifier = Modifier.size(size * 0.55f))
+        }
     }
 }
 
@@ -205,13 +226,13 @@ fun Legend(modifier: Modifier = Modifier) {
             .padding(horizontal = 10.dp, vertical = 6.dp),
         horizontalArrangement = Arrangement.spacedBy(10.dp),
     ) {
-        for ((color, label) in listOf(
-            colors.available to "To discover",
-            colors.discovered to "Tasted",
-            colors.completed to "Completed",
+        for ((status, label) in listOf(
+            Status.AVAILABLE to "To discover",
+            Status.DISCOVERED to "Tasted",
+            Status.COMPLETED to "Completed",
         )) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Box(Modifier.size(9.dp).clip(RoundedCornerShape(3.dp)).background(color))
+                StatusMark(status, size = 11.dp)
                 Text(" $label", color = colors.muted, fontSize = 11.sp)
             }
         }
@@ -518,7 +539,7 @@ fun CountryRow(progress: CountryProgress, info: Country?, onClick: () -> Unit) {
         Text(info?.flag.orEmpty(), fontSize = 20.sp, modifier = Modifier.width(36.dp))
         Text(info?.name ?: progress.code, color = colors.text, modifier = Modifier.weight(1f))
         Text("${progress.visited}/${progress.places}", fontSize = 13.sp, color = colors.muted)
-        Box(Modifier.padding(start = 10.dp).size(10.dp).clip(CircleShape).background(statusColor(progress.status)))
+        Box(Modifier.padding(start = 10.dp)) { StatusMark(progress.status) }
     }
 }
 
@@ -548,7 +569,11 @@ fun CountryHeader(progress: CountryProgress, info: Country?, onBack: () -> Unit)
         Bar(
             fraction(progress.visited, progress.places),
             Modifier.fillMaxWidth().padding(top = 10.dp),
-            color = if (progress.status == Status.AVAILABLE) colors.accent else statusColor(progress.status),
+            brush = when (progress.status) {
+                Status.AVAILABLE -> SolidColor(colors.accent)
+                Status.DISCOVERED -> SolidColor(colors.discovered)
+                Status.COMPLETED -> colors.diamondBar
+            },
         )
     }
 }
@@ -653,7 +678,7 @@ fun CheckInButton(place: Place, busy: Boolean, today: LocalDate = LocalDate.now(
         if (place.visitedToday(now) == visited) onToggle() else day = now
     }
     if (visited) {
-        ChunkyButton("Visited", onClick, face = colors.completed, content = colors.onCompleted, enabled = !busy, icon = Icons.Rounded.Check)
+        ChunkyButton("Visited", onClick, face = colors.discovered, content = colors.onDiscovered, enabled = !busy, icon = Icons.Rounded.Check)
     } else {
         ChunkyButton(if (place.visited) "Check in again" else "Check in", onClick, enabled = !busy)
     }
@@ -678,7 +703,7 @@ fun PlaceRow(place: Place, busy: Boolean, onOpen: () -> Unit, onToggle: () -> Un
                         it,
                         style = MaterialTheme.typography.bodyMedium,
                         fontWeight = FontWeight.Bold,
-                        color = if (place.openNow == true) colors.completed else colors.muted,
+                        color = if (place.openNow == true) colors.text else colors.muted,
                     )
                 }
                 Text(
@@ -755,7 +780,7 @@ fun PlaceDetail(
         place.hours?.let { hours ->
             DetailHeading("Opening hours")
             hours.status?.let {
-                Text(it.text, style = body, fontWeight = FontWeight.Bold, color = if (it.open) colors.completed else colors.muted)
+                Text(it.text, style = body, fontWeight = FontWeight.Bold, color = if (it.open) colors.text else colors.muted)
             }
             val week = hours.week
             if (week == null) {
@@ -886,41 +911,59 @@ private fun BadgeKind.icon(): ImageVector = when (this) {
     BadgeKind.EVERYTHING, BadgeKind.UNKNOWN -> Icons.Rounded.EmojiEvents
 }
 
-@Composable
-private fun BadgeKind.color(): Color = with(LocalAppColors.current) {
-    when (this@color) {
-        BadgeKind.VISITS, BadgeKind.COUNTRIES -> available
-        BadgeKind.COMPLETED, BadgeKind.WORLD, BadgeKind.PIONEER -> completed
-        BadgeKind.CONTINENT, BadgeKind.EVERYTHING -> discovered
-        BadgeKind.UNKNOWN -> muted
-    }
+/** Gold for tasting, diamond for finishing, blue for the rest. */
+enum class MedalFace { GOLD, DIAMOND, BLUE, EVENT }
+
+private fun BadgeKind.face(): MedalFace = when (this) {
+    BadgeKind.VISITS, BadgeKind.COUNTRIES -> MedalFace.GOLD
+    BadgeKind.COMPLETED, BadgeKind.CONTINENT, BadgeKind.WORLD, BadgeKind.EVERYTHING -> MedalFace.DIAMOND
+    BadgeKind.PIONEER, BadgeKind.UNKNOWN -> MedalFace.BLUE
 }
 
 /** A solid token with a darker lower edge, so it reads as something you collect. */
 @Composable
-private fun MedalFace(icon: ImageVector, color: Color, earned: Boolean, size: Dp) {
+private fun MedalFace(icon: ImageVector, face: MedalFace, earned: Boolean, size: Dp) {
     val colors = LocalAppColors.current
-    val face = if (earned) color else colors.line
+    val fill: Brush = when {
+        !earned -> SolidColor(colors.line)
+        face == MedalFace.GOLD -> SolidColor(colors.discovered)
+        face == MedalFace.DIAMOND -> colors.diamond
+        face == MedalFace.EVENT -> SolidColor(colors.event)
+        else -> SolidColor(colors.accent)
+    }
+    val edge = when {
+        !earned -> lerp(colors.line, Color.Black, 0.3f)
+        face == MedalFace.GOLD -> colors.discoveredEdge
+        face == MedalFace.DIAMOND -> colors.completedEdge
+        face == MedalFace.EVENT -> lerp(colors.event, Color.Black, 0.3f)
+        else -> lerp(colors.accent, Color.Black, 0.3f)
+    }
+    val ink = when {
+        !earned -> colors.muted
+        face == MedalFace.GOLD -> colors.onDiscovered
+        face == MedalFace.DIAMOND -> colors.onCompleted
+        else -> colors.onAccent
+    }
     Box(
         Modifier
             .size(size)
             .clip(CircleShape)
-            .background(lerp(face, Color.Black, 0.3f))
+            .background(edge)
             .padding(bottom = size * 0.07f)
             .clip(CircleShape)
-            .background(face),
+            .background(fill),
         contentAlignment = Alignment.Center,
     ) {
-        Icon(icon, contentDescription = null, tint = if (earned) Color.White else colors.muted, modifier = Modifier.size(size * 0.46f))
+        Icon(icon, contentDescription = null, tint = ink, modifier = Modifier.size(size * 0.46f))
     }
 }
 
 @Composable
-fun Medal(kind: BadgeKind, earned: Boolean, size: Dp = 64.dp) = MedalFace(kind.icon(), kind.color(), earned, size)
+fun Medal(kind: BadgeKind, earned: Boolean, size: Dp = 64.dp) = MedalFace(kind.icon(), kind.face(), earned, size)
 
 /** The medal of a limited-time event. */
 @Composable
-fun EventMedal(earned: Boolean, size: Dp = 64.dp) = MedalFace(Icons.Rounded.Celebration, LocalAppColors.current.event, earned, size)
+fun EventMedal(earned: Boolean, size: Dp = 64.dp) = MedalFace(Icons.Rounded.Celebration, MedalFace.EVENT, earned, size)
 
 private fun parseDay(day: String) = java.time.LocalDate.parse(day)
 private val shortDate = java.time.format.DateTimeFormatter.ofPattern("d MMM")
@@ -1003,7 +1046,7 @@ private fun CalendarPage(day: java.time.LocalDate) {
         Text(
             day.format(java.time.format.DateTimeFormatter.ofPattern("MMM")).uppercase(),
             style = MaterialTheme.typography.labelSmall,
-            color = Color.White,
+            color = colors.onAccent,
             textAlign = TextAlign.Center,
             modifier = Modifier.fillMaxWidth().background(colors.event).padding(vertical = 1.dp),
         )
@@ -1031,7 +1074,7 @@ private fun LimitedTime(events: List<EventProgress>, today: java.time.LocalDate)
                         Text(
                             timing,
                             style = MaterialTheme.typography.labelMedium,
-                            color = colors.event,
+                            color = colors.accentText,
                             modifier = Modifier.clip(RoundedCornerShape(50)).background(colors.event.copy(alpha = 0.16f)).padding(horizontal = 8.dp, vertical = 2.dp),
                         )
                     }
