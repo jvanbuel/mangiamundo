@@ -102,47 +102,92 @@ extension BadgeKind {
         }
     }
 
-    var color: Color {
+    /// Gold for tasting, diamond for finishing, blue for the rest.
+    var face: Medal.Face {
         switch self {
-        case .visits, .countries: return Theme.available
-        case .completed, .world, .pioneer: return Theme.completed
-        case .continent, .everything: return Theme.discovered
-        case .unknown: return Theme.muted
+        case .visits, .countries: return .gold
+        case .completed, .continent, .world, .everything: return .diamond
+        case .pioneer, .unknown: return .blue
         }
     }
 }
 
 /// A solid token with a darker lower edge, so it reads as something you collect.
 struct Medal: View {
+    enum Face { case gold, diamond, blue, event }
+
     let symbol: String
-    let color: Color
+    let face: Face
     var earned = true
     var size: CGFloat = 64
 
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var glint = false
+
     init(kind: BadgeKind, earned: Bool = true, size: CGFloat = 64) {
-        self.init(symbol: kind.symbol, color: kind.color, earned: earned, size: size)
+        self.init(symbol: kind.symbol, face: kind.face, earned: earned, size: size)
     }
 
-    init(symbol: String, color: Color, earned: Bool = true, size: CGFloat = 64) {
+    init(symbol: String, face: Face, earned: Bool = true, size: CGFloat = 64) {
         self.symbol = symbol
-        self.color = color
+        self.face = face
         self.earned = earned
         self.size = size
     }
 
     /// The medal of a limited-time event.
     static func event(earned: Bool = true, size: CGFloat = 64) -> Medal {
-        Medal(symbol: "party.popper.fill", color: Theme.event, earned: earned, size: size)
+        Medal(symbol: "party.popper.fill", face: .event, earned: earned, size: size)
+    }
+
+    private var fill: AnyShapeStyle {
+        guard earned else { return AnyShapeStyle(Theme.line) }
+        switch face {
+        case .gold: return AnyShapeStyle(Theme.discovered)
+        case .diamond: return AnyShapeStyle(Theme.diamond)
+        case .blue: return AnyShapeStyle(Theme.accent)
+        case .event: return AnyShapeStyle(Theme.event)
+        }
+    }
+
+    private var edge: Color {
+        guard earned else { return Theme.line }
+        switch face {
+        case .gold: return Theme.discoveredEdge
+        case .diamond: return Theme.completedEdge
+        case .blue, .event: return Theme.accent
+        }
+    }
+
+    private var ink: Color {
+        guard earned else { return Theme.muted }
+        switch face {
+        case .gold: return Theme.onDiscovered
+        case .diamond: return Theme.onCompleted
+        case .blue, .event: return Theme.onAccent
+        }
     }
 
     var body: some View {
-        let face = earned ? color : Theme.line
+        let darken = earned && (face == .blue || face == .event) || !earned
         ZStack {
-            Circle().fill(face).brightness(-0.18)
-            Circle().fill(face).padding(.bottom, size * 0.07)
+            Circle().fill(edge).brightness(darken ? -0.18 : 0)
+            Circle().fill(fill).padding(.bottom, size * 0.07)
+            if earned && face == .diamond {
+                // Diamond medals catch the light now and then: a glint sweeps across.
+                LinearGradient(colors: [.clear, .white.opacity(0.9), .clear], startPoint: .leading, endPoint: .trailing)
+                    .frame(width: size * 0.5)
+                    .rotationEffect(.degrees(20))
+                    .offset(x: glint ? size : -size)
+                    .mask(Circle().padding(.bottom, size * 0.07))
+                    .onAppear {
+                        guard !reduceMotion else { return }
+                        withAnimation(.easeInOut(duration: 1.2).delay(2.8).repeatForever(autoreverses: false)) { glint = true }
+                    }
+            }
             Image(systemName: symbol)
                 .font(.system(size: size * 0.4, weight: .bold))
-                .foregroundStyle(earned ? Color.white : Theme.muted)
+                .foregroundStyle(ink)
                 .offset(y: -size * 0.035)
         }
         .frame(width: size, height: size)
@@ -222,7 +267,7 @@ struct LimitedTime: View {
                             Spacer()
                             Text(timing(event))
                                 .font(Theme.font(.caption, .extraBold))
-                                .foregroundStyle(Theme.event)
+                                .foregroundStyle(Theme.accentText)
                                 .padding(.horizontal, 8)
                                 .padding(.vertical, 2)
                                 .background(Theme.event.opacity(0.16), in: Capsule())
@@ -325,7 +370,7 @@ struct CalendarPage: View {
         VStack(spacing: 0) {
             Text(date.formatted(.dateTime.month(.abbreviated)).uppercased())
                 .font(Theme.font(.caption2, .extraBold))
-                .foregroundStyle(.white)
+                .foregroundStyle(Theme.onAccent)
                 .frame(maxWidth: .infinity)
                 .padding(.vertical, 2)
                 .background(Theme.event)
@@ -344,14 +389,26 @@ struct CalendarPage: View {
 struct Bar: View {
     var part: Int
     var whole: Int
-    var color = Theme.accent
+    var color: AnyShapeStyle = AnyShapeStyle(Theme.accent)
     var height: CGFloat = 6
+
+    init(part: Int, whole: Int, color: Color = Theme.accent, height: CGFloat = 6) {
+        self.init(part: part, whole: whole, style: AnyShapeStyle(color), height: height)
+    }
+
+    init(part: Int, whole: Int, style: AnyShapeStyle, height: CGFloat = 6) {
+        self.part = part
+        self.whole = whole
+        self.color = style
+        self.height = height
+    }
 
     var body: some View {
         GeometryReader { geometry in
             let fraction = whole == 0 ? 0 : min(max(CGFloat(part) / CGFloat(whole), 0), 1)
             ZStack(alignment: .leading) {
-                Capsule().fill(Theme.line)
+                // The empty part is outlined, so the bar shows even at zero.
+                Capsule().fill(Theme.track).overlay(Capsule().stroke(Theme.trackEdge, lineWidth: 1))
                 Capsule().fill(color).frame(width: geometry.size.width * fraction)
             }
         }
@@ -363,9 +420,9 @@ struct Bar: View {
 struct Legend: View {
     var body: some View {
         HStack(spacing: 10) {
-            item(Theme.available, "To discover")
-            item(Theme.discovered, "Tasted")
-            item(Theme.completed, "Completed")
+            item(.available, "To discover")
+            item(.discovered, "Tasted")
+            item(.completed, "Completed")
         }
         .font(Theme.font(.caption2, .semibold))
         .foregroundStyle(Theme.muted)
@@ -375,11 +432,38 @@ struct Legend: View {
         .overlay(RoundedRectangle(cornerRadius: 10).stroke(Theme.line))
     }
 
-    private func item(_ color: Color, _ label: String) -> some View {
+    private func item(_ status: Status, _ label: String) -> some View {
         HStack(spacing: 5) {
-            RoundedRectangle(cornerRadius: 3).fill(color).frame(width: 9, height: 9)
+            StatusMark(status: status, size: 11)
             Text(label)
         }
+    }
+}
+
+/// A country's state by shape as well as colour: a blue ring, a half-filled gold one,
+/// a diamond with a gem.
+struct StatusMark: View {
+    let status: Status
+    var size: CGFloat = 14
+
+    var body: some View {
+        ZStack {
+            switch status {
+            case .available:
+                Circle().strokeBorder(Theme.available, lineWidth: 2)
+            case .discovered:
+                Circle().fill(LinearGradient(stops: [.init(color: .clear, location: 0.5), .init(color: Theme.discovered, location: 0.5)], startPoint: .top, endPoint: .bottom))
+                Circle().strokeBorder(Theme.discovered, lineWidth: 2)
+            case .completed:
+                Circle().fill(Theme.diamond)
+                Circle().strokeBorder(Theme.completedEdge, lineWidth: 2)
+                Image(systemName: "diamond.fill")
+                    .font(.system(size: size * 0.45, weight: .bold))
+                    .foregroundStyle(Theme.onCompleted)
+            }
+        }
+        .frame(width: size, height: size)
+        .accessibilityHidden(true)
     }
 }
 
@@ -672,7 +756,7 @@ struct CountryList: View {
                                 .font(Theme.font(.footnote))
                                 .monospacedDigit()
                                 .foregroundStyle(Theme.muted)
-                            Circle().fill(Theme.color(for: entry.status)).frame(width: 10, height: 10)
+                            StatusMark(status: entry.status)
                         }
                         .padding(8)
                         .contentShape(Rectangle())
@@ -714,7 +798,7 @@ struct CountryDetail: View {
             Bar(
                 part: progress.visited,
                 whole: progress.places,
-                color: progress.status == .available ? Theme.accent : Theme.color(for: progress.status)
+                style: progress.status == .completed ? AnyShapeStyle(Theme.diamondBar) : AnyShapeStyle(progress.status == .available ? Theme.accent : Theme.discovered)
             )
 
             if model.placesLoading {
@@ -808,7 +892,7 @@ struct CheckInButton: View {
                 }
             }
             .buttonStyle(visited
-                ? ChunkyButtonStyle(face: Theme.completed, content: Theme.onCompleted)
+                ? ChunkyButtonStyle(face: Theme.discovered, content: Theme.onDiscovered)
                 : ChunkyButtonStyle())
             .disabled(model.busyPlace != nil)
             .opacity(model.busyPlace == place.id ? 0.6 : 1)
@@ -834,7 +918,7 @@ struct PlaceRow: View {
                     if let hours = place.hoursText {
                         Text(hours)
                             .font(Theme.font(.subheadline, .bold))
-                            .foregroundStyle(place.openNow == true ? Theme.completed : Theme.muted)
+                            .foregroundStyle(place.openNow == true ? Theme.text : Theme.muted)
                     }
                     Text(details)
                         .font(Theme.font(.subheadline))
@@ -896,7 +980,7 @@ struct PlaceDetail: View {
                 if let status = hours.status {
                     Text(status.text)
                         .font(Theme.font(.subheadline, .bold))
-                        .foregroundStyle(status.open ? Theme.completed : Theme.muted)
+                        .foregroundStyle(status.open ? Theme.text : Theme.muted)
                 }
                 if let week = hours.week {
                     Grid(alignment: .leading, horizontalSpacing: 16, verticalSpacing: 4) {

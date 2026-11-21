@@ -1,8 +1,11 @@
 <script lang="ts">
+	import Gem from '@lucide/svelte/icons/gem';
 	import { country } from './state.svelte';
 	import { statusOf, type Discover } from './types';
 
 	let { discover, onselect }: { discover: Discover; onselect: (code: string) => void } = $props();
+
+	const LABELS = { available: 'To discover', discovered: 'Tasted', completed: 'Completed' } as const;
 
 	const groups = $derived(
 		discover.continents
@@ -30,7 +33,9 @@
 						<span class="flag" aria-hidden="true">{entry.info?.flag}</span>
 						<span class="name">{entry.info?.name ?? entry.code}</span>
 						<span class="count">{entry.visited}/{entry.places}</span>
-						<span class="dot {entry.status}" title={entry.status}></span>
+						<span class="mark {entry.status}" title={LABELS[entry.status]}>
+							{#if entry.status === 'completed'}<Gem size={10} strokeWidth={3} aria-hidden="true" />{/if}
+						</span>
 					</button>
 				</li>
 			{/each}
@@ -46,15 +51,15 @@
 	h3 {
 		display: flex;
 		justify-content: space-between;
-		font-size: 15px;
-		font-weight: 800;
+		font-size: var(--text-base);
+		font-weight: 700;
 		letter-spacing: 0;
 		padding: 0 8px 6px;
 	}
 
 	h3 span {
 		font-weight: 500;
-		font-size: 14px;
+		font-size: var(--text-sm);
 		color: var(--muted);
 		font-variant-numeric: tabular-nums;
 	}
@@ -68,10 +73,10 @@
 	button {
 		width: 100%;
 		display: grid;
-		grid-template-columns: 26px 1fr auto 10px;
+		grid-template-columns: 26px 1fr auto 14px;
 		align-items: center;
 		gap: 10px;
-		padding: 8px;
+		padding: 10px 8px;
 		border-radius: 10px;
 		text-align: left;
 	}
@@ -87,22 +92,29 @@
 
 	.count {
 		color: var(--muted);
-		font-size: 13px;
+		font-size: var(--text-sm);
 		font-variant-numeric: tabular-nums;
 	}
 
-	.dot {
-		width: 10px;
-		height: 10px;
+	/* Status by shape as well as colour: empty ring, half full, full with a tick. */
+	.mark {
+		width: 14px;
+		height: 14px;
+		display: grid;
+		place-items: center;
 		border-radius: 50%;
+		border: 2px solid var(--available-edge);
 		background: var(--available);
 	}
 
-	.dot.discovered {
-		background: var(--discovered);
+	.mark.discovered {
+		border-color: var(--discovered);
+		background: linear-gradient(to top, var(--discovered) 50%, transparent 50%);
 	}
 
-	.dot.completed {
-		background: var(--completed);
+	.mark.completed {
+		border-color: var(--completed-edge);
+		background: var(--diamond);
+		color: var(--on-completed);
 	}
 </style>

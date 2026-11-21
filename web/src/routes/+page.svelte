@@ -30,7 +30,6 @@
 		{ id: 'light', label: 'Light' },
 		{ id: 'dark', label: 'Dark' }
 	];
-	const theme = $derived(THEMES.find((t) => t.id === app.theme) ?? THEMES[0]);
 	let systemDark = $state(false);
 
 	onMount(() => {
@@ -41,10 +40,6 @@
 		media.addEventListener('change', update);
 		return () => media.removeEventListener('change', update);
 	});
-
-	function nextTheme() {
-		setTheme(THEMES[(THEMES.indexOf(theme) + 1) % THEMES.length].id);
-	}
 
 	function pick(code: string, name: string, available: boolean) {
 		if (available) {
@@ -86,22 +81,18 @@
 		{/if}
 
 		<div class="controls">
-			<button class="theme" onclick={nextTheme} aria-label="Colour theme: {theme.label}. Click to change.">
-				<span class="muted">Theme</span>
-				{theme.label}
-			</button>
 			<div class="toggle" role="group" aria-label="Map projection">
 				<button aria-pressed={app.projection === 'globe'} onclick={() => setProjection('globe')}>Globe</button>
 				<button aria-pressed={app.projection === 'mercator'} onclick={() => setProjection('mercator')}>Flat</button>
 			</div>
 		</div>
 
-		<ul class="legend" aria-label="Legend">
-			<li><span style:background="var(--available)"></span>To discover</li>
-			<li><span style:background="var(--discovered)"></span>Tasted</li>
-			<li><span style:background="var(--completed)"></span>Completed</li>
-			<li><span style:background="var(--land)"></span>Not in this area</li>
-		</ul>
+		{#if app.location}<ul class="legend" aria-label="Legend">
+			<li><span class="swatch available"></span>To discover</li>
+			<li><span class="swatch discovered"></span>Tasted</li>
+			<li><span class="swatch completed"></span>Completed</li>
+			<li><span class="swatch none"></span>None nearby</li>
+		</ul>{/if}
 	</div>
 
 	<aside>
@@ -112,7 +103,7 @@
 					<Settings size={20} aria-hidden="true" />
 				</button>
 			</h1>
-			<p class="tagline">Eat the world, start with your city</p>
+			{#if !app.location}<p class="tagline">Eat the world, start with your city</p>{/if}
 			{#if app.location}
 				<button class="where" aria-expanded={pickerOpen} onclick={() => (pickerOpen = !pickerOpen)}>
 					{#if app.location.source === 'gps'}<Navigation size={15} strokeWidth={2.5} aria-hidden="true" />{:else}<MapPin size={15} strokeWidth={2.5} aria-hidden="true" />{/if}
@@ -126,6 +117,14 @@
 		{#if settingsOpen}
 			<div class="card settings">
 				<h2>Settings</h2>
+				<div class="setting">
+					<span id="theme-label">Theme</span>
+					<div class="toggle" role="group" aria-labelledby="theme-label">
+						{#each THEMES as t (t.id)}
+							<button aria-pressed={app.theme === t.id} onclick={() => setTheme(t.id)}>{t.label}</button>
+						{/each}
+					</div>
+				</div>
 				<p><a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">Map data © OpenStreetMap contributors</a></p>
 				<p class="build">Web {version}{app.server ? ` · Server ${app.server}` : ''}</p>
 			</div>
@@ -160,7 +159,10 @@
 			</div>
 			{@render addEntry()}
 		{:else}
-			<div class="card" class:dim={app.loading}><Passport discover={app.discover} /></div>
+			<!-- Progress is for the overview; a country or place gets the room to itself. -->
+			{#if !selected && !app.placeId}
+				<div class="card" class:dim={app.loading}><Passport discover={app.discover} /></div>
+			{/if}
 
 			{#if app.celebrations.length && !selected && !app.placeId}
 				<div class="card"><ComingUp celebrations={app.celebrations} /></div>
@@ -237,7 +239,7 @@
 	}
 
 	h1 {
-		font-size: 22px;
+		font-size: var(--text-xl);
 	}
 
 	h1 {
@@ -278,16 +280,14 @@
 	.where .change {
 		margin-left: auto;
 		color: var(--accent);
-		font-size: 13px;
+		font-size: var(--text-sm);
 	}
 
-	/* Panels have a solid outline and a heavier lower edge rather than a soft shadow. */
+	/* Panels sit on a tinted surface. The heavy lower edge is kept for things you can press. */
 	.card {
 		padding: 16px;
-		border-radius: 16px;
-		border: 2px solid var(--line);
-		border-bottom-width: 4px;
-		background: var(--panel);
+		border-radius: 14px;
+		background: var(--panel-raised);
 		transition: opacity 0.2s;
 	}
 
@@ -296,7 +296,7 @@
 	}
 
 	.card h2 {
-		font-size: 18px;
+		font-size: var(--text-lg);
 		margin-bottom: 6px;
 	}
 
@@ -305,20 +305,21 @@
 	}
 
 	.welcome h2 {
-		font-size: 21px;
+		font-size: var(--text-xl);
 		line-height: 1.25;
 	}
 
+	/* 44px to tap, without pushing the heading around. */
 	.gear {
-		margin-left: auto;
+		margin: -12px -12px -12px auto;
 		display: flex;
-		padding: 4px;
+		padding: 12px;
 		color: var(--muted);
 	}
 
 	.settings p.build {
 		margin: 0;
-		font-size: 11px;
+		font-size: var(--text-xs);
 		color: var(--muted);
 	}
 
@@ -355,7 +356,7 @@
 
 	.tabs span {
 		font-weight: 500;
-		font-size: 12px;
+		font-size: var(--text-xs);
 		color: var(--muted);
 		margin-left: 4px;
 	}
@@ -369,20 +370,17 @@
 		gap: 8px;
 	}
 
-	.theme {
+	.setting {
 		display: flex;
 		align-items: center;
-		gap: 6px;
-		padding: 0 14px;
-		border-radius: 999px;
-		background: var(--glass);
-		border: 1px solid var(--line);
-		font-size: 13px;
+		justify-content: space-between;
+		gap: 12px;
+		margin: 10px 0 14px;
 		font-weight: 700;
 	}
 
-	.theme span {
-		font-weight: 500;
+	.settings .toggle {
+		background: var(--panel);
 	}
 
 	.toggle {
@@ -396,7 +394,7 @@
 	.toggle button {
 		padding: 6px 16px;
 		border-radius: 999px;
-		font-size: 13px;
+		font-size: var(--text-sm);
 		font-weight: 700;
 		color: var(--muted);
 	}
@@ -420,7 +418,7 @@
 		border-radius: 10px;
 		background: var(--glass);
 		border: 1px solid var(--line);
-		font-size: 12px;
+		font-size: var(--text-xs);
 		color: var(--muted);
 	}
 
@@ -430,16 +428,35 @@
 		gap: 6px;
 	}
 
-	.legend span {
-		width: 10px;
-		height: 10px;
+	/* The same shapes as the list's status marks, so the states don't rest on colour alone. */
+	.swatch {
+		width: 12px;
+		height: 12px;
+		border-radius: 50%;
+		border: 2px solid var(--available-edge);
+		background: var(--available);
+	}
+
+	.swatch.discovered {
+		border-color: var(--discovered);
+		background: linear-gradient(to top, var(--discovered) 50%, transparent 50%);
+	}
+
+	.swatch.completed {
+		border-color: var(--completed-edge);
+		background: var(--diamond);
+	}
+
+	.swatch.none {
 		border-radius: 3px;
+		border: 1px solid rgb(0 0 0 / 0.15);
+		background: var(--land);
 	}
 
 	@media (max-width: 760px) {
 		main {
 			grid-template-columns: 1fr;
-			grid-template-rows: 42dvh 1fr;
+			grid-template-rows: 34dvh 1fr;
 		}
 
 		.stage {
@@ -458,9 +475,8 @@
 		.legend {
 			left: 8px;
 			bottom: 8px;
-			right: 44px;
+			padding: 6px 10px;
 			gap: 2px 10px;
-			font-size: 11px;
 		}
 
 		.controls {

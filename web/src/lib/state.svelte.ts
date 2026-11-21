@@ -90,6 +90,8 @@ export const app = $state({
 /** The last real GPS position, used to verify check-ins even when browsing another city. */
 let gpsFix: { lat: number; lng: number; at: number } | null = null;
 let requestId = 0;
+/** A ?country= link that arrived before there was anything to discover: opened on the first load. */
+let pendingCountry: string | null = null;
 let toastId = 0;
 
 export function country(code: string): Country | undefined {
@@ -138,9 +140,10 @@ export async function init() {
 		// Keep following the device when the last location came from GPS.
 		if (stored.source === 'gps') void locate(true);
 	} else {
-		// First visit: show the welcome card while the browser asks for the location.
+		// First visit: ask for the location only once the welcome card has explained why,
+		// when the user presses its button, unless the browser already allows it.
 		void hideSplash();
-		await locate(true);
+		if (await locationAllowed()) await locate(true);
 	}
 	await followLink();
 }
@@ -201,7 +204,8 @@ async function followLink() {
 	if (!params.size) return;
 	if (params.get('tab') === 'badges') app.tab = 'badges';
 	const code = params.get('country')?.toUpperCase();
-	if (code && app.discover?.countries.some((c) => c.code === code)) await select(code);
+	if (code && !app.discover) pendingCountry = code;
+	else if (code && app.discover?.countries.some((c) => c.code === code)) await select(code);
 	const id = params.get('place');
 	history.replaceState(null, '', id ? `?place=${encodeURIComponent(id)}` : location.pathname);
 	if (id) await loadPlace(id);
@@ -368,6 +372,15 @@ function position(): Promise<GeolocationPosition> {
 	});
 }
 
+/** Whether the browser will share the location without asking. */
+async function locationAllowed(): Promise<boolean> {
+	try {
+		return (await navigator.permissions.query({ name: 'geolocation' })).state === 'granted';
+	} catch {
+		return false;
+	}
+}
+
 /** Moves to the device's GPS position. With `quiet`, failures leave the current location alone. */
 export async function locate(quiet = false) {
 	app.locating = true;
@@ -426,7 +439,12 @@ export async function refresh() {
 	const stopProgress = watchProgress(location.area.id, id);
 	try {
 		const result = await api.discover(location.area.id);
-		if (id === requestId) app.discover = result;
+		if (id === requestId) {
+			app.discover = result;
+			const code = pendingCountry;
+			pendingCountry = null;
+			if (code && result.countries.some((c) => c.code === code)) void select(code);
+		}
 		void announceConfirmedAdditions();
 	} catch (error) {
 		if (id === requestId) {
@@ -496,12 +514,12 @@ function celebrate(before: Discover, after: Discover, place: Place) {
 	}
 	for (const badge of after.badges) {
 		if (badge.earned && !before.badges.find((b) => b.id === badge.id)?.earned) {
-			toast({ badge: badge.kind }, `Badge: ${badge.title}`, badge.description);
+			toast({ badge: badge.kind }, `Badge earned: ${badge.title}`, badge.description);
 		}
 	}
 	for (const event of after.events) {
 		if (event.earned && !before.events.find((e) => e.id === event.id)?.earned) {
-			toast({ badge: 'event' }, `Badge: ${event.title}`, 'Earned while it lasted.');
+			toast({ badge: 'event' }, `Badge earned: ${event.title}`, 'Earned while it lasted.');
 		}
 	}
 	if (after.profile.level > before.profile.level) {

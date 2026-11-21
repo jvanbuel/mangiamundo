@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
+	import { prefersReducedMotion } from 'svelte/motion';
 	import type { Map as MapLibreMap, MapGeoJSONFeature } from 'maplibre-gl';
 	import type { Feature, FeatureCollection, Geometry } from 'geojson';
 	import { statusOf, type Country, type CountryProgress, type Location } from './types';
@@ -31,6 +32,12 @@
 	let hoveredId: string | null = null;
 	let selectedId: string | null = null;
 	let coloured: string[] = [];
+	/** Each country's bounding box, to fly to it when it is selected. */
+	let bounds = new Map<string, [number, number, number, number]>();
+	/** Each country's shape, for the diamond overlay on completed ones. */
+	let shapes = new Map<string, Feature>();
+	/** Follows the setting live, so turning it on mid-visit stops the sparkles. */
+	const still = $derived(prefersReducedMotion.current);
 
 	const byCode = $derived(new Map(progress.map((p) => [p.code, p])));
 	const hoverInfo = $derived(hover ? { country: countries.find((c) => c.code === hover!.code), progress: byCode.get(hover.code) } : null);
@@ -60,6 +67,109 @@
 		return geometry;
 	}
 
+	/** [west, south, east, north] of a (multi)polygon whose rings were unwrapped. */
+	function bbox(geometry: Geometry): [number, number, number, number] {
+		const box: [number, number, number, number] = [Infinity, Infinity, -Infinity, -Infinity];
+		const polygons = geometry.type === 'Polygon' ? [geometry.coordinates] : geometry.type === 'MultiPolygon' ? geometry.coordinates : [];
+		for (const polygon of polygons) {
+			for (const [lng, lat] of polygon[0]) {
+				box[0] = Math.min(box[0], lng);
+				box[1] = Math.min(box[1], lat);
+				box[2] = Math.max(box[2], lng);
+				box[3] = Math.max(box[3], lat);
+			}
+		}
+		return box;
+	}
+
+	/** Where a country's sparkle sits: the area-weighted centre of its largest ring. */
+	function centre(geometry: Geometry): [number, number] {
+		const rings = geometry.type === 'Polygon' ? [geometry.coordinates[0]] : geometry.type === 'MultiPolygon' ? geometry.coordinates.map((p) => p[0]) : [];
+		let best: [number, number] = [0, 0];
+		let largest = -1;
+		for (const ring of rings) {
+			let area = 0, x = 0, y = 0;
+			for (let i = 0; i < ring.length - 1; i++) {
+				const [x0, y0] = ring[i], [x1, y1] = ring[i + 1];
+				const cross = x0 * y1 - x1 * y0;
+				area += cross;
+				x += (x0 + x1) * cross;
+				y += (y0 + y1) * cross;
+			}
+			if (Math.abs(area) > largest && area !== 0) {
+				largest = Math.abs(area);
+				best = [x / (3 * area), y / (3 * area)];
+			}
+		}
+		return best;
+	}
+
+	/** A four-pointed star in the diamond's edge colour with a white heart and a soft
+	    glow: the sparkle. Coloured rather than white, so it shows on the pale diamond. */
+	function sparkleImage(edge: string): ImageData {
+		const size = 64, c = size / 2;
+		const ctx = document.createElement('canvas').getContext('2d')!;
+		ctx.canvas.width = ctx.canvas.height = size;
+		const dirs = [[0, -1], [1, 0], [0, 1], [-1, 0]];
+		const star = (tip: number, waist: number) => {
+			ctx.beginPath();
+			ctx.moveTo(c, c - tip);
+			dirs.forEach(([dx, dy], i) => {
+				const [nx, ny] = dirs[(i + 1) % 4];
+				// Curve in towards the middle between one tip and the next.
+				ctx.quadraticCurveTo(c + (dx + nx) * waist, c + (dy + ny) * waist, c + nx * tip, c + ny * tip);
+			});
+			ctx.closePath();
+		};
+		star(28, 7);
+		ctx.shadowColor = '#ffffff';
+		ctx.shadowBlur = 6;
+		ctx.fillStyle = edge;
+		ctx.fill();
+		ctx.shadowBlur = 0;
+		star(13, 3);
+		ctx.fillStyle = '#ffffff';
+		ctx.fill();
+		return ctx.getImageData(0, 0, size, size);
+	}
+
+	/** Facets cut into a completed country: crossing lines and a few bright glints. */
+	function facetImage(line: string): ImageData {
+		const size = 40;
+		const ctx = document.createElement('canvas').getContext('2d')!;
+		ctx.canvas.width = ctx.canvas.height = size;
+		ctx.strokeStyle = line;
+		ctx.lineWidth = 2;
+		ctx.beginPath();
+		ctx.moveTo(0, 0); ctx.lineTo(size, size);
+		ctx.moveTo(size, 0); ctx.lineTo(0, size);
+		ctx.moveTo(size / 2, 0); ctx.lineTo(size, size / 2); ctx.lineTo(size / 2, size); ctx.lineTo(0, size / 2); ctx.closePath();
+		ctx.stroke();
+		ctx.fillStyle = 'rgb(255 255 255 / 0.8)';
+		ctx.beginPath();
+		ctx.moveTo(size / 2, 2); ctx.lineTo(size * 0.62, size * 0.22); ctx.lineTo(size / 2, size * 0.3); ctx.closePath();
+		ctx.moveTo(4, size / 2); ctx.lineTo(size * 0.16, size * 0.42); ctx.lineTo(size * 0.2, size / 2); ctx.closePath();
+		ctx.fill();
+		return ctx.getImageData(0, 0, size, size);
+	}
+
+	/** Fill opacity: with a country selected, the others step back. */
+	const fillOpacity = (focused: boolean) =>
+		focused ? ['case', flag('selected'), 1, flag('hover'), 0.8, 0.4] : ['case', flag('hover'), 1, 0.86];
+
+	const SPARKLES: [string, number, [number, number]][] = [
+		['sparkle-a', 1.6, [0, 0]],
+		['sparkle-b', 1, [26, -22]],
+		['sparkle-c', 0.8, [-30, 24]]
+	];
+
+	/** A sparkle's brightness, 0 to 1, at a time in seconds: a quick flash every 2.4s,
+	    each sparkle a third of a beat after the last. */
+	function twinkle(seconds: number, index: number): number {
+		const wave = Math.max(0, Math.sin(seconds * 2.6 + index * 2.1));
+		return wave * wave;
+	}
+
 	const featureState = (key: string, fallback: unknown) => ['coalesce', ['feature-state', key], fallback];
 	const flag = (key: string) => ['boolean', featureState(key, false), false];
 
@@ -69,6 +179,7 @@
 		const color = (name: string) => css.getPropertyValue(name).trim();
 		return {
 			ocean: { 'background-color': color('--ocean') },
+			land: { 'fill-color': color('--land') },
 			fill: {
 				'fill-color': [
 					'match', featureState('status', 'none'),
@@ -78,7 +189,15 @@
 					color('--land')
 				]
 			},
-			borders: { 'line-color': ['case', flag('selected'), color('--text'), color('--ocean')] },
+			borders: {
+				'line-color': [
+					'case', flag('selected'), color('--text'),
+					['==', featureState('status', 'none'), 'available'], color('--available-edge'),
+					['==', featureState('status', 'none'), 'discovered'], color('--discovered-edge'),
+					['==', featureState('status', 'none'), 'completed'], color('--completed-edge'),
+					color('--map-border')
+				]
+			},
 			'here-halo': { 'circle-color': color('--text') },
 			here: { 'circle-color': color('--text'), 'circle-stroke-color': color('--panel') }
 		};
@@ -111,6 +230,11 @@
 					return { ...f, geometry: unwrap(f.geometry), properties: { code: known?.code ?? `x-${f.properties.name}`, name: known?.name ?? f.properties.name } };
 				});
 
+			for (const f of features) {
+				bounds.set(String(f.properties!.code), bbox(f.geometry));
+				shapes.set(String(f.properties!.code), f);
+			}
+
 			const themed = paint() as any;
 
 			const center: [number, number] = location ? [location.lng, location.lat] : [10, 30];
@@ -127,28 +251,47 @@
 					projection: { type: projection },
 					sources: {
 						[SOURCE]: { type: 'geojson', data: { type: 'FeatureCollection', features }, promoteId: 'code' },
-						here: { type: 'geojson', data: { type: 'FeatureCollection', features: [] } }
+						here: { type: 'geojson', data: { type: 'FeatureCollection', features: [] } },
+						// Completed countries and their sparkles, kept in sources of their own because
+						// patterns and symbols can't follow feature state.
+						diamonds: { type: 'geojson', data: { type: 'FeatureCollection', features: [] } },
+						sparkles: { type: 'geojson', data: { type: 'FeatureCollection', features: [] } }
 					},
 					layers: [
 						{ id: 'ocean', type: 'background', paint: themed.ocean },
+						// Solid land under the coloured fill, so countries that step back fade to land, not sea.
+						{ id: 'land', type: 'fill', source: SOURCE, paint: themed.land },
 						{
 							id: 'fill',
 							type: 'fill',
 							source: SOURCE,
 							paint: {
 								...themed.fill,
-								'fill-opacity': ['case', flag('hover'), 1, 0.86] as any
+								'fill-opacity': fillOpacity(false) as any
 							}
 						},
+						{ id: 'facets', type: 'fill', source: 'diamonds', paint: { 'fill-pattern': 'facets' } },
 						{
 							id: 'borders',
 							type: 'line',
 							source: SOURCE,
 							paint: {
 								...themed.borders,
-								'line-width': ['case', flag('selected'), 2, 0.6] as any
+								'line-width': [
+									'case', flag('selected'), 2.5,
+									['==', featureState('status', 'none'), 'completed'], 2,
+									['match', featureState('status', 'none'), ['available', 'discovered'], true, false], 1,
+									0.6
+								] as any
 							}
 						},
+						// Three sparkles per diamond, offset in pixels so small countries get them too.
+						...SPARKLES.map(([id, size, offset]) => ({
+							id,
+							type: 'symbol' as const,
+							source: 'sparkles',
+							layout: { 'icon-image': 'sparkle', 'icon-size': size, 'icon-offset': offset, 'icon-allow-overlap': true, 'icon-ignore-placement': true }
+						})),
 						{
 							id: 'here-halo',
 							type: 'circle',
@@ -205,12 +348,17 @@
 				onselect(code, feature.properties.name, byCode.has(code));
 			});
 			m.on('load', () => {
+				// The diamond's facets and sparkle are drawn here rather than loaded.
+				const css = getComputedStyle(document.documentElement);
+				m.addImage('facets', facetImage(css.getPropertyValue('--completed-facet').trim()), { pixelRatio: 2 });
+				m.addImage('sparkle', sparkleImage(css.getPropertyValue('--completed-edge').trim()), { pixelRatio: 2 });
 				// The attribution starts expanded and would cover the legend on small screens.
 				const attribution = container.querySelector('.maplibregl-ctrl-attrib');
 				attribution?.classList.remove('maplibregl-compact-show');
 				attribution?.removeAttribute('open');
 				if (!disposed) map = m;
 			});
+
 		})();
 
 		return () => {
@@ -234,11 +382,55 @@
 		if (selectedId) map.setFeatureState({ source: SOURCE, id: selectedId }, { selected: false });
 		if (selected) map.setFeatureState({ source: SOURCE, id: selected }, { selected: true });
 		selectedId = selected;
+		map.setPaintProperty('fill', 'fill-opacity', fillOpacity(selected !== null) as any);
+
+		// The camera's one owner: fly to the selected country, or else the globe around the user.
+		const box = selected ? bounds.get(selected) : null;
+		const animate = !still;
+		if (box) {
+			const el = map.getContainer();
+			const pad = Math.min(el.clientWidth, el.clientHeight) * 0.3;
+			map.fitBounds(box, { padding: pad, maxZoom: 4.5, duration: animate ? 1200 : 0 });
+		} else if (location) {
+			const zoom = fittingZoom(map.getContainer(), location.lat);
+			map.easeTo({ center: [location.lng, location.lat], zoom, duration: animate ? 1200 : 0 });
+		}
+	});
+
+	// Completed countries get the diamond: facets over their fill, and sparkles.
+	$effect(() => {
+		if (!map) return;
+		const done = progress.filter((entry) => statusOf(entry) === 'completed').flatMap((entry) => shapes.get(entry.code) ?? []);
+		(map.getSource('diamonds') as any)?.setData({ type: 'FeatureCollection', features: done });
+		(map.getSource('sparkles') as any)?.setData({
+			type: 'FeatureCollection',
+			features: done.map((f) => ({ type: 'Feature', properties: {}, geometry: { type: 'Point', coordinates: centre(f.geometry) } }))
+		});
+		if (still || !done.length) return;
+		// Twinkle: each sparkle flashes on its own beat, growing and brightening quickly and
+		// then shrinking back. About 20 updates a second, nothing while the tab is hidden.
+		const m = map;
+		let frame = 0, last = 0;
+		const tick = (now: number) => {
+			frame = requestAnimationFrame(tick);
+			if (now - last < 50 || document.hidden) return;
+			last = now;
+			SPARKLES.forEach(([id, size], i) => {
+				const flash = twinkle(now / 1000, i);
+				m.setPaintProperty(id, 'icon-opacity', 0.25 + 0.75 * flash);
+				m.setLayoutProperty(id, 'icon-size', size * (0.55 + 0.45 * flash));
+			});
+		};
+		frame = requestAnimationFrame(tick);
+		return () => cancelAnimationFrame(frame);
 	});
 
 	$effect(() => {
 		void theme;
 		if (!map) return;
+		const css = getComputedStyle(document.documentElement);
+		if (map.hasImage('facets')) map.updateImage('facets', facetImage(css.getPropertyValue('--completed-facet').trim()));
+		if (map.hasImage('sparkle')) map.updateImage('sparkle', sparkleImage(css.getPropertyValue('--completed-edge').trim()));
 		for (const [layer, properties] of Object.entries(paint())) {
 			for (const [name, value] of Object.entries(properties)) map.setPaintProperty(layer, name as any, value);
 		}
@@ -258,7 +450,6 @@
 				? [{ type: 'Feature', properties: {}, geometry: { type: 'Point', coordinates: [location.lng, location.lat] } }]
 				: []
 		});
-		if (location) map.easeTo({ center: [location.lng, location.lat], duration: 1200 });
 	});
 </script>
 
@@ -293,7 +484,7 @@
 		background: var(--panel-raised);
 		border: 1px solid var(--line);
 		box-shadow: 0 8px 24px var(--shadow);
-		font-size: 13px;
+		font-size: var(--text-sm);
 		white-space: nowrap;
 	}
 

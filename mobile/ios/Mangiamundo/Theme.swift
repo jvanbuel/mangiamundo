@@ -1,8 +1,10 @@
 import SwiftUI
 import UIKit
 
-/// The palette of web/src/app.css, so every client looks the same. Each colour
-/// follows the system light/dark setting.
+/// The palette of web/src/app.css, so every client looks the same: blue for the app
+/// and for countries still to discover, gold once a country is tasted, and a
+/// sparkling diamond once it is completed. Each colour follows the system light/dark
+/// setting.
 enum Theme {
     static let bg = Color(light: 0xF2F5F8, dark: 0x0D1A28)
     static let panel = Color(light: 0xFFFFFF, dark: 0x132536)
@@ -12,15 +14,48 @@ enum Theme {
     static let muted = Color(light: 0x5A6A7D, dark: 0x93A6BB)
     static let accent = Color(light: 0x2873C2, dark: 0x5BA6EE)
     static let onAccent = Color(light: 0xFFFFFF, dark: 0x07182A)
+    /// Accent-coloured text on tinted backgrounds.
+    static let accentText = Color(light: 0x1D5A9E, dark: 0x8CC3F5)
     static let danger = Color(light: 0xB3261E, dark: 0xFF9D8A)
-    static let ocean = Color(light: 0xC4DAEF, dark: 0x0F2133)
-    static let land = Color(light: 0xE3E7EB, dark: 0x233A52)
+    static let ocean = Color(light: 0xDBE5EF, dark: 0x0A1726)
+    static let land = Color(light: 0xFBFAF7, dark: 0x22364B)
+    static let mapBorder = Color(light: 0xCFD8E2, dark: 0x0A1726)
     static let available = Color(light: 0x2873C2, dark: 0x3B8FD9)
-    static let discovered = Color(light: 0xC98508, dark: 0xF2B53D)
-    static let completed = Color(light: 0x3DA35A, dark: 0x54B96F)
-    static let onCompleted = Color(light: 0x0B2A14, dark: 0x06210F)
-    /// Limited-time events and celebrations.
-    static let event = Color(light: 0xC2417A, dark: 0xE46A9F)
+    static let availableEdge = Color(light: 0x1D5A9E, dark: 0x8CC3F5)
+    static let discovered = Color(light: 0xE0A100, dark: 0xF2C14E)
+    static let discoveredEdge = Color(light: 0x8A6200, dark: 0xF2C14E)
+    static let discoveredText = Color(light: 0x7A5600, dark: 0xF2C14E)
+    static let onDiscovered = Color(light: 0x3D2A00, dark: 0x2A1A00)
+    /// The diamond's base fill on the map.
+    static let completed = Color(light: 0xE3F5FE, dark: 0xE3F5FE)
+    static let completedEdge = Color(light: 0x2F8FC4, dark: 0x8FD6FF)
+    static let completedFacet = Color(light: 0x8FCDEF, dark: 0x8FCDEF)
+    static let onCompleted = Color(light: 0x0B4A6B, dark: 0x0B4A6B)
+    /// Limited-time events and celebrations: something to act on, so the action colour.
+    static let event = Theme.accent
+    /// The empty part of a progress bar, and its outline.
+    static let track = Color(light: 0xDBE2EA, dark: 0x24405C)
+    static let trackEdge = Color(light: 0x8796A8, dark: 0x57708C)
+
+    /// The diamond as a surface: icy, with a hint of prism.
+    static let diamond = LinearGradient(
+        stops: [
+            .init(color: Color(hex: 0xF7FDFF), location: 0),
+            .init(color: Color(hex: 0xC9ECFD), location: 0.35),
+            .init(color: Color(hex: 0xF1EAFF), location: 0.5),
+            .init(color: Color(hex: 0xBDE5FB), location: 0.65),
+            .init(color: Color(hex: 0xF0FBFF), location: 1),
+        ],
+        startPoint: .topLeading,
+        endPoint: .bottomTrailing
+    )
+
+    /// A full progress bar in icy blue with a bright band.
+    static let diamondBar = LinearGradient(
+        colors: [completedEdge, Color(hex: 0xBFEAFF), completedEdge],
+        startPoint: .leading,
+        endPoint: .trailing
+    )
 
     /// Nunito, a rounded sans used in heavy weights. Sizes follow the system text
     /// styles, so text still scales with the user's Dynamic Type setting.
@@ -51,16 +86,12 @@ enum Theme {
         return .custom(weight.rawValue, size: size, relativeTo: style)
     }
 
-    static func color(for status: Status) -> Color {
-        switch status {
-        case .available: return available
-        case .discovered: return discovered
-        case .completed: return completed
-        }
-    }
 }
 
 extension Color {
+    /// The same colour in light and dark mode.
+    init(hex: UInt32) { self.init(light: hex, dark: hex) }
+
     init(light: UInt32, dark: UInt32) {
         self.init(uiColor: UIColor { traits in
             let hex = traits.userInterfaceStyle == .dark ? dark : light
