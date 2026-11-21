@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
+	import { prefersReducedMotion } from 'svelte/motion';
 	import type { Map as MapLibreMap, MapGeoJSONFeature } from 'maplibre-gl';
 	import type { Feature, FeatureCollection, Geometry } from 'geojson';
 	import { statusOf, type Country, type CountryProgress, type Location } from './types';
@@ -35,7 +36,8 @@
 	let bounds = new Map<string, [number, number, number, number]>();
 	/** Each country's shape, for the diamond overlay on completed ones. */
 	let shapes = new Map<string, Feature>();
-	const still = matchMedia('(prefers-reduced-motion: reduce)').matches;
+	/** Follows the setting live, so turning it on mid-visit stops the sparkles. */
+	const still = $derived(prefersReducedMotion.current);
 
 	const byCode = $derived(new Map(progress.map((p) => [p.code, p])));
 	const hoverInfo = $derived(hover ? { country: countries.find((c) => c.code === hover!.code), progress: byCode.get(hover.code) } : null);
@@ -382,7 +384,7 @@
 		selectedId = selected;
 		map.setPaintProperty('fill', 'fill-opacity', fillOpacity(selected !== null) as any);
 
-		// Fly to the selected country, or back to the whole globe around the user.
+		// The camera's one owner: fly to the selected country, or else the globe around the user.
 		const box = selected ? bounds.get(selected) : null;
 		const animate = !still;
 		if (box) {
@@ -448,7 +450,6 @@
 				? [{ type: 'Feature', properties: {}, geometry: { type: 'Point', coordinates: [location.lng, location.lat] } }]
 				: []
 		});
-		if (location) map.easeTo({ center: [location.lng, location.lat], duration: 1200 });
 	});
 </script>
 
