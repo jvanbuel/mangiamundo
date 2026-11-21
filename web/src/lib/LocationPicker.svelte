@@ -149,7 +149,7 @@
 		border-radius: 12px;
 		background: var(--accent);
 		color: var(--on-accent);
-		font-weight: 800;
+		font-weight: 700;
 		box-shadow: inset 0 -3px 0 color-mix(in srgb, var(--accent) 70%, #000);
 	}
 
@@ -201,7 +201,7 @@
 
 	p {
 		margin: 0;
-		font-size: 13px;
+		font-size: var(--text-sm);
 	}
 
 	.error {
@@ -214,13 +214,13 @@
 	}
 
 	li .muted {
-		font-size: 12px;
+		font-size: var(--text-xs);
 	}
 
 	h3 {
 		margin: 4px 0 4px 10px;
-		font-size: 12px;
-		font-weight: 800;
+		font-size: var(--text-xs);
+		font-weight: 700;
 		text-transform: uppercase;
 		letter-spacing: 0.04em;
 		color: var(--muted);
@@ -258,7 +258,7 @@
 	.options button {
 		flex: 1;
 		padding: 8px 10px;
-		font-size: 13px;
+		font-size: var(--text-sm);
 	}
 
 	.options button + button {

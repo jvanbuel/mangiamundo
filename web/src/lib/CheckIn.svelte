@@ -37,8 +37,8 @@
 		border-radius: 12px;
 		background: var(--face);
 		color: var(--on-accent);
-		font-size: 14px;
-		font-weight: 800;
+		font-size: var(--text-sm);
+		font-weight: 700;
 		box-shadow: inset 0 -3px 0 color-mix(in srgb, var(--face) 70%, #000);
 	}
 

@@ -52,12 +52,12 @@
 	}
 
 	strong {
-		font-weight: 800;
+		font-weight: 700;
 	}
 
 	p {
 		margin: 0;
-		font-size: 13px;
+		font-size: var(--text-sm);
 		color: var(--muted);
 	}
 </style>

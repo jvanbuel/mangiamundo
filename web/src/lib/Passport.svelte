@@ -78,7 +78,7 @@
 
 	dt {
 		color: var(--muted);
-		font-size: 13px;
+		font-size: var(--text-sm);
 	}
 
 	dd {

@@ -73,7 +73,7 @@
 	}
 
 	h3 {
-		font-size: 16px;
+		font-size: var(--text-base);
 		margin-bottom: 8px;
 	}
 
@@ -106,7 +106,7 @@
 	}
 
 	.info strong {
-		font-weight: 800;
+		font-weight: 700;
 	}
 
 	.when {
@@ -115,13 +115,13 @@
 		border-radius: 999px;
 		background: color-mix(in srgb, var(--event) 16%, transparent);
 		color: var(--event);
-		font-size: 12px;
-		font-weight: 800;
+		font-size: var(--text-xs);
+		font-weight: 700;
 	}
 
 	.info p {
 		margin: 0;
-		font-size: 13px;
+		font-size: var(--text-sm);
 	}
 
 	.progress .bar {
@@ -133,7 +133,7 @@
 	}
 
 	.progress .muted {
-		font-size: 13px;
+		font-size: var(--text-sm);
 		font-variant-numeric: tabular-nums;
 	}
 
@@ -156,13 +156,13 @@
 
 	.grid strong {
 		margin-top: 6px;
-		font-size: 14px;
-		font-weight: 800;
+		font-size: var(--text-sm);
+		font-weight: 700;
 		line-height: 1.2;
 	}
 
 	.grid .muted {
-		font-size: 13px;
+		font-size: var(--text-sm);
 		font-variant-numeric: tabular-nums;
 	}
 

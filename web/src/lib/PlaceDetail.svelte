@@ -116,7 +116,7 @@
 		align-items: center;
 		gap: 6px;
 		color: var(--muted);
-		font-size: 14px;
+		font-size: var(--text-sm);
 		font-weight: 700;
 		padding: 4px 0;
 	}
@@ -130,19 +130,19 @@
 	}
 
 	h2 {
-		font-size: 24px;
+		font-size: var(--text-2xl);
 		overflow-wrap: anywhere;
 		outline: none;
 	}
 
 	h3 {
-		font-size: 15px;
+		font-size: var(--text-base);
 		margin: 0 0 6px;
 	}
 
 	p {
 		margin: 2px 0 0;
-		font-size: 14px;
+		font-size: var(--text-sm);
 	}
 
 	.flags {
@@ -158,7 +158,7 @@
 		flex-wrap: wrap;
 		gap: 16px;
 		margin-bottom: 10px;
-		font-size: 14px;
+		font-size: var(--text-sm);
 		font-weight: 700;
 	}
 
@@ -168,7 +168,7 @@
 
 	section {
 		margin-top: 18px;
-		font-size: 14px;
+		font-size: var(--text-sm);
 	}
 
 	.status {
@@ -196,7 +196,7 @@
 
 	tr.today th,
 	tr.today td {
-		font-weight: 800;
+		font-weight: 700;
 	}
 
 	.sr-only {
@@ -210,7 +210,7 @@
 
 	.raw {
 		font-family: ui-monospace, monospace;
-		font-size: 13px;
+		font-size: var(--text-sm);
 		overflow-wrap: anywhere;
 	}
 
@@ -227,7 +227,7 @@
 
 	footer {
 		margin-top: 28px;
-		font-size: 12px;
+		font-size: var(--text-xs);
 	}
 
 	footer a,

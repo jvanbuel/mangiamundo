@@ -77,7 +77,7 @@
 
 	.where .muted {
 		font-weight: 500;
-		font-size: 13px;
+		font-size: var(--text-sm);
 	}
 
 	label .muted {
@@ -96,7 +96,7 @@
 	}
 
 	.small {
-		font-size: 12px;
+		font-size: var(--text-xs);
 	}
 
 	.small a {
@@ -112,7 +112,7 @@
 	.actions button {
 		padding: 9px 14px;
 		border-radius: 12px;
-		font-weight: 800;
+		font-weight: 700;
 	}
 
 	.add {

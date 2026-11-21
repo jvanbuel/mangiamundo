@@ -72,15 +72,15 @@
 
 	text {
 		fill: var(--text);
-		font-size: 18px;
-		font-weight: 800;
+		font-size: var(--text-lg);
+		font-weight: 700;
 		text-anchor: middle;
 		dominant-baseline: central;
 	}
 
 	p {
 		margin: 0;
-		font-size: 14px;
+		font-size: var(--text-sm);
 		font-weight: 700;
 		color: var(--muted);
 	}

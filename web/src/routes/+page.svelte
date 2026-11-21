@@ -236,7 +236,7 @@
 	}
 
 	h1 {
-		font-size: 22px;
+		font-size: var(--text-xl);
 	}
 
 	h1 {
@@ -277,7 +277,7 @@
 	.where .change {
 		margin-left: auto;
 		color: var(--accent);
-		font-size: 13px;
+		font-size: var(--text-sm);
 	}
 
 	/* Panels sit on a tinted surface. The heavy lower edge is kept for things you can press. */
@@ -293,7 +293,7 @@
 	}
 
 	.card h2 {
-		font-size: 18px;
+		font-size: var(--text-lg);
 		margin-bottom: 6px;
 	}
 
@@ -302,7 +302,7 @@
 	}
 
 	.welcome h2 {
-		font-size: 21px;
+		font-size: var(--text-xl);
 		line-height: 1.25;
 	}
 
@@ -315,7 +315,7 @@
 
 	.settings p.build {
 		margin: 0;
-		font-size: 11px;
+		font-size: var(--text-xs);
 		color: var(--muted);
 	}
 
@@ -352,7 +352,7 @@
 
 	.tabs span {
 		font-weight: 500;
-		font-size: 12px;
+		font-size: var(--text-xs);
 		color: var(--muted);
 		margin-left: 4px;
 	}
@@ -390,7 +390,7 @@
 	.toggle button {
 		padding: 6px 16px;
 		border-radius: 999px;
-		font-size: 13px;
+		font-size: var(--text-sm);
 		font-weight: 700;
 		color: var(--muted);
 	}
@@ -414,7 +414,7 @@
 		border-radius: 10px;
 		background: var(--glass);
 		border: 1px solid var(--line);
-		font-size: 12px;
+		font-size: var(--text-xs);
 		color: var(--muted);
 	}
 

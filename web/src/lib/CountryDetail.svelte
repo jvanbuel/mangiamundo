@@ -83,7 +83,7 @@
 		align-items: center;
 		gap: 6px;
 		color: var(--muted);
-		font-size: 14px;
+		font-size: var(--text-sm);
 		font-weight: 700;
 		padding: 4px 0;
 	}
@@ -105,12 +105,12 @@
 	}
 
 	h2 {
-		font-size: 24px;
+		font-size: var(--text-2xl);
 	}
 
 	p {
 		margin: 2px 0 0;
-		font-size: 14px;
+		font-size: var(--text-sm);
 	}
 
 	.bar span.discovered {
@@ -139,8 +139,8 @@
 	li.group {
 		padding: 18px 0 6px;
 		color: var(--muted);
-		font-size: 13px;
-		font-weight: 800;
+		font-size: var(--text-sm);
+		font-weight: 700;
 		text-transform: uppercase;
 		letter-spacing: 0.04em;
 	}
@@ -159,14 +159,14 @@
 		min-width: 0;
 		display: grid;
 		gap: 2px;
-		font-size: 14px;
+		font-size: var(--text-sm);
 	}
 
 	.name {
 		color: inherit;
 		text-decoration: none;
-		font-size: 16px;
-		font-weight: 800;
+		font-size: var(--text-base);
+		font-weight: 700;
 		overflow-wrap: anywhere;
 	}
 

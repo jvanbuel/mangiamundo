@@ -46,15 +46,15 @@
 	h3 {
 		display: flex;
 		justify-content: space-between;
-		font-size: 15px;
-		font-weight: 800;
+		font-size: var(--text-base);
+		font-weight: 700;
 		letter-spacing: 0;
 		padding: 0 8px 6px;
 	}
 
 	h3 span {
 		font-weight: 500;
-		font-size: 14px;
+		font-size: var(--text-sm);
 		color: var(--muted);
 		font-variant-numeric: tabular-nums;
 	}
@@ -87,7 +87,7 @@
 
 	.count {
 		color: var(--muted);
-		font-size: 13px;
+		font-size: var(--text-sm);
 		font-variant-numeric: tabular-nums;
 	}
 

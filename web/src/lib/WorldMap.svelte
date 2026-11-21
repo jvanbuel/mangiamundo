@@ -332,7 +332,7 @@
 		background: var(--panel-raised);
 		border: 1px solid var(--line);
 		box-shadow: 0 8px 24px var(--shadow);
-		font-size: 13px;
+		font-size: var(--text-sm);
 		white-space: nowrap;
 	}
 
