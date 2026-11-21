@@ -2,7 +2,7 @@
 	import ArrowLeft from '@lucide/svelte/icons/arrow-left';
 	import CheckIn from './CheckIn.svelte';
 	import { app, country, openPlace } from './state.svelte';
-	import { directions, distance, statusOf, type CountryProgress, type Place } from './types';
+	import { distance, statusOf, type CountryProgress, type Place } from './types';
 
 	let { progress, onback }: { progress: CountryProgress; onback: () => void } = $props();
 
@@ -59,17 +59,11 @@
 			<li>
 				<div class="info">
 					<a class="name" href="?place={encodeURIComponent(place.id)}" onclick={(e) => open(e, place)} {@attach refocus(place.id)}>{place.name}</a>
-					{#if now}
-						<span class="hours" class:open={now.open} title={place.hours?.raw}>{now.text}</span>
-					{/if}
+					<!-- One line of facts; directions and the website are on the place's own page. -->
 					<span class="muted">
-						{distance(place.distance_m)}{place.address ? ` · ${place.address}` : ''}
-						{#if place.visits[0]?.verified}<span class="verified"> · checked in on the spot</span>{/if}
+						{#if now}<span class="hours" class:open={now.open} title={place.hours?.raw}>{now.text}</span> · {/if}{distance(place.distance_m)}{place.address ? ` · ${place.address}` : ''}
 					</span>
-					<span class="links">
-						<a href={directions(place.lat, place.lng)} target="_blank" rel="noopener">Directions</a>
-						{#if place.url}<a href={place.url} target="_blank" rel="noopener">Website</a>{/if}
-					</span>
+					{#if place.visits[0]?.verified}<span class="verified">Checked in on the spot</span>{/if}
 				</div>
 				<CheckIn {place} />
 			</li>
@@ -182,22 +176,9 @@
 		inset: 0;
 	}
 
-	.links a,
 	li :global(.check) {
 		position: relative;
 		z-index: 1;
-	}
-
-	.links {
-		display: flex;
-		flex-wrap: wrap;
-		gap: 14px;
-		margin-top: 2px;
-		font-weight: 700;
-	}
-
-	.links a {
-		text-decoration: none;
 	}
 
 	.verified {
