@@ -8,6 +8,13 @@
 </script>
 
 <section class="passport">
+	{#if discover.places_visited === 0}
+		<!-- All zeros say nothing yet: one line on how to start instead. -->
+		<div class="start">
+			<strong>Level {profile.level}</strong>
+			<p class="muted">Check in at a restaurant to taste the first of your {discover.world.available} countries.</p>
+		</div>
+	{:else}
 	<div class="stat">
 		<div class="row">
 			<span>Level {profile.level}</span>
@@ -30,12 +37,17 @@
 		<div><dt>Places visited</dt><dd>{discover.places_visited} <span class="muted">of {discover.places}</span></dd></div>
 		<div><dt>Countries completed</dt><dd>{discover.world.completed}</dd></div>
 	</dl>
+	{/if}
 </section>
 
 <style>
 	.passport {
 		display: grid;
 		gap: 14px;
+	}
+
+	.start p {
+		margin: 2px 0 0;
 	}
 
 	.stat {

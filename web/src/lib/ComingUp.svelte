@@ -6,7 +6,10 @@
 
 	let { celebrations }: { celebrations: Celebration[] } = $props();
 
-	const shown = $derived(celebrations.slice(0, 4));
+	// One by default, so the list of countries stays in view.
+	let expanded = $state(false);
+	const shown = $derived(celebrations.slice(0, expanded ? 4 : 1));
+	const more = $derived(Math.min(celebrations.length, 4) - 1);
 	const today = new Date().toISOString().slice(0, 10);
 
 	const parse = (day: string) => new Date(`${day}T12:00:00Z`);
@@ -64,6 +67,11 @@
 			</li>
 		{/each}
 	</ul>
+	{#if more > 0}
+		<button class="more" aria-expanded={expanded} onclick={() => (expanded = !expanded)}>
+			{expanded ? 'Show less' : `${more} more coming up`}
+		</button>
+	{/if}
 </section>
 
 <style>
@@ -146,6 +154,13 @@
 		padding: 3px 0 4px;
 		font-size: 18px;
 		font-weight: 900;
+	}
+
+	.more {
+		color: var(--accent);
+		font-size: 14px;
+		font-weight: 700;
+		padding: 4px 0;
 	}
 
 	.text {

@@ -112,7 +112,7 @@
 					<Settings size={20} aria-hidden="true" />
 				</button>
 			</h1>
-			<p class="tagline">Eat the world, start with your city</p>
+			{#if !app.location}<p class="tagline">Eat the world, start with your city</p>{/if}
 			{#if app.location}
 				<button class="where" aria-expanded={pickerOpen} onclick={() => (pickerOpen = !pickerOpen)}>
 					{#if app.location.source === 'gps'}<Navigation size={15} strokeWidth={2.5} aria-hidden="true" />{:else}<MapPin size={15} strokeWidth={2.5} aria-hidden="true" />{/if}
