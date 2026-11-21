@@ -31,6 +31,8 @@
 	let hoveredId: string | null = null;
 	let selectedId: string | null = null;
 	let coloured: string[] = [];
+	/** Each country's bounding box, to fly to it when it is selected. */
+	let bounds = new Map<string, [number, number, number, number]>();
 
 	const byCode = $derived(new Map(progress.map((p) => [p.code, p])));
 	const hoverInfo = $derived(hover ? { country: countries.find((c) => c.code === hover!.code), progress: byCode.get(hover.code) } : null);
@@ -60,6 +62,25 @@
 		return geometry;
 	}
 
+	/** [west, south, east, north] of a (multi)polygon whose rings were unwrapped. */
+	function bbox(geometry: Geometry): [number, number, number, number] {
+		const box: [number, number, number, number] = [Infinity, Infinity, -Infinity, -Infinity];
+		const polygons = geometry.type === 'Polygon' ? [geometry.coordinates] : geometry.type === 'MultiPolygon' ? geometry.coordinates : [];
+		for (const polygon of polygons) {
+			for (const [lng, lat] of polygon[0]) {
+				box[0] = Math.min(box[0], lng);
+				box[1] = Math.min(box[1], lat);
+				box[2] = Math.max(box[2], lng);
+				box[3] = Math.max(box[3], lat);
+			}
+		}
+		return box;
+	}
+
+	/** Fill opacity: with a country selected, the others step back. */
+	const fillOpacity = (focused: boolean) =>
+		focused ? ['case', flag('selected'), 1, flag('hover'), 0.8, 0.4] : ['case', flag('hover'), 1, 0.86];
+
 	const featureState = (key: string, fallback: unknown) => ['coalesce', ['feature-state', key], fallback];
 	const flag = (key: string) => ['boolean', featureState(key, false), false];
 
@@ -69,6 +90,7 @@
 		const color = (name: string) => css.getPropertyValue(name).trim();
 		return {
 			ocean: { 'background-color': color('--ocean') },
+			land: { 'fill-color': color('--land') },
 			fill: {
 				'fill-color': [
 					'match', featureState('status', 'none'),
@@ -111,6 +133,8 @@
 					return { ...f, geometry: unwrap(f.geometry), properties: { code: known?.code ?? `x-${f.properties.name}`, name: known?.name ?? f.properties.name } };
 				});
 
+			for (const f of features) bounds.set(String(f.properties!.code), bbox(f.geometry));
+
 			const themed = paint() as any;
 
 			const center: [number, number] = location ? [location.lng, location.lat] : [10, 30];
@@ -131,13 +155,15 @@
 					},
 					layers: [
 						{ id: 'ocean', type: 'background', paint: themed.ocean },
+						// Solid land under the coloured fill, so countries that step back fade to land, not sea.
+						{ id: 'land', type: 'fill', source: SOURCE, paint: themed.land },
 						{
 							id: 'fill',
 							type: 'fill',
 							source: SOURCE,
 							paint: {
 								...themed.fill,
-								'fill-opacity': ['case', flag('hover'), 1, 0.86] as any
+								'fill-opacity': fillOpacity(false) as any
 							}
 						},
 						{
@@ -146,7 +172,7 @@
 							source: SOURCE,
 							paint: {
 								...themed.borders,
-								'line-width': ['case', flag('selected'), 2, 0.6] as any
+								'line-width': ['case', flag('selected'), 2.5, 0.6] as any
 							}
 						},
 						{
@@ -234,6 +260,19 @@
 		if (selectedId) map.setFeatureState({ source: SOURCE, id: selectedId }, { selected: false });
 		if (selected) map.setFeatureState({ source: SOURCE, id: selected }, { selected: true });
 		selectedId = selected;
+		map.setPaintProperty('fill', 'fill-opacity', fillOpacity(selected !== null) as any);
+
+		// Fly to the selected country, or back to the whole globe around the user.
+		const box = selected ? bounds.get(selected) : null;
+		const animate = !matchMedia('(prefers-reduced-motion: reduce)').matches;
+		if (box) {
+			const el = map.getContainer();
+			const pad = Math.min(el.clientWidth, el.clientHeight) * 0.2;
+			map.fitBounds(box, { padding: pad, maxZoom: 3.5, duration: animate ? 1200 : 0 });
+		} else if (location) {
+			const zoom = fittingZoom(map.getContainer(), location.lat);
+			map.easeTo({ center: [location.lng, location.lat], zoom, duration: animate ? 1200 : 0 });
+		}
 	});
 
 	$effect(() => {
