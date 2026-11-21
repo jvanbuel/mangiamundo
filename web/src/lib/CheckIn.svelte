@@ -48,8 +48,8 @@
 	}
 
 	.check.done {
-		background: color-mix(in srgb, var(--discovered) 16%, var(--panel));
-		color: var(--completed);
+		background: color-mix(in srgb, var(--accent) 14%, var(--panel));
+		color: var(--accent-text);
 		box-shadow: none;
 		padding: 10px 14px;
 	}

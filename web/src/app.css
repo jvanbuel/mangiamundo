@@ -9,25 +9,29 @@
 	--line: #d5dee8;
 	--text: #14263a;
 	--muted: #5a6a7d;
-	/* Two colour families, one job each: cool blue for the sea and for whatever you can
-	   press; one warm ramp for progress, pale to deep as a country gets "cooked". The
-	   ramp steps in lightness too, so the states hold up without colour vision. */
+	/* One blue scale for the whole app, plus gold as its only accent (roughly 60-30-10:
+	   neutrals, blue, a little gold). Blue is everything you press and every country you
+	   are still working on; gold means one thing, done. Map states step in lightness
+	   and hue, so they hold up without colour vision.
+	   Blue scale: 200 #9fc5ee, 600 #2873c2, 700 #1d5a9e. Gold: 500 #d99a00, 900 #3d2a00. */
 	--accent: #2873c2;
 	--on-accent: #ffffff;
+	--accent-text: #1d5a9e;
 	--danger: #b3261e;
-	--ocean: #a9c8e6;
-	--land: #f3eee6;
-	--map-border: #d6cdbd;
-	--available: #f3c186;
-	--available-edge: #c85a0c;
-	--discovered: #dd6a12;
-	--completed: #7a2010;
-	--on-available: #3a1500;
-	--on-discovered: #3a1500;
-	--on-completed: #ffffff;
+	/* A faintly blue sea and near-white land, so blue can belong to the countries. */
+	--ocean: #dbe5ef;
+	--land: #fbfaf7;
+	--map-border: #cfd8e2;
+	--available: #9fc5ee;
+	--available-edge: #2873c2;
+	--discovered: #2873c2;
+	--completed: #d99a00;
+	--on-available: #0b2340;
+	--on-discovered: #ffffff;
+	--on-completed: #3d2a00;
 	/* Time-limited events are something to act on, so they take the action colour. */
 	--event: var(--accent);
-	--event-text: #1d5a9e;
+	--event-text: var(--accent-text);
 	--on-event: var(--on-accent);
 	/* The empty part of a progress bar, outlined so it shows at zero. */
 	--track: #dbe2ea;
@@ -59,19 +63,20 @@
 		--muted: #93a6bb;
 		--accent: #5ba6ee;
 		--on-accent: #07182a;
+		--accent-text: #8cc3f5;
 		--danger: #ff9d8a;
-		--ocean: #08131e;
-		--land: #33465b;
-		--map-border: #13202e;
-		--available: #75482c;
-		--available-edge: #b9794a;
-		--discovered: #d06a1c;
-		--completed: #ffe2c4;
+		--ocean: #0a1726;
+		--land: #22364b;
+		--map-border: #0a1726;
+		--available: #2c5d94;
+		--available-edge: #6fb1f5;
+		--discovered: #58a6f0;
+		--completed: #f2c14e;
 		--on-available: #ffffff;
-		--on-discovered: #2a1000;
-		--on-completed: #2a1000;
+		--on-discovered: #07182a;
+		--on-completed: #2a1a00;
 		--event: var(--accent);
-		--event-text: #8cc3f5;
+		--event-text: var(--accent-text);
 		--on-event: var(--on-accent);
 		--track: #24405c;
 		--track-edge: #57708c;
@@ -91,19 +96,20 @@
 	--muted: #93a6bb;
 	--accent: #5ba6ee;
 	--on-accent: #07182a;
+	--accent-text: #8cc3f5;
 	--danger: #ff9d8a;
-	--ocean: #08131e;
-	--land: #33465b;
-	--map-border: #13202e;
-	--available: #75482c;
-	--available-edge: #b9794a;
-	--discovered: #d06a1c;
-	--completed: #ffe2c4;
+	--ocean: #0a1726;
+	--land: #22364b;
+	--map-border: #0a1726;
+	--available: #2c5d94;
+	--available-edge: #6fb1f5;
+	--discovered: #58a6f0;
+	--completed: #f2c14e;
 	--on-available: #ffffff;
-	--on-discovered: #2a1000;
-	--on-completed: #2a1000;
+	--on-discovered: #07182a;
+	--on-completed: #2a1a00;
 	--event: var(--accent);
-	--event-text: #8cc3f5;
+	--event-text: var(--accent-text);
 	--on-event: var(--on-accent);
 	--track: #24405c;
 	--track-edge: #57708c;

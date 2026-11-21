@@ -195,7 +195,7 @@
 	}
 
 	.verified {
-		color: var(--completed);
+		color: var(--accent-text);
 	}
 
 	table {
