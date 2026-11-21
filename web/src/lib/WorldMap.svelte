@@ -104,6 +104,8 @@
 				'line-color': [
 					'case', flag('selected'), color('--text'),
 					['==', featureState('status', 'none'), 'available'], color('--available-edge'),
+					// Completed countries get an inner stroke too, a cue beyond colour.
+					['==', featureState('status', 'none'), 'completed'], color('--on-completed'),
 					color('--map-border')
 				]
 			},
@@ -178,7 +180,11 @@
 							source: SOURCE,
 							paint: {
 								...themed.borders,
-								'line-width': ['case', flag('selected'), 2, ['==', featureState('status', 'none'), 'available'], 1, 0.6] as any
+								'line-width': [
+									'case', flag('selected'), 2,
+									['match', featureState('status', 'none'), ['available', 'completed'], true, false], 1.5,
+									0.6
+								] as any
 							}
 						},
 						{

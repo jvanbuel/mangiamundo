@@ -48,7 +48,7 @@
 	}
 
 	.check.done {
-		background: color-mix(in srgb, var(--completed) 14%, var(--panel));
+		background: color-mix(in srgb, var(--discovered) 16%, var(--panel));
 		color: var(--completed);
 		box-shadow: none;
 		padding: 10px 14px;
