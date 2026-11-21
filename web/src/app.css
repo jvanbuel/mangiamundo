@@ -12,11 +12,12 @@
 	--accent: #2873c2;
 	--on-accent: #ffffff;
 	--danger: #b3261e;
-	--ocean: #c4daef;
-	--land: #e3e7eb;
-	--available: #2873c2;
-	--discovered: #c98508;
-	--completed: #3da35a;
+	/* Map: blue sea, warm land, and a purple "to discover" that is not mistaken for water. */
+	--ocean: #b9d3ec;
+	--land: #f1ece3;
+	--available: #7c4bc8;
+	--discovered: #e09612;
+	--completed: #2c9150;
 	--on-completed: #0b2a14;
 	--event: #c2417a;
 	--glass: rgb(255 255 255 / 0.92);
@@ -41,9 +42,9 @@
 		--accent: #5ba6ee;
 		--on-accent: #07182a;
 		--danger: #ff9d8a;
-		--ocean: #0f2133;
-		--land: #233a52;
-		--available: #3b8fd9;
+		--ocean: #08131e;
+		--land: #33465b;
+		--available: #b48cf5;
 		--discovered: #f2b53d;
 		--completed: #54b96f;
 		--on-completed: #06210f;
@@ -65,9 +66,9 @@
 	--accent: #5ba6ee;
 	--on-accent: #07182a;
 	--danger: #ff9d8a;
-	--ocean: #0f2133;
-	--land: #233a52;
-	--available: #3b8fd9;
+	--ocean: #08131e;
+	--land: #33465b;
+	--available: #b48cf5;
 	--discovered: #f2b53d;
 	--completed: #54b96f;
 	--on-completed: #06210f;
