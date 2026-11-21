@@ -12,15 +12,22 @@
 	// Move focus to the details when they open, so screen readers start there.
 	$effect(() => heading?.focus());
 
-	/** OSM cuisine tags read as words: "ethiopian;coffee_shop" → "ethiopian, coffee shop". */
-	const cuisine = (raw: string) => raw.replaceAll('_', ' ').split(';').map((c) => c.trim()).join(', ');
+	/** OSM cuisine tags read as words: "ethiopian;coffee_shop" → "Ethiopian, coffee shop". */
+	const cuisine = (raw: string) => {
+		const words = raw.replaceAll('_', ' ').split(';').map((c) => c.trim()).join(', ');
+		return words.charAt(0).toUpperCase() + words.slice(1);
+	};
+	/** Open around the clock every day: one line says it better than seven. */
+	const allDay = $derived(place?.hours?.week?.every((d) => d.open.length === 1 && d.open[0] === '24 hours') ?? false);
+	/** Where Back goes: the country the place was opened from, if any. */
+	const from = $derived(app.selected ? country(app.selected)?.name : null);
 	const day = (at: number) =>
 		new Date(at * 1000).toLocaleDateString(undefined, { weekday: 'short', day: 'numeric', month: 'long', year: 'numeric' });
 </script>
 
 <svelte:window onkeydown={(e) => e.key === 'Escape' && closePlace()} />
 
-<button class="back" onclick={closePlace}><ArrowLeft size={16} strokeWidth={2.5} /> Back</button>
+<button class="back" onclick={closePlace}><ArrowLeft size={16} strokeWidth={2.5} /> {from ?? 'Back'}</button>
 
 {#if !place}
 	<p class="muted">Loading place…</p>
@@ -48,10 +55,14 @@
 	{#if place.hours}
 		<section>
 			<h3>Opening hours</h3>
-			{#if place.hours.status}
+			{#if allDay}
+				<p class="status open">Open 24 hours, every day</p>
+			{:else if place.hours.status}
 				<p class="status" class:open={place.hours.status.open}>{place.hours.status.text}</p>
 			{/if}
-			{#if place.hours.week}
+			{#if allDay}
+				<!-- The line above says it all. -->
+			{:else if place.hours.week}
 				<table>
 					<tbody>
 						{#each place.hours.week as d (d.name)}
