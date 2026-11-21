@@ -208,15 +208,19 @@ struct WorldMapView: View {
             layer.stroke(outline, with: .color(Theme.text), lineWidth: 2.5)
         }
 
-        // Sparkles: the diamond's edge colour with a white heart, each fading on its own beat.
+        // Sparkles: the diamond's edge colour with a white heart. Each flashes on its own
+        // beat, growing and brightening quickly and then shrinking back (full and still
+        // with Reduce Motion).
         for at in sparkleAt {
             for (i, sparkle) in Self.sparkles.enumerated() {
                 let c = CGPoint(x: at.x + sparkle.dx, y: at.y + sparkle.dy)
-                let wave = time.map { sin($0 * 2.2 + Double(i) * 2.1) } ?? 1
+                let wave = time.map { max(0, sin($0 * 2.6 + Double(i) * 2.1)) } ?? 1
+                let flash = CGFloat(wave * wave)
+                let tip = sparkle.size * (0.55 + 0.45 * flash)
                 var glint = context
-                glint.opacity = 0.4 + 0.6 * max(0, wave)
-                glint.fill(Self.star(at: c, tip: sparkle.size, waist: sparkle.size * 0.25), with: .color(Theme.completedEdge))
-                glint.fill(Self.star(at: c, tip: sparkle.size * 0.46, waist: sparkle.size * 0.11), with: .color(.white))
+                glint.opacity = 0.25 + 0.75 * flash
+                glint.fill(Self.star(at: c, tip: tip, waist: tip * 0.25), with: .color(Theme.completedEdge))
+                glint.fill(Self.star(at: c, tip: tip * 0.46, waist: tip * 0.11), with: .color(.white))
             }
         }
 

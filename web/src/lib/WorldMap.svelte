@@ -161,6 +161,13 @@
 		['sparkle-c', 0.8, [-30, 24]]
 	];
 
+	/** A sparkle's brightness, 0 to 1, at a time in seconds: a quick flash every 2.4s,
+	    each sparkle a third of a beat after the last. */
+	function twinkle(seconds: number, index: number): number {
+		const wave = Math.max(0, Math.sin(seconds * 2.6 + index * 2.1));
+		return wave * wave;
+	}
+
 	const featureState = (key: string, fallback: unknown) => ['coalesce', ['feature-state', key], fallback];
 	const flag = (key: string) => ['boolean', featureState(key, false), false];
 
@@ -398,17 +405,18 @@
 			features: done.map((f) => ({ type: 'Feature', properties: {}, geometry: { type: 'Point', coordinates: centre(f.geometry) } }))
 		});
 		if (still || !done.length) return;
-		// Twinkle: each sparkle fades in and out on its own beat. Paint changes only, about
-		// 20 times a second, and nothing at all while the tab is hidden.
+		// Twinkle: each sparkle flashes on its own beat, growing and brightening quickly and
+		// then shrinking back. About 20 updates a second, nothing while the tab is hidden.
 		const m = map;
 		let frame = 0, last = 0;
 		const tick = (now: number) => {
 			frame = requestAnimationFrame(tick);
 			if (now - last < 50 || document.hidden) return;
 			last = now;
-			SPARKLES.forEach(([id], i) => {
-				const wave = Math.sin(now / 450 + i * 2.1);
-				m.setPaintProperty(id, 'icon-opacity', 0.4 + 0.6 * Math.max(0, wave));
+			SPARKLES.forEach(([id, size], i) => {
+				const flash = twinkle(now / 1000, i);
+				m.setPaintProperty(id, 'icon-opacity', 0.25 + 0.75 * flash);
+				m.setLayoutProperty(id, 'icon-size', size * (0.55 + 0.45 * flash));
 			});
 		};
 		frame = requestAnimationFrame(tick);

@@ -79,7 +79,7 @@ fun WorldMap(
     val twinkle by rememberInfiniteTransition(label = "twinkle").animateFloat(
         initialValue = 0f,
         targetValue = (2 * PI).toFloat(),
-        animationSpec = infiniteRepeatable(tween(2800, easing = LinearEasing), RepeatMode.Restart),
+        animationSpec = infiniteRepeatable(tween(2400, easing = LinearEasing), RepeatMode.Restart),
         label = "phase",
     )
 
@@ -223,13 +223,19 @@ fun WorldMap(
             clipPath(globe, block = edges)
         }
 
-        // Sparkles: the diamond's edge colour with a white heart, each fading on its own beat.
+        // Sparkles: the diamond's edge colour with a white heart. Each flashes on its own
+        // beat, growing and brightening quickly and then shrinking back.
         for (at in sparkleAt) {
             SPARKLES.forEachIndexed { i, (dx, dy, tip) ->
                 val c = Offset(at.x + dx.dp.toPx(), at.y + dy.dp.toPx())
-                val alpha = 0.4f + 0.6f * max(0f, sin(twinkle + i * 2.1f))
-                drawStar(star, c, tip.dp.toPx(), colors.completedEdge, alpha)
-                drawStar(star, c, tip.dp.toPx() * 0.46f, Color.White, alpha)
+                // Offset so the phase's starting point, all that shows when animations are off, has
+                // the main sparkle at full size.
+                val wave = max(0f, sin(twinkle + i * 2.1f + (PI / 2).toFloat()))
+                val flash = wave * wave
+                val alpha = 0.25f + 0.75f * flash
+                val size = tip.dp.toPx() * (0.55f + 0.45f * flash)
+                drawStar(star, c, size, colors.completedEdge, alpha)
+                drawStar(star, c, size * 0.46f, Color.White, alpha)
             }
         }
 
