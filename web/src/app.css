@@ -9,11 +9,10 @@
 	--line: #d5dee8;
 	--text: #14263a;
 	--muted: #5a6a7d;
-	/* One blue scale for the whole app, plus gold as its only accent (roughly 60-30-10:
-	   neutrals, blue, a little gold). Blue is everything you press and every country you
-	   are still working on; gold means one thing, done. Map states step in lightness
-	   and hue, so they hold up without colour vision.
-	   Blue scale: 200 #9fc5ee, 600 #2873c2, 700 #1d5a9e. Gold: 500 #d99a00, 900 #3d2a00. */
+	/* Blue for the app and for countries still to discover, gold once you have tasted
+	   a country, and a sparkling diamond once you have eaten your way through it. The
+	   three steps differ in lightness as well as colour, and the diamond also has facets
+	   and sparkles on the map, so they hold up without colour vision. */
 	--accent: #2873c2;
 	--on-accent: #ffffff;
 	--accent-text: #1d5a9e;
@@ -22,13 +21,19 @@
 	--ocean: #dbe5ef;
 	--land: #fbfaf7;
 	--map-border: #cfd8e2;
-	--available: #9fc5ee;
-	--available-edge: #2873c2;
-	--discovered: #2873c2;
-	--completed: #d99a00;
-	--on-available: #0b2340;
-	--on-discovered: #ffffff;
-	--on-completed: #3d2a00;
+	--available: #2873c2;
+	--available-edge: #1d5a9e;
+	--on-available: #ffffff;
+	--discovered: #e0a100;
+	--discovered-edge: #8a6200;
+	--discovered-text: #7a5600;
+	--on-discovered: #3d2a00;
+	--completed: #e3f5fe;
+	--completed-edge: #2f8fc4;
+	--completed-facet: #8fcdef;
+	--on-completed: #0b4a6b;
+	/* The diamond as a surface: icy, with a hint of prism. */
+	--diamond: linear-gradient(135deg, #f7fdff 0%, #c9ecfd 35%, #f1eaff 50%, #bde5fb 65%, #f0fbff 100%);
 	/* Time-limited events are something to act on, so they take the action colour. */
 	--event: var(--accent);
 	--event-text: var(--accent-text);
@@ -68,13 +73,18 @@
 		--ocean: #0a1726;
 		--land: #22364b;
 		--map-border: #0a1726;
-		--available: #2c5d94;
-		--available-edge: #6fb1f5;
-		--discovered: #58a6f0;
-		--completed: #f2c14e;
-		--on-available: #ffffff;
-		--on-discovered: #07182a;
-		--on-completed: #2a1a00;
+		--available: #3b8fd9;
+		--available-edge: #8cc3f5;
+		--on-available: #07182a;
+		--discovered: #f2c14e;
+		--discovered-edge: #f2c14e;
+		--discovered-text: #f2c14e;
+		--on-discovered: #2a1a00;
+		--completed: #e3f5fe;
+		--completed-edge: #8fd6ff;
+		--completed-facet: #8fcdef;
+		--on-completed: #0b4a6b;
+		--diamond: linear-gradient(135deg, #f7fdff 0%, #c9ecfd 35%, #f1eaff 50%, #bde5fb 65%, #f0fbff 100%);
 		--event: var(--accent);
 		--event-text: var(--accent-text);
 		--on-event: var(--on-accent);
@@ -101,13 +111,18 @@
 	--ocean: #0a1726;
 	--land: #22364b;
 	--map-border: #0a1726;
-	--available: #2c5d94;
-	--available-edge: #6fb1f5;
-	--discovered: #58a6f0;
-	--completed: #f2c14e;
-	--on-available: #ffffff;
-	--on-discovered: #07182a;
-	--on-completed: #2a1a00;
+	--available: #3b8fd9;
+	--available-edge: #8cc3f5;
+	--on-available: #07182a;
+	--discovered: #f2c14e;
+	--discovered-edge: #f2c14e;
+	--discovered-text: #f2c14e;
+	--on-discovered: #2a1a00;
+	--completed: #e3f5fe;
+	--completed-edge: #8fd6ff;
+	--completed-facet: #8fcdef;
+	--on-completed: #0b4a6b;
+	--diamond: linear-gradient(135deg, #f7fdff 0%, #c9ecfd 35%, #f1eaff 50%, #bde5fb 65%, #f0fbff 100%);
 	--event: var(--accent);
 	--event-text: var(--accent-text);
 	--on-event: var(--on-accent);

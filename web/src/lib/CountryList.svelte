@@ -1,5 +1,5 @@
 <script lang="ts">
-	import Check from '@lucide/svelte/icons/check';
+	import Gem from '@lucide/svelte/icons/gem';
 	import { country } from './state.svelte';
 	import { statusOf, type Discover } from './types';
 
@@ -34,7 +34,7 @@
 						<span class="name">{entry.info?.name ?? entry.code}</span>
 						<span class="count">{entry.visited}/{entry.places}</span>
 						<span class="mark {entry.status}" title={LABELS[entry.status]}>
-							{#if entry.status === 'completed'}<Check size={10} strokeWidth={4} aria-hidden="true" />{/if}
+							{#if entry.status === 'completed'}<Gem size={10} strokeWidth={3} aria-hidden="true" />{/if}
 						</span>
 					</button>
 				</li>
@@ -113,8 +113,8 @@
 	}
 
 	.mark.completed {
-		border-color: var(--completed);
-		background: var(--completed);
+		border-color: var(--completed-edge);
+		background: var(--diamond);
 		color: var(--on-completed);
 	}
 </style>

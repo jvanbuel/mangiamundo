@@ -443,8 +443,8 @@
 	}
 
 	.swatch.completed {
-		border-color: var(--completed);
-		background: var(--completed);
+		border-color: var(--completed-edge);
+		background: var(--diamond);
 	}
 
 	.swatch.none {

@@ -112,8 +112,9 @@
 		background: var(--discovered);
 	}
 
+	/* A full bar in icy blue with a bright band, so it reads at 6px tall. */
 	.bar span.completed {
-		background: var(--completed);
+		background: linear-gradient(90deg, var(--completed-edge), #bfeaff 50%, var(--completed-edge));
 	}
 
 	ul {
@@ -182,6 +183,6 @@
 	}
 
 	.verified {
-		color: var(--accent-text);
+		color: var(--discovered-text);
 	}
 </style>
