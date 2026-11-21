@@ -30,7 +30,6 @@
 		{ id: 'light', label: 'Light' },
 		{ id: 'dark', label: 'Dark' }
 	];
-	const theme = $derived(THEMES.find((t) => t.id === app.theme) ?? THEMES[0]);
 	let systemDark = $state(false);
 
 	onMount(() => {
@@ -41,10 +40,6 @@
 		media.addEventListener('change', update);
 		return () => media.removeEventListener('change', update);
 	});
-
-	function nextTheme() {
-		setTheme(THEMES[(THEMES.indexOf(theme) + 1) % THEMES.length].id);
-	}
 
 	function pick(code: string, name: string, available: boolean) {
 		if (available) {
@@ -86,10 +81,6 @@
 		{/if}
 
 		<div class="controls">
-			<button class="theme" onclick={nextTheme} aria-label="Colour theme: {theme.label}. Click to change.">
-				<span class="muted">Theme</span>
-				{theme.label}
-			</button>
 			<div class="toggle" role="group" aria-label="Map projection">
 				<button aria-pressed={app.projection === 'globe'} onclick={() => setProjection('globe')}>Globe</button>
 				<button aria-pressed={app.projection === 'mercator'} onclick={() => setProjection('mercator')}>Flat</button>
@@ -100,7 +91,7 @@
 			<li><span style:background="var(--available)"></span>To discover</li>
 			<li><span style:background="var(--discovered)"></span>Tasted</li>
 			<li><span style:background="var(--completed)"></span>Completed</li>
-			<li><span style:background="var(--land)"></span>Not in this area</li>
+			<li><span style:background="var(--land)"></span>None nearby</li>
 		</ul>
 	</div>
 
@@ -126,6 +117,14 @@
 		{#if settingsOpen}
 			<div class="card settings">
 				<h2>Settings</h2>
+				<div class="setting">
+					<span id="theme-label">Theme</span>
+					<div class="toggle" role="group" aria-labelledby="theme-label">
+						{#each THEMES as t (t.id)}
+							<button aria-pressed={app.theme === t.id} onclick={() => setTheme(t.id)}>{t.label}</button>
+						{/each}
+					</div>
+				</div>
 				<p><a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">Map data © OpenStreetMap contributors</a></p>
 				<p class="build">Web {version}{app.server ? ` · Server ${app.server}` : ''}</p>
 			</div>
@@ -367,20 +366,17 @@
 		gap: 8px;
 	}
 
-	.theme {
+	.setting {
 		display: flex;
 		align-items: center;
-		gap: 6px;
-		padding: 0 14px;
-		border-radius: 999px;
-		background: var(--glass);
-		border: 1px solid var(--line);
-		font-size: 13px;
+		justify-content: space-between;
+		gap: 12px;
+		margin: 10px 0 14px;
 		font-weight: 700;
 	}
 
-	.theme span {
-		font-weight: 500;
+	.settings .toggle {
+		background: var(--panel);
 	}
 
 	.toggle {
@@ -458,9 +454,8 @@
 		.legend {
 			left: 8px;
 			bottom: 8px;
-			right: 44px;
+			padding: 6px 10px;
 			gap: 2px 10px;
-			font-size: 11px;
 		}
 
 		.controls {
