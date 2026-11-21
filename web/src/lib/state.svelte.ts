@@ -138,9 +138,10 @@ export async function init() {
 		// Keep following the device when the last location came from GPS.
 		if (stored.source === 'gps') void locate(true);
 	} else {
-		// First visit: show the welcome card while the browser asks for the location.
+		// First visit: ask for the location only once the welcome card has explained why,
+		// when the user presses its button, unless the browser already allows it.
 		void hideSplash();
-		await locate(true);
+		if (await locationAllowed()) await locate(true);
 	}
 	await followLink();
 }
@@ -366,6 +367,15 @@ function position(): Promise<GeolocationPosition> {
 				: 'Could not determine your location. Search for your city instead.'
 		)), { enableHighAccuracy: true, timeout: 10_000, maximumAge: 60_000 });
 	});
+}
+
+/** Whether the browser will share the location without asking. */
+async function locationAllowed(): Promise<boolean> {
+	try {
+		return (await navigator.permissions.query({ name: 'geolocation' })).state === 'granted';
+	} catch {
+		return false;
+	}
 }
 
 /** Moves to the device's GPS position. With `quiet`, failures leave the current location alone. */
