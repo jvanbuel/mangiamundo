@@ -232,6 +232,8 @@ fn places(elements: Vec<Element>) -> Vec<FoundPlace> {
         }
         let countries = catalog::countries_for_cuisine_tag(cuisine);
         if countries.is_empty() {
+            // Only tags that cost us the whole place: the extra `pizza` in `italian;pizza`
+            // loses nothing and would crowd out the ones that do.
             for tag in cuisine.split([';', ',']) {
                 *dropped.entry(tag.trim().to_lowercase()).or_default() += 1;
             }
