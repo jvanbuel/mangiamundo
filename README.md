@@ -16,12 +16,13 @@ you can eat nearby lights up on a world map; check in at restaurants to taste th
 ## How the game works
 
 - Pick a city or postal code. Countries with a restaurant there light up.
-- **Tasted**: you checked in at a place of that country.
-- **Completed**: you visited every place of that country in your area.
+- **Gold**: you checked in at a place of that country.
+- **Platinum**: you visited 5 of its places in your area.
+- **Diamond**: you visited 10 of its places, or all of them when it has fewer.
 - **Badges** for tasting every country of a continent, or the whole world, in your city,
   plus celebrations and limited-time events.
-- **XP**: 10 per check-in, 50 per new country. Level *n* starts at 100·(n−1)² XP.
-  A check-in within 250 m of the place is marked as verified.
+- **XP**: 10 per check-in, 50 per new country, and 15 more for a check-in made within
+  250 m of the place (verified). Level *n* starts at 100·(n−1)² XP.
 
 ## Quick start
 

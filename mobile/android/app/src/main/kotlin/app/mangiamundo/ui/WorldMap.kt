@@ -84,7 +84,7 @@ fun WorldMap(
     )
 
     // One path per fill colour plus one for all borders, reused across frames.
-    val fills = remember { List(4) { Path().apply { fillType = PathFillType.EvenOdd } } }
+    val fills = remember { List(5) { Path().apply { fillType = PathFillType.EvenOdd } } }
     val star = remember { Path() }
     val facets = remember { Path() }
     val globe = remember { Path() }
@@ -142,6 +142,7 @@ fun WorldMap(
                 Status.AVAILABLE -> fills[1]
                 Status.DISCOVERED -> fills[2]
                 Status.COMPLETED -> fills[3]
+                Status.PLATINUM -> fills[4]
             }
             // A completed country's sparkles go in the middle of its largest visible ring.
             var largestCount = 0
@@ -188,6 +189,7 @@ fun WorldMap(
         drawPath(fills[1], colors.available)
         drawPath(fills[2], colors.discovered)
         drawPath(fills[3], colors.completed)
+        drawPath(fills[4], colors.platinum)
 
         // Facets cut into each diamond: a lattice of crossing lines.
         if (!fills[3].isEmpty) {
@@ -213,6 +215,7 @@ fun WorldMap(
             drawPath(fills[1], colors.availableEdge, style = Stroke(1.dp.toPx()))
             drawPath(fills[2], colors.discoveredEdge, style = Stroke(1.dp.toPx()))
             drawPath(fills[3], colors.completedEdge, style = Stroke(1.5.dp.toPx()))
+            drawPath(fills[4], colors.platinumEdge, style = Stroke(1.dp.toPx()))
             drawPath(outline, colors.text, style = Stroke(2.dp.toPx()))
         }
         if (flat) {

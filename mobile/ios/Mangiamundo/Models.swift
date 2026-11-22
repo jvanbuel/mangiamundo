@@ -51,8 +51,29 @@ struct Catalog: Decodable {
     let continents: [Continent]
 }
 
-enum Status {
-    case available, discovered, completed
+/// How far the user got with a country's food: gold, platinum, then diamond.
+enum Status: String, Decodable, CaseIterable {
+    case available
+    /// Gold.
+    case discovered
+    case platinum
+    /// Diamond.
+    case completed
+
+    /// A status from a newer server reads as gold.
+    init(from decoder: Decoder) throws {
+        self = Status(rawValue: try decoder.singleValueContainer().decode(String.self)) ?? .discovered
+    }
+
+    /// What players call it.
+    var label: String {
+        switch self {
+        case .available: "To discover"
+        case .discovered: "Gold"
+        case .platinum: "Platinum"
+        case .completed: "Diamond"
+        }
+    }
 }
 
 struct CountryProgress: Decodable, Identifiable {
@@ -60,13 +81,11 @@ struct CountryProgress: Decodable, Identifiable {
     let continent: String
     let places: Int
     let visited: Int
+    /// Places to visit for diamond.
+    let goal: Int
+    let status: Status
 
     var id: String { code }
-
-    var status: Status {
-        if visited == 0 { return .available }
-        return visited >= places ? .completed : .discovered
-    }
 }
 
 struct GroupProgress: Decodable, Identifiable {

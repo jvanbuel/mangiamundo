@@ -420,9 +420,7 @@ struct Bar: View {
 struct Legend: View {
     var body: some View {
         HStack(spacing: 10) {
-            item(.available, "To discover")
-            item(.discovered, "Tasted")
-            item(.completed, "Completed")
+            ForEach(Status.allCases, id: \.self) { item($0) }
         }
         .font(Theme.font(.caption2, .semibold))
         .foregroundStyle(Theme.muted)
@@ -432,16 +430,16 @@ struct Legend: View {
         .overlay(RoundedRectangle(cornerRadius: 10).stroke(Theme.line))
     }
 
-    private func item(_ status: Status, _ label: String) -> some View {
+    private func item(_ status: Status) -> some View {
         HStack(spacing: 5) {
             StatusMark(status: status, size: 11)
-            Text(label)
+            Text(status.label)
         }
     }
 }
 
 /// A country's state by shape as well as colour: a blue ring, a half-filled gold one,
-/// a diamond with a gem.
+/// a full platinum one, a diamond with a gem.
 struct StatusMark: View {
     let status: Status
     var size: CGFloat = 14
@@ -454,6 +452,9 @@ struct StatusMark: View {
             case .discovered:
                 Circle().fill(LinearGradient(stops: [.init(color: .clear, location: 0.5), .init(color: Theme.discovered, location: 0.5)], startPoint: .top, endPoint: .bottom))
                 Circle().strokeBorder(Theme.discovered, lineWidth: 2)
+            case .platinum:
+                Circle().fill(Theme.platinumMetal)
+                Circle().strokeBorder(Theme.platinumEdge, lineWidth: 2)
             case .completed:
                 Circle().fill(Theme.diamond)
                 Circle().strokeBorder(Theme.completedEdge, lineWidth: 2)
@@ -710,7 +711,7 @@ struct Passport: View {
                 Divider().overlay(Theme.line)
                 HStack(alignment: .top) {
                     stat("Places visited", "\(discover.placesVisited) of \(discover.places)")
-                    stat("Countries completed", "\(discover.world.completed)")
+                    stat("Diamond countries", "\(discover.world.completed)")
                 }
             }
         }
@@ -796,9 +797,9 @@ struct CountryDetail: View {
                 }
             }
             Bar(
-                part: progress.visited,
-                whole: progress.places,
-                style: progress.status == .completed ? AnyShapeStyle(Theme.diamondBar) : AnyShapeStyle(progress.status == .available ? Theme.accent : Theme.discovered)
+                part: min(progress.visited, progress.goal),
+                whole: progress.goal,
+                style: barStyle
             )
 
             if model.placesLoading {
@@ -827,11 +828,20 @@ struct CountryDetail: View {
         }
     }
 
-    private var summary: String {
-        if progress.status == .completed {
-            return "Completed · all \(progress.places) visited"
+    private var barStyle: AnyShapeStyle {
+        switch progress.status {
+        case .available: AnyShapeStyle(Theme.accent)
+        case .discovered: AnyShapeStyle(Theme.discovered)
+        case .platinum: AnyShapeStyle(Theme.platinumMetal)
+        case .completed: AnyShapeStyle(Theme.diamondBar)
         }
-        return "\(progress.visited) of \(progress.places) \(progress.places == 1 ? "place" : "places") visited"
+    }
+
+    private var summary: String {
+        var text = "\(progress.visited) of \(progress.places) \(progress.places == 1 ? "place" : "places") visited"
+        if progress.status != .available { text = "\(progress.status.label) · " + text }
+        if progress.status != .completed { text += " · \(progress.goal - progress.visited) more for diamond" }
+        return text
     }
 }
 
