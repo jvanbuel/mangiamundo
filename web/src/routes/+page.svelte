@@ -200,6 +200,7 @@
 			{/if}
 		{/if}
 
+		<footer class="site-footer"><a href="/privacy/">Privacy</a> · <a href="mailto:hello@mangiamundo.com">Contact</a></footer>
 	</aside>
 </main>
 
@@ -246,6 +247,18 @@
 		display: flex;
 		flex-direction: column;
 		gap: 14px;
+	}
+
+	/* Always at the bottom of the panel, however short its content. */
+	.site-footer {
+		margin-top: auto;
+		padding-top: 8px;
+		font-size: var(--text-xs);
+		color: var(--muted);
+	}
+
+	.site-footer a {
+		color: inherit;
 	}
 
 	h1 {
