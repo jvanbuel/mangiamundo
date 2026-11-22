@@ -42,6 +42,8 @@ android {
     buildTypes {
         release {
             isMinifyEnabled = false
+            // Release builds run on real phones, so they use the deployed backend.
+            buildConfigField("String", "API_BASE", "\"https://mangiamundo.com\"")
         }
     }
 }

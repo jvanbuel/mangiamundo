@@ -92,7 +92,10 @@ pub fn upcoming(today: NaiveDate, days: i64) -> Vec<Celebration> {
 
 /// Celebrations whose first day is `day`.
 pub fn starting_on(day: NaiveDate) -> Vec<Celebration> {
-    upcoming(day, 0).into_iter().filter(|c| c.starts == day).collect()
+    upcoming(day, 0)
+        .into_iter()
+        .filter(|c| c.starts == day)
+        .collect()
 }
 
 /// A time-limited challenge, like "Japan month". Earned badges are kept for good.
@@ -112,7 +115,8 @@ pub struct Event {
 pub fn events() -> &'static [Event] {
     static DATA: OnceLock<Vec<Event>> = OnceLock::new();
     DATA.get_or_init(|| {
-        serde_json::from_str(include_str!("../data/events.json")).expect("data/events.json is valid")
+        serde_json::from_str(include_str!("../data/events.json"))
+            .expect("data/events.json is valid")
     })
 }
 
@@ -130,7 +134,10 @@ pub fn events_starting_on(day: NaiveDate) -> impl Iterator<Item = &'static Event
 /// The date at Unix time `now` in `zone`. Celebrations and events are calendar days, so
 /// "today" is the user's day, not the server's.
 pub fn local_date(now: i64, zone: Tz) -> NaiveDate {
-    DateTime::from_timestamp(now, 0).unwrap_or_default().with_timezone(&zone).date_naive()
+    DateTime::from_timestamp(now, 0)
+        .unwrap_or_default()
+        .with_timezone(&zone)
+        .date_naive()
 }
 
 /// Checks the data files for unknown countries and impossible dates.
@@ -182,16 +189,25 @@ mod tests {
     fn multi_day_celebrations_count_while_running() {
         // Oktoberfest 2026 runs 19 September to 4 October.
         let during = upcoming(day("2026-10-02"), 0);
-        let fest = during.iter().find(|c| c.id == "oktoberfest").expect("still on");
+        let fest = during
+            .iter()
+            .find(|c| c.id == "oktoberfest")
+            .expect("still on");
         assert_eq!(fest.ends, day("2026-10-04"));
-        assert!(starting_on(day("2026-10-02")).iter().all(|c| c.id != "oktoberfest"));
+        assert!(starting_on(day("2026-10-02"))
+            .iter()
+            .all(|c| c.id != "oktoberfest"));
     }
 
     #[test]
     fn looks_into_next_year() {
         let new_year = upcoming(day("2026-12-20"), 60);
-        assert!(new_year.iter().any(|c| c.id == "burns-night" && c.starts == day("2027-01-25")));
-        assert!(starting_on(day("2027-02-06")).iter().any(|c| c.id == "lunar-new-year"));
+        assert!(new_year
+            .iter()
+            .any(|c| c.id == "burns-night" && c.starts == day("2027-01-25")));
+        assert!(starting_on(day("2027-02-06"))
+            .iter()
+            .any(|c| c.id == "lunar-new-year"));
     }
 
     #[test]
@@ -205,6 +221,8 @@ mod tests {
 
     #[test]
     fn years_without_a_listed_date_are_skipped() {
-        assert!(upcoming(day("2031-01-01"), 400).iter().all(|c| c.id != "diwali"));
+        assert!(upcoming(day("2031-01-01"), 400)
+            .iter()
+            .all(|c| c.id != "diwali"));
     }
 }

@@ -1,23 +1,23 @@
 [
   {
-    "address": "200 Demo Street",
+    "address": "103 Demo Street",
     "countries": [
-      "AL"
+      "AZ"
     ],
-    "cuisine": "albanian",
-    "distance_m": 1711,
+    "cuisine": "azerbaijani",
+    "distance_m": 4315,
     "hours": {
-      "raw": "24/7",
+      "raw": "Mo-Su 11:30-14:00,18:00-22:00",
       "status": {
         "open": true,
-        "text": "Open"
+        "text": "Open until 14:00"
       },
       "week": null
     },
-    "id": "demo-leuven-AL-1",
-    "lat": 50.89448040522253,
-    "lng": 4.707786056764152,
-    "name": "Little Albania",
+    "id": "demo-leuven-AZ-2",
+    "lat": 50.90943981213245,
+    "lng": 4.740201887511225,
+    "name": "Mama's Azerbaijan",
     "osm_url": null,
     "url": null,
     "visits": [
@@ -29,24 +29,24 @@
     ]
   },
   {
-    "address": "105 Demo Street",
+    "address": "164 Demo Street",
     "countries": [
-      "AL"
+      "AZ"
     ],
-    "cuisine": "albanian",
-    "distance_m": 2746,
+    "cuisine": "azerbaijani",
+    "distance_m": 2791,
     "hours": {
-      "raw": "Mo-Sa 17:00-23:00",
+      "raw": "24/7",
       "status": {
-        "open": false,
-        "text": "Closed · opens 17:00"
+        "open": true,
+        "text": "Open"
       },
       "week": null
     },
-    "id": "demo-leuven-AL-0",
-    "lat": 50.90430815382898,
-    "lng": 4.695738873787995,
-    "name": "Chez Albania",
+    "id": "demo-leuven-AZ-1",
+    "lat": 50.88480436322853,
+    "lng": 4.739486950563422,
+    "name": "Royal Azerbaijan",
     "osm_url": null,
     "url": null,
     "visits": [
@@ -58,24 +58,24 @@
     ]
   },
   {
-    "address": "199 Demo Street",
+    "address": "84 Demo Street",
     "countries": [
-      "AL"
+      "AZ"
     ],
-    "cuisine": "albanian",
-    "distance_m": 2256,
+    "cuisine": "azerbaijani",
+    "distance_m": 3797,
     "hours": {
-      "raw": "Mo-Sa 17:00-23:00",
+      "raw": "24/7",
       "status": {
-        "open": false,
-        "text": "Closed · opens 17:00"
+        "open": true,
+        "text": "Open"
       },
       "week": null
     },
-    "id": "demo-leuven-AL-2",
-    "lat": 50.89984343764922,
-    "lng": 4.705502008206651,
-    "name": "Golden Albania",
+    "id": "demo-leuven-AZ-0",
+    "lat": 50.85076807649247,
+    "lng": 4.672015767995305,
+    "name": "Taste of Azerbaijan",
     "osm_url": null,
     "url": null,
     "visits": []

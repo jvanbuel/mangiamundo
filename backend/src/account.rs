@@ -54,12 +54,19 @@ pub struct Account {
 fn random_code(len: usize) -> String {
     let mut bytes = vec![0u8; len];
     getrandom::fill(&mut bytes).expect("the system has no randomness");
-    bytes.iter().map(|b| ALPHABET[(*b % 32) as usize] as char).collect()
+    bytes
+        .iter()
+        .map(|b| ALPHABET[(*b % 32) as usize] as char)
+        .collect()
 }
 
 /// Groups of four, as shown to people: `ABCD-EFGH`.
 fn grouped(code: &str) -> String {
-    code.as_bytes().chunks(4).map(|c| std::str::from_utf8(c).unwrap()).collect::<Vec<_>>().join("-")
+    code.as_bytes()
+        .chunks(4)
+        .map(|c| std::str::from_utf8(c).unwrap())
+        .collect::<Vec<_>>()
+        .join("-")
 }
 
 /// What people type back: any case, with or without dashes or spaces, O for 0 and I or L
@@ -77,7 +84,10 @@ fn normalized(input: &str) -> String {
 }
 
 fn hash(code: &str) -> String {
-    Sha256::digest(code.as_bytes()).iter().map(|b| format!("{b:02x}")).collect()
+    Sha256::digest(code.as_bytes())
+        .iter()
+        .map(|b| format!("{b:02x}"))
+        .collect()
 }
 
 fn device_name(name: Option<&str>) -> Option<String> {
@@ -92,7 +102,11 @@ async fn start_session(
     device: Option<&str>,
     now: i64,
 ) -> sqlx::Result<String> {
-    let token = format!("{}{}", uuid::Uuid::new_v4().simple(), uuid::Uuid::new_v4().simple());
+    let token = format!(
+        "{}{}",
+        uuid::Uuid::new_v4().simple(),
+        uuid::Uuid::new_v4().simple()
+    );
     sqlx::query("INSERT INTO sessions (id, token, user_id, device, created_at, last_used_at) VALUES (?, ?, ?, ?, ?, ?)")
         .bind(uuid::Uuid::new_v4().simple().to_string())
         .bind(&token)
@@ -109,7 +123,7 @@ async fn start_session(
 pub async fn create_user(db: &SqlitePool, device: Option<&str>, now: i64) -> sqlx::Result<String> {
     let id = uuid::Uuid::new_v4().to_string();
     let mut tx = db.begin().await?;
-    // `token` is a leftover column that must stay unique; the id is (see migration 0010).
+    // `token` is a leftover column that must stay unique; the id is (see migration 0011).
     sqlx::query("INSERT INTO users (id, token, created_at) VALUES (?, ?, ?)")
         .bind(&id)
         .bind(&id)
@@ -122,7 +136,11 @@ pub async fn create_user(db: &SqlitePool, device: Option<&str>, now: i64) -> sql
 }
 
 /// The session behind a token, marking it used.
-pub async fn session_for_token(db: &SqlitePool, token: &str, now: i64) -> sqlx::Result<Option<Session>> {
+pub async fn session_for_token(
+    db: &SqlitePool,
+    token: &str,
+    now: i64,
+) -> sqlx::Result<Option<Session>> {
     let Some(row) = sqlx::query("SELECT id, user_id, last_used_at FROM sessions WHERE token = ?")
         .bind(token)
         .fetch_optional(db)
@@ -132,9 +150,16 @@ pub async fn session_for_token(db: &SqlitePool, token: &str, now: i64) -> sqlx::
     };
     let id: String = row.get("id");
     if now - row.get::<i64, _>("last_used_at") >= TOUCH_SECS {
-        sqlx::query("UPDATE sessions SET last_used_at = ? WHERE id = ?").bind(now).bind(&id).execute(db).await?;
+        sqlx::query("UPDATE sessions SET last_used_at = ? WHERE id = ?")
+            .bind(now)
+            .bind(&id)
+            .execute(db)
+            .await?;
     }
-    Ok(Some(Session { id, user: row.get("user_id") }))
+    Ok(Some(Session {
+        id,
+        user: row.get("user_id"),
+    }))
 }
 
 pub async fn account(db: &SqlitePool, session: &Session) -> sqlx::Result<Account> {
@@ -161,7 +186,11 @@ pub async fn account(db: &SqlitePool, session: &Session) -> sqlx::Result<Account
         }
     })
     .collect();
-    Ok(Account { created_at: row.get("created_at"), recovery_code_created_at: row.get("recovery_created_at"), devices })
+    Ok(Account {
+        created_at: row.get("created_at"),
+        recovery_code_created_at: row.get("recovery_created_at"),
+        devices,
+    })
 }
 
 /// Makes a new recovery code for `user`, replacing the old one, and returns it grouped.
@@ -182,7 +211,10 @@ pub async fn new_recovery_code(db: &SqlitePool, user: &str, now: i64) -> sqlx::R
 pub async fn new_link_code(db: &SqlitePool, user: &str, now: i64) -> sqlx::Result<(String, i64)> {
     let code = random_code(LINK_LEN);
     let expires_at = now + LINK_TTL_SECS;
-    sqlx::query("DELETE FROM link_codes WHERE expires_at <= ?").bind(now).execute(db).await?;
+    sqlx::query("DELETE FROM link_codes WHERE expires_at <= ?")
+        .bind(now)
+        .execute(db)
+        .await?;
     sqlx::query("INSERT INTO link_codes (hash, user_id, expires_at) VALUES (?, ?, ?)")
         .bind(hash(&code))
         .bind(user)
@@ -215,17 +247,22 @@ pub async fn redeem(
                 .await?
         }
         LINK_LEN => {
-            sqlx::query_scalar("DELETE FROM link_codes WHERE hash = ? AND expires_at > ? RETURNING user_id")
-                .bind(hash(&code))
-                .bind(now)
-                .fetch_optional(&mut *tx)
-                .await?
+            sqlx::query_scalar(
+                "DELETE FROM link_codes WHERE hash = ? AND expires_at > ? RETURNING user_id",
+            )
+            .bind(hash(&code))
+            .bind(now)
+            .fetch_optional(&mut *tx)
+            .await?
         }
         _ => None,
     };
     let Some(user) = user else { return Ok(None) };
     if let Some(old) = current {
-        sqlx::query("DELETE FROM sessions WHERE id = ?").bind(&old.id).execute(&mut *tx).await?;
+        sqlx::query("DELETE FROM sessions WHERE id = ?")
+            .bind(&old.id)
+            .execute(&mut *tx)
+            .await?;
         if old.user != user {
             merge(&mut tx, &old.user, &user).await?;
         }
@@ -247,24 +284,37 @@ async fn merge(tx: &mut sqlx::SqliteConnection, from: &str, into: &str) -> sqlx:
         // Other devices of the merged account keep working, now as the restored one.
         "UPDATE sessions SET user_id = ?1 WHERE user_id = ?2",
     ] {
-        sqlx::query(statement).bind(into).bind(from).execute(&mut *tx).await?;
+        sqlx::query(statement)
+            .bind(into)
+            .bind(from)
+            .execute(&mut *tx)
+            .await?;
     }
     // Rows left behind were duplicates; they go with the user.
-    sqlx::query("DELETE FROM users WHERE id = ?").bind(from).execute(&mut *tx).await?;
+    sqlx::query("DELETE FROM users WHERE id = ?")
+        .bind(from)
+        .execute(&mut *tx)
+        .await?;
     Ok(())
 }
 
 /// Signs one of the user's devices out. Returns false when the user has no such device.
 pub async fn remove_device(db: &SqlitePool, user: &str, device: &str) -> sqlx::Result<bool> {
-    let result =
-        sqlx::query("DELETE FROM sessions WHERE id = ? AND user_id = ?").bind(device).bind(user).execute(db).await?;
+    let result = sqlx::query("DELETE FROM sessions WHERE id = ? AND user_id = ?")
+        .bind(device)
+        .bind(user)
+        .execute(db)
+        .await?;
     Ok(result.rows_affected() > 0)
 }
 
 /// Deletes the user and everything of theirs: sessions, visits, reports, added places,
 /// push subscriptions (all cascade from `users`).
 pub async fn delete(db: &SqlitePool, user: &str) -> sqlx::Result<()> {
-    sqlx::query("DELETE FROM users WHERE id = ?").bind(user).execute(db).await?;
+    sqlx::query("DELETE FROM users WHERE id = ?")
+        .bind(user)
+        .execute(db)
+        .await?;
     Ok(())
 }
 
@@ -288,6 +338,9 @@ mod tests {
     fn device_names_are_trimmed_and_capped() {
         assert_eq!(device_name(Some("  iPhone ")), Some("iPhone".into()));
         assert_eq!(device_name(Some("   ")), None);
-        assert_eq!(device_name(Some(&"x".repeat(100))).unwrap().len(), MAX_DEVICE_NAME);
+        assert_eq!(
+            device_name(Some(&"x".repeat(100))).unwrap().len(),
+            MAX_DEVICE_NAME
+        );
     }
 }

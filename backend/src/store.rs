@@ -14,7 +14,10 @@ use crate::geo::{self, Bbox, Shape};
 use crate::providers::{AreaInfo, AreaKind, Boundary, FoundPlace, Lookup};
 
 pub fn now() -> i64 {
-    SystemTime::now().duration_since(UNIX_EPOCH).map(|d| d.as_secs() as i64).unwrap_or(0)
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_secs() as i64)
+        .unwrap_or(0)
 }
 
 pub async fn connect(url: &str) -> anyhow::Result<SqlitePool> {
@@ -24,7 +27,10 @@ pub async fn connect(url: &str) -> anyhow::Result<SqlitePool> {
         .journal_mode(SqliteJournalMode::Wal);
     // An in-memory database exists per connection, so it must never get a second one.
     let max = if url.contains(":memory:") { 1 } else { 5 };
-    let pool = SqlitePoolOptions::new().max_connections(max).connect_with(options).await?;
+    let pool = SqlitePoolOptions::new()
+        .max_connections(max)
+        .connect_with(options)
+        .await?;
     sqlx::migrate!().run(&pool).await?;
     Ok(pool)
 }
@@ -51,7 +57,10 @@ fn kind_name(kind: AreaKind) -> &'static str {
 }
 
 pub async fn find_area(db: &SqlitePool, id: &str) -> sqlx::Result<Option<Area>> {
-    let row = sqlx::query("SELECT * FROM areas WHERE id = ?").bind(id).fetch_optional(db).await?;
+    let row = sqlx::query("SELECT * FROM areas WHERE id = ?")
+        .bind(id)
+        .fetch_optional(db)
+        .await?;
     Ok(row.and_then(|r| {
         let kind = match r.get::<String, _>("kind").as_str() {
             "city" => AreaKind::City,
@@ -120,7 +129,10 @@ pub async fn save_area(db: &SqlitePool, area: &Area, places: &[FoundPlace]) -> s
     .bind(b.east)
     .fetch_all(&mut *tx)
     .await?;
-    for r in added.iter().filter(|r| area.boundary.shape.contains(r.get("lat"), r.get("lng"))) {
+    for r in added
+        .iter()
+        .filter(|r| area.boundary.shape.contains(r.get("lat"), r.get("lng")))
+    {
         sqlx::query("INSERT OR IGNORE INTO area_places (area_id, place_id) VALUES (?, ?)")
             .bind(&info.id)
             .bind(r.get::<String, _>("id"))
@@ -139,7 +151,11 @@ pub async fn save_area(db: &SqlitePool, area: &Area, places: &[FoundPlace]) -> s
     tx.commit().await
 }
 
-async fn upsert_place(tx: &mut sqlx::SqliteConnection, place: &FoundPlace, at: i64) -> sqlx::Result<()> {
+async fn upsert_place(
+    tx: &mut sqlx::SqliteConnection,
+    place: &FoundPlace,
+    at: i64,
+) -> sqlx::Result<()> {
     sqlx::query(
         "INSERT INTO places (id, name, lat, lng, address, url, cuisine, opening_hours, updated_at)
          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
@@ -159,7 +175,10 @@ async fn upsert_place(tx: &mut sqlx::SqliteConnection, place: &FoundPlace, at: i
     .bind(at)
     .execute(&mut *tx)
     .await?;
-    sqlx::query("DELETE FROM place_countries WHERE place_id = ?").bind(&place.id).execute(&mut *tx).await?;
+    sqlx::query("DELETE FROM place_countries WHERE place_id = ?")
+        .bind(&place.id)
+        .execute(&mut *tx)
+        .await?;
     for country in &place.countries {
         sqlx::query("INSERT OR IGNORE INTO place_countries (place_id, country) VALUES (?, ?)")
             .bind(&place.id)
@@ -176,7 +195,9 @@ pub async fn create_user(db: &SqlitePool) -> sqlx::Result<String> {
 }
 
 pub async fn user_for_token(db: &SqlitePool, token: &str) -> sqlx::Result<Option<String>> {
-    Ok(crate::account::session_for_token(db, token, now()).await?.map(|s| s.user))
+    Ok(crate::account::session_for_token(db, token, now())
+        .await?
+        .map(|s| s.user))
 }
 
 /// Hides other users' added places, places the user reported closed, and places two or
@@ -185,7 +206,11 @@ const VISIBLE: &str = "(p.added_by IS NULL OR p.added_by = ?1)
            AND NOT EXISTS (SELECT 1 FROM closed_reports WHERE place_id = p.id AND user_id = ?1)
            AND (SELECT COUNT(*) FROM closed_reports WHERE place_id = p.id) < 2";
 
-pub async fn area_rows(db: &SqlitePool, area_id: &str, user: Option<&str>) -> sqlx::Result<Vec<PlaceRow>> {
+pub async fn area_rows(
+    db: &SqlitePool,
+    area_id: &str,
+    user: Option<&str>,
+) -> sqlx::Result<Vec<PlaceRow>> {
     let sql = format!(
         "SELECT pc.place_id, pc.country,
                 EXISTS (SELECT 1 FROM visits WHERE user_id = ?1 AND place_id = p.id) AS visited
@@ -195,22 +220,27 @@ pub async fn area_rows(db: &SqlitePool, area_id: &str, user: Option<&str>) -> sq
          WHERE ap.area_id = ?2 AND {VISIBLE}"
     );
     let rows = sqlx::query(&sql)
-    .bind(user)
-    .bind(area_id)
-    .fetch_all(db)
-    .await?;
+        .bind(user)
+        .bind(area_id)
+        .fetch_all(db)
+        .await?;
     Ok(rows
         .into_iter()
-        .map(|r| PlaceRow { place_id: r.get("place_id"), country: r.get("country"), visited: r.get("visited") })
+        .map(|r| PlaceRow {
+            place_id: r.get("place_id"),
+            country: r.get("country"),
+            visited: r.get("visited"),
+        })
         .collect())
 }
 
 /// Visits count each place once, however often the user went back.
 pub async fn lifetime(db: &SqlitePool, user: &str) -> sqlx::Result<Lifetime> {
-    let visits: i64 = sqlx::query_scalar("SELECT COUNT(DISTINCT place_id) FROM visits WHERE user_id = ?")
-        .bind(user)
-        .fetch_one(db)
-        .await?;
+    let visits: i64 =
+        sqlx::query_scalar("SELECT COUNT(DISTINCT place_id) FROM visits WHERE user_id = ?")
+            .bind(user)
+            .fetch_one(db)
+            .await?;
     let countries: i64 = sqlx::query_scalar(
         "SELECT COUNT(DISTINCT pc.country) FROM visits v
          JOIN place_countries pc ON pc.place_id = v.place_id WHERE v.user_id = ?",
@@ -292,7 +322,8 @@ pub struct PlaceView {
     pub osm_url: Option<String>,
 }
 
-const PLACE_COLUMNS: &str = "p.id, p.name, p.lat, p.lng, p.address, p.url, p.cuisine, p.opening_hours,
+const PLACE_COLUMNS: &str =
+    "p.id, p.name, p.lat, p.lng, p.address, p.url, p.cuisine, p.opening_hours,
     (SELECT group_concat(country) FROM place_countries WHERE place_id = p.id) AS countries";
 
 /// A place from a row with [`PLACE_COLUMNS`], without status, distance or visits.
@@ -305,7 +336,13 @@ fn place_view(r: &sqlx::sqlite::SqliteRow) -> PlaceView {
         address: r.get("address"),
         url: r.get("url"),
         cuisine: r.get("cuisine"),
-        hours: r.get::<Option<String>, _>("opening_hours").map(|raw| Hours { raw, status: None, week: None }),
+        hours: r
+            .get::<Option<String>, _>("opening_hours")
+            .map(|raw| Hours {
+                raw,
+                status: None,
+                week: None,
+            }),
         countries: r
             .get::<Option<String>, _>("countries")
             .map(|s| s.split(',').map(str::to_string).collect())
@@ -337,17 +374,21 @@ pub async fn area_places(
            AND {VISIBLE}"
     );
     let rows = sqlx::query(&sql)
-    .bind(user)
-    .bind(area_id)
-    .bind(country)
-    .fetch_all(db)
-    .await?;
+        .bind(user)
+        .bind(area_id)
+        .bind(country)
+        .fetch_all(db)
+        .await?;
     Ok(rows
         .iter()
         .map(|r| {
             let mut place = place_view(r);
             if let Some(id) = r.get::<Option<i64>, _>("visit_id") {
-                place.visits.push(Visit { id, at: r.get("visited_at"), verified: r.get("verified") });
+                place.visits.push(Visit {
+                    id,
+                    at: r.get("visited_at"),
+                    verified: r.get("verified"),
+                });
             }
             place
         })
@@ -359,9 +400,19 @@ const NOT_SOMEONE_ELSES: &str = "(p.added_by IS NULL OR p.added_by = ?)";
 
 /// One place with all of the user's visits, whatever area it is in. `distance_m` and the
 /// hours status are left empty.
-pub async fn place(db: &SqlitePool, place_id: &str, user: Option<&str>) -> sqlx::Result<Option<PlaceView>> {
-    let sql = format!("SELECT {PLACE_COLUMNS} FROM places p WHERE p.id = ? AND {NOT_SOMEONE_ELSES}");
-    let Some(row) = sqlx::query(&sql).bind(place_id).bind(user).fetch_optional(db).await? else {
+pub async fn place(
+    db: &SqlitePool,
+    place_id: &str,
+    user: Option<&str>,
+) -> sqlx::Result<Option<PlaceView>> {
+    let sql =
+        format!("SELECT {PLACE_COLUMNS} FROM places p WHERE p.id = ? AND {NOT_SOMEONE_ELSES}");
+    let Some(row) = sqlx::query(&sql)
+        .bind(place_id)
+        .bind(user)
+        .fetch_optional(db)
+        .await?
+    else {
         return Ok(None);
     };
     let mut place = place_view(&row);
@@ -401,7 +452,10 @@ pub async fn visits_between(
          JOIN place_countries pc ON pc.place_id = v.place_id
          WHERE v.user_id = ? AND v.local_date BETWEEN ? AND ? AND pc.country IN ({marks})"
     );
-    let mut query = sqlx::query_scalar::<_, i64>(&sql).bind(user).bind(first.to_string()).bind(last.to_string());
+    let mut query = sqlx::query_scalar::<_, i64>(&sql)
+        .bind(user)
+        .bind(first.to_string())
+        .bind(last.to_string());
     for country in countries {
         query = query.bind(country);
     }
@@ -444,7 +498,10 @@ pub async fn remove_visit(db: &SqlitePool, user: &str, visit_id: i64) -> sqlx::R
 }
 
 pub async fn setting(db: &SqlitePool, key: &str) -> sqlx::Result<Option<String>> {
-    sqlx::query_scalar("SELECT value FROM settings WHERE key = ?").bind(key).fetch_optional(db).await
+    sqlx::query_scalar("SELECT value FROM settings WHERE key = ?")
+        .bind(key)
+        .fetch_optional(db)
+        .await
 }
 
 pub async fn set_setting(db: &SqlitePool, key: &str, value: &str) -> sqlx::Result<()> {
@@ -457,12 +514,19 @@ pub async fn set_setting(db: &SqlitePool, key: &str, value: &str) -> sqlx::Resul
 }
 
 /// Adds a browser subscription, or moves an existing one to a new user, area or time zone.
-pub async fn save_push_subscription(db: &SqlitePool, user: &str, sub: &crate::push::Subscription, at: i64) -> sqlx::Result<()> {
+pub async fn save_push_subscription(
+    db: &SqlitePool,
+    user: &str,
+    sub: &crate::push::Subscription,
+    at: i64,
+) -> sqlx::Result<()> {
     sqlx::query(
         "INSERT INTO push_subscriptions (endpoint, user_id, p256dh, auth, area_id, timezone, created_at)
          VALUES (?, ?, ?, ?, ?, ?, ?)
          ON CONFLICT(endpoint) DO UPDATE SET user_id = excluded.user_id, p256dh = excluded.p256dh,
-             auth = excluded.auth, area_id = excluded.area_id, timezone = excluded.timezone",
+             auth = excluded.auth, area_id = excluded.area_id, timezone = excluded.timezone,
+             -- Another area starts over from what is there, even one known before.
+             known_area_id = CASE WHEN area_id IS excluded.area_id THEN known_area_id END",
     )
     .bind(&sub.endpoint)
     .bind(user)
@@ -477,12 +541,19 @@ pub async fn save_push_subscription(db: &SqlitePool, user: &str, sub: &crate::pu
 }
 
 pub async fn remove_push_subscription(db: &SqlitePool, endpoint: &str) -> sqlx::Result<()> {
-    sqlx::query("DELETE FROM push_subscriptions WHERE endpoint = ?").bind(endpoint).execute(db).await?;
+    sqlx::query("DELETE FROM push_subscriptions WHERE endpoint = ?")
+        .bind(endpoint)
+        .execute(db)
+        .await?;
     Ok(())
 }
 
 /// Removes a subscription only when it belongs to `user`. Returns whether one was removed.
-pub async fn remove_user_push_subscription(db: &SqlitePool, user: &str, endpoint: &str) -> sqlx::Result<bool> {
+pub async fn remove_user_push_subscription(
+    db: &SqlitePool,
+    user: &str,
+    endpoint: &str,
+) -> sqlx::Result<bool> {
     let done = sqlx::query("DELETE FROM push_subscriptions WHERE endpoint = ? AND user_id = ?")
         .bind(endpoint)
         .bind(user)
@@ -491,36 +562,126 @@ pub async fn remove_user_push_subscription(db: &SqlitePool, user: &str, endpoint
     Ok(done.rows_affected() > 0)
 }
 
-pub async fn push_subscriptions(db: &SqlitePool) -> sqlx::Result<Vec<(String, crate::push::Subscription)>> {
-    let rows = sqlx::query("SELECT * FROM push_subscriptions").fetch_all(db).await?;
-    Ok(rows.iter().map(crate::push::subscription_from_row).collect())
+pub async fn push_subscriptions(
+    db: &SqlitePool,
+) -> sqlx::Result<Vec<(String, crate::push::Subscription)>> {
+    let rows = sqlx::query("SELECT * FROM push_subscriptions")
+        .fetch_all(db)
+        .await?;
+    Ok(rows
+        .iter()
+        .map(crate::push::subscription_from_row)
+        .collect())
 }
 
 /// Records that a reminder is being sent. False when it was sent before.
-pub async fn mark_push_sent(db: &SqlitePool, endpoint: &str, key: &str, at: i64) -> sqlx::Result<bool> {
-    let done = sqlx::query("INSERT OR IGNORE INTO push_sent (endpoint, key, sent_at) VALUES (?, ?, ?)")
-        .bind(endpoint)
-        .bind(key)
-        .bind(at)
-        .execute(db)
-        .await?;
+pub async fn mark_push_sent(
+    db: &SqlitePool,
+    endpoint: &str,
+    key: &str,
+    at: i64,
+) -> sqlx::Result<bool> {
+    let done =
+        sqlx::query("INSERT OR IGNORE INTO push_sent (endpoint, key, sent_at) VALUES (?, ?, ?)")
+            .bind(endpoint)
+            .bind(key)
+            .bind(at)
+            .execute(db)
+            .await?;
     Ok(done.rows_affected() > 0)
 }
 
+/// Marks the countries in `present` as told, returning those that were not yet.
+///
+/// The first look at an area, after subscribing or moving, marks them all and returns none.
+pub async fn take_new_countries(
+    db: &SqlitePool,
+    endpoint: &str,
+    area_id: &str,
+    present: &[String],
+) -> sqlx::Result<Vec<String>> {
+    let mut tx = db.begin().await?;
+    let moved = sqlx::query("UPDATE push_subscriptions SET known_area_id = ?2 WHERE endpoint = ?1 AND known_area_id IS NOT ?2")
+        .bind(endpoint)
+        .bind(area_id)
+        .execute(&mut *tx)
+        .await?
+        .rows_affected()
+        > 0;
+    if moved {
+        sqlx::query("DELETE FROM push_known_countries WHERE endpoint = ?")
+            .bind(endpoint)
+            .execute(&mut *tx)
+            .await?;
+    }
+    let mut new = Vec::new();
+    for country in present {
+        let done = sqlx::query(
+            "INSERT OR IGNORE INTO push_known_countries (endpoint, country) VALUES (?, ?)",
+        )
+        .bind(endpoint)
+        .bind(country)
+        .execute(&mut *tx)
+        .await?;
+        if done.rows_affected() > 0 && !moved {
+            new.push(country.clone());
+        }
+    }
+    tx.commit().await?;
+    Ok(new)
+}
+
+/// Undoes `take_new_countries` when telling the subscriber failed.
+pub async fn forget_countries(
+    db: &SqlitePool,
+    endpoint: &str,
+    countries: &[String],
+) -> sqlx::Result<()> {
+    for country in countries {
+        sqlx::query("DELETE FROM push_known_countries WHERE endpoint = ? AND country = ?")
+            .bind(endpoint)
+            .bind(country)
+            .execute(db)
+            .await?;
+    }
+    Ok(())
+}
+
+/// Every country the user has checked in at a place of.
+pub async fn visited_countries(db: &SqlitePool, user: &str) -> sqlx::Result<Vec<String>> {
+    sqlx::query_scalar(
+        "SELECT DISTINCT pc.country FROM visits v JOIN place_countries pc ON pc.place_id = v.place_id WHERE v.user_id = ?",
+    )
+    .bind(user)
+    .fetch_all(db)
+    .await
+}
+
 pub async fn unmark_push_sent(db: &SqlitePool, endpoint: &str, key: &str) -> sqlx::Result<()> {
-    sqlx::query("DELETE FROM push_sent WHERE endpoint = ? AND key = ?").bind(endpoint).bind(key).execute(db).await?;
+    sqlx::query("DELETE FROM push_sent WHERE endpoint = ? AND key = ?")
+        .bind(endpoint)
+        .bind(key)
+        .execute(db)
+        .await?;
     Ok(())
 }
 
 /// Records that `user` says a place has closed. `None` when they had already said so,
 /// otherwise how many users have now reported it.
-pub async fn report_closed(db: &SqlitePool, user: &str, place_id: &str, at: i64) -> sqlx::Result<Option<i64>> {
-    let done = sqlx::query("INSERT OR IGNORE INTO closed_reports (place_id, user_id, reported_at) VALUES (?, ?, ?)")
-        .bind(place_id)
-        .bind(user)
-        .bind(at)
-        .execute(db)
-        .await?;
+pub async fn report_closed(
+    db: &SqlitePool,
+    user: &str,
+    place_id: &str,
+    at: i64,
+) -> sqlx::Result<Option<i64>> {
+    let done = sqlx::query(
+        "INSERT OR IGNORE INTO closed_reports (place_id, user_id, reported_at) VALUES (?, ?, ?)",
+    )
+    .bind(place_id)
+    .bind(user)
+    .bind(at)
+    .execute(db)
+    .await?;
     if done.rows_affected() == 0 {
         return Ok(None);
     }
@@ -558,7 +719,13 @@ pub struct AddedPlace {
 /// additions don't count, so a mapper adding the same cuisine while it waits doesn't take
 /// the bonus away. Only a city counts, never a postal code (which would make a "new
 /// country" easier to find); with no cached city around it there is no bonus.
-pub async fn add_place(db: &SqlitePool, user: &str, place: &NewPlace, at: i64, limit: i64) -> sqlx::Result<Option<AddedPlace>> {
+pub async fn add_place(
+    db: &SqlitePool,
+    user: &str,
+    place: &NewPlace,
+    at: i64,
+    limit: i64,
+) -> sqlx::Result<Option<AddedPlace>> {
     let id = format!("user-{}", uuid::Uuid::new_v4().simple());
     let mut tx = db.begin().await?;
     let added = sqlx::query(
@@ -624,7 +791,11 @@ pub async fn add_place(db: &SqlitePool, user: &str, place: &NewPlace, at: i64, l
     .execute(&mut *tx)
     .await?;
     tx.commit().await?;
-    Ok(Some(AddedPlace { id, bonus, area_name }))
+    Ok(Some(AddedPlace {
+        id,
+        bonus,
+        area_name,
+    }))
 }
 
 /// The bonus for adding a place of `country` to an area serving `present`.
@@ -640,31 +811,51 @@ fn bonus_for(country: &str, present: &[String]) -> Bonus {
 }
 
 pub async fn set_osm_note(db: &SqlitePool, place_id: &str, note_id: i64) -> sqlx::Result<()> {
-    sqlx::query("UPDATE places SET osm_note_id = ? WHERE id = ?").bind(note_id).bind(place_id).execute(db).await?;
+    sqlx::query("UPDATE places SET osm_note_id = ? WHERE id = ?")
+        .bind(note_id)
+        .bind(place_id)
+        .execute(db)
+        .await?;
     Ok(())
 }
 
 /// Name and location of a place `user` can see.
-pub async fn place_summary(db: &SqlitePool, id: &str, user: &str) -> sqlx::Result<Option<(String, f64, f64)>> {
+pub async fn place_summary(
+    db: &SqlitePool,
+    id: &str,
+    user: &str,
+) -> sqlx::Result<Option<(String, f64, f64)>> {
     let sql = format!("SELECT name, lat, lng FROM places p WHERE id = ? AND {NOT_SOMEONE_ELSES}");
-    let row = sqlx::query(&sql).bind(id).bind(user).fetch_optional(db).await?;
+    let row = sqlx::query(&sql)
+        .bind(id)
+        .bind(user)
+        .fetch_optional(db)
+        .await?;
     Ok(row.map(|r| (r.get("name"), r.get("lat"), r.get("lng"))))
 }
 
 /// Replaces the imported OpenStreetMap places in `bbox`, and marks the cached areas centred
 /// in it as stale so their next request rebuilds them from the new copy. Pending places
 /// that the import now has are swapped for it; returns how many.
-pub async fn replace_imported(db: &SqlitePool, bbox: Bbox, places: &[FoundPlace]) -> sqlx::Result<usize> {
+pub async fn replace_imported(
+    db: &SqlitePool,
+    bbox: Bbox,
+    places: &[FoundPlace],
+) -> sqlx::Result<usize> {
     let mut tx = db.begin().await?;
     // ponytail: by centre, so an area straddling the box edge is refetched live once per import.
-    sqlx::query("UPDATE areas SET fetched_at = 0 WHERE lat BETWEEN ? AND ? AND lng BETWEEN ? AND ?")
-        .bind(bbox.south)
-        .bind(bbox.north)
-        .bind(bbox.west)
-        .bind(bbox.east)
+    sqlx::query(
+        "UPDATE areas SET fetched_at = 0 WHERE lat BETWEEN ? AND ? AND lng BETWEEN ? AND ?",
+    )
+    .bind(bbox.south)
+    .bind(bbox.north)
+    .bind(bbox.west)
+    .bind(bbox.east)
+    .execute(&mut *tx)
+    .await?;
+    sqlx::query("DELETE FROM osm_places")
         .execute(&mut *tx)
         .await?;
-    sqlx::query("DELETE FROM osm_places").execute(&mut *tx).await?;
     for place in places {
         keep_imported(&mut tx, place).await?;
     }
@@ -675,7 +866,9 @@ pub async fn replace_imported(db: &SqlitePool, bbox: Bbox, places: &[FoundPlace]
 
 /// Saves a place in the local copy of OpenStreetMap, so the next area rebuild uses it.
 async fn keep_imported(tx: &mut sqlx::SqliteConnection, place: &FoundPlace) -> sqlx::Result<()> {
-    let Some(cuisine) = &place.cuisine else { return Ok(()) };
+    let Some(cuisine) = &place.cuisine else {
+        return Ok(());
+    };
     sqlx::query(
         "INSERT OR REPLACE INTO osm_places (id, name, lat, lng, address, url, cuisine, opening_hours)
          VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
@@ -695,7 +888,12 @@ async fn keep_imported(tx: &mut sqlx::SqliteConnection, place: &FoundPlace) -> s
 
 /// Puts a place in every cached area whose outline holds it, and returns those areas as
 /// (id, name, kind), by id.
-async fn put_in_areas(tx: &mut sqlx::SqliteConnection, place_id: &str, lat: f64, lng: f64) -> sqlx::Result<Vec<(String, String, String)>> {
+async fn put_in_areas(
+    tx: &mut sqlx::SqliteConnection,
+    place_id: &str,
+    lat: f64,
+    lng: f64,
+) -> sqlx::Result<Vec<(String, String, String)>> {
     // Areas are at most 1.5° across, so any area holding the place is centred within that.
     let near = sqlx::query("SELECT id, name, kind, shape FROM areas WHERE lat BETWEEN ? AND ? AND lng BETWEEN ? AND ? ORDER BY id")
         .bind(lat - 1.5)
@@ -734,16 +932,28 @@ pub enum Refreshed {
 /// Applies a place read again from OpenStreetMap, to the place and to the local copy, so
 /// the next import or area rebuild doesn't bring back the old version. A gone place leaves
 /// every area but keeps its row, so visits to it are never lost.
-pub async fn refresh_place(db: &SqlitePool, id: &str, lookup: &Lookup, at: i64) -> sqlx::Result<Refreshed> {
+pub async fn refresh_place(
+    db: &SqlitePool,
+    id: &str,
+    lookup: &Lookup,
+    at: i64,
+) -> sqlx::Result<Refreshed> {
     let mut tx = db.begin().await?;
-    let listed: bool = sqlx::query_scalar("SELECT EXISTS (SELECT 1 FROM area_places WHERE place_id = ?)")
-        .bind(id)
-        .fetch_one(&mut *tx)
-        .await?;
+    let listed: bool =
+        sqlx::query_scalar("SELECT EXISTS (SELECT 1 FROM area_places WHERE place_id = ?)")
+            .bind(id)
+            .fetch_one(&mut *tx)
+            .await?;
     let outcome = match lookup {
         Lookup::Gone => {
-            sqlx::query("DELETE FROM area_places WHERE place_id = ?").bind(id).execute(&mut *tx).await?;
-            sqlx::query("DELETE FROM osm_places WHERE id = ?").bind(id).execute(&mut *tx).await?;
+            sqlx::query("DELETE FROM area_places WHERE place_id = ?")
+                .bind(id)
+                .execute(&mut *tx)
+                .await?;
+            sqlx::query("DELETE FROM osm_places WHERE id = ?")
+                .bind(id)
+                .execute(&mut *tx)
+                .await?;
             Refreshed::Gone
         }
         Lookup::Found(place) => {
@@ -751,10 +961,17 @@ pub async fn refresh_place(db: &SqlitePool, id: &str, lookup: &Lookup, at: i64) 
             upsert_place(&mut tx, place, at).await?;
             keep_imported(&mut tx, place).await?;
             // It may have moved: only the areas holding its new position keep it.
-            sqlx::query("DELETE FROM area_places WHERE place_id = ?").bind(id).execute(&mut *tx).await?;
+            sqlx::query("DELETE FROM area_places WHERE place_id = ?")
+                .bind(id)
+                .execute(&mut *tx)
+                .await?;
             put_in_areas(&mut tx, id, place.lat, place.lng).await?;
             let after = snapshot(&mut tx, id).await?;
-            if listed && before == after { Refreshed::Unchanged } else { Refreshed::Updated }
+            if listed && before == after {
+                Refreshed::Unchanged
+            } else {
+                Refreshed::Updated
+            }
         }
     };
     tx.commit().await?;
@@ -776,14 +993,19 @@ async fn snapshot(tx: &mut sqlx::SqliteConnection, id: &str) -> sqlx::Result<Opt
 /// Saves places found around a point, puts them in the cached areas they lie in and
 /// matches pending additions against them straight away. Returns the ids of those that
 /// weren't listed in any area before, and how many pending places were matched.
-pub async fn add_nearby(db: &SqlitePool, places: &[FoundPlace], at: i64) -> sqlx::Result<(Vec<String>, usize)> {
+pub async fn add_nearby(
+    db: &SqlitePool,
+    places: &[FoundPlace],
+    at: i64,
+) -> sqlx::Result<(Vec<String>, usize)> {
     let mut tx = db.begin().await?;
     let mut new = Vec::new();
     for place in places {
-        let listed: bool = sqlx::query_scalar("SELECT EXISTS (SELECT 1 FROM area_places WHERE place_id = ?)")
-            .bind(&place.id)
-            .fetch_one(&mut *tx)
-            .await?;
+        let listed: bool =
+            sqlx::query_scalar("SELECT EXISTS (SELECT 1 FROM area_places WHERE place_id = ?)")
+                .bind(&place.id)
+                .fetch_one(&mut *tx)
+                .await?;
         upsert_place(&mut tx, place, at).await?;
         keep_imported(&mut tx, place).await?;
         let areas = put_in_areas(&mut tx, &place.id, place.lat, place.lng).await?;
@@ -812,17 +1034,24 @@ async fn match_pending(tx: &mut sqlx::SqliteConnection) -> sqlx::Result<usize> {
     .await?;
     let mut matched = 0;
     for p in pending {
-        let (id, name, lat, lng, country): (String, String, f64, f64, String) =
-            (p.get("id"), p.get("name"), p.get("lat"), p.get("lng"), p.get("country"));
+        let (id, name, lat, lng, country): (String, String, f64, f64, String) = (
+            p.get("id"),
+            p.get("name"),
+            p.get("lat"),
+            p.get("lng"),
+            p.get("country"),
+        );
         // 0.001° of latitude is 111 m; a degree of longitude shrinks with cos(latitude).
         let dlng = 0.001 / lat.to_radians().cos().max(0.01);
-        let near = sqlx::query("SELECT * FROM osm_places WHERE lat BETWEEN ? AND ? AND lng BETWEEN ? AND ?")
-            .bind(lat - 0.001)
-            .bind(lat + 0.001)
-            .bind(lng - dlng)
-            .bind(lng + dlng)
-            .fetch_all(&mut *tx)
-            .await?;
+        let near = sqlx::query(
+            "SELECT * FROM osm_places WHERE lat BETWEEN ? AND ? AND lng BETWEEN ? AND ?",
+        )
+        .bind(lat - 0.001)
+        .bind(lat + 0.001)
+        .bind(lng - dlng)
+        .bind(lng + dlng)
+        .fetch_all(&mut *tx)
+        .await?;
         let twin = near
             .into_iter()
             .filter_map(found)
@@ -850,18 +1079,26 @@ async fn match_pending(tx: &mut sqlx::SqliteConnection) -> sqlx::Result<usize> {
 
 /// Marks an addition as confirmed. Only the first addition of a place to be confirmed earns
 /// anything; later ones are duplicates. Then the bonuses of its city are settled again.
-async fn confirm_addition(tx: &mut sqlx::SqliteConnection, id: &str, osm_id: &str, at: i64) -> sqlx::Result<()> {
-    let Some(area_id) = sqlx::query_scalar::<_, Option<String>>("SELECT area_id FROM additions WHERE place_id = ?")
-        .bind(id)
-        .fetch_optional(&mut *tx)
-        .await?
+async fn confirm_addition(
+    tx: &mut sqlx::SqliteConnection,
+    id: &str,
+    osm_id: &str,
+    at: i64,
+) -> sqlx::Result<()> {
+    let Some(area_id) =
+        sqlx::query_scalar::<_, Option<String>>("SELECT area_id FROM additions WHERE place_id = ?")
+            .bind(id)
+            .fetch_optional(&mut *tx)
+            .await?
     else {
         return Ok(());
     };
-    let duplicate: bool = sqlx::query_scalar("SELECT EXISTS (SELECT 1 FROM additions WHERE osm_place_id = ? AND rewarded)")
-        .bind(osm_id)
-        .fetch_one(&mut *tx)
-        .await?;
+    let duplicate: bool = sqlx::query_scalar(
+        "SELECT EXISTS (SELECT 1 FROM additions WHERE osm_place_id = ? AND rewarded)",
+    )
+    .bind(osm_id)
+    .fetch_one(&mut *tx)
+    .await?;
     sqlx::query(
         "UPDATE additions SET confirmed_at = ?, osm_place_id = ?, rewarded = ?,
              bonus = CASE WHEN ? THEN 'none' ELSE claimed_bonus END
@@ -885,7 +1122,11 @@ async fn confirm_addition(tx: &mut sqlx::SqliteConnection, id: &str, osm_id: &st
 /// nothing, so a bonus whose claimant turned out to be a duplicate goes to the next in line.
 /// `just_confirmed` takes the bonus it is due; others already confirmed only ever gain, so XP
 /// that was granted and announced never goes down.
-async fn settle_bonuses(tx: &mut sqlx::SqliteConnection, area_id: &str, just_confirmed: &str) -> sqlx::Result<()> {
+async fn settle_bonuses(
+    tx: &mut sqlx::SqliteConnection,
+    area_id: &str,
+    just_confirmed: &str,
+) -> sqlx::Result<()> {
     let rows: Vec<(String, String, String, String, bool)> = sqlx::query_as(
         "SELECT place_id, country, claimed_bonus, bonus, confirmed_at IS NOT NULL FROM additions
          WHERE area_id = ? AND (confirmed_at IS NULL OR rewarded)
@@ -904,7 +1145,11 @@ async fn settle_bonuses(tx: &mut sqlx::SqliteConnection, area_id: &str, just_con
             claimed => claimed,
         };
         let current = Bonus::parse(&current);
-        let settled = if !confirmed || id == just_confirmed { due } else { due.max(current) };
+        let settled = if !confirmed || id == just_confirmed {
+            due
+        } else {
+            due.max(current)
+        };
         if settled != Bonus::None {
             countries.push(country.clone());
         }
@@ -985,7 +1230,11 @@ pub async fn additions(db: &SqlitePool, user: &str) -> sqlx::Result<Vec<Addition
                 country: r.get("country"),
                 area_name: r.get("area_name"),
                 bonus,
-                xp: if status == AdditionStatus::Duplicate { 0 } else { bonus.xp() },
+                xp: if status == AdditionStatus::Duplicate {
+                    0
+                } else {
+                    bonus.xp()
+                },
                 status,
                 submitted_at: r.get("submitted_at"),
                 confirmed_at,
@@ -1013,7 +1262,10 @@ pub async fn mark_additions_seen(db: &SqlitePool, user: &str, ids: &[String]) ->
 // ponytail: no accent folding or typo tolerance ("Café" ≠ "Cafe"), add if matches are missed.
 fn similar_names(a: &str, b: &str) -> bool {
     let words = |s: &str| -> Vec<String> {
-        s.split(|c: char| !c.is_alphanumeric()).filter(|w| !w.is_empty()).map(str::to_lowercase).collect()
+        s.split(|c: char| !c.is_alphanumeric())
+            .filter(|w| !w.is_empty())
+            .map(str::to_lowercase)
+            .collect()
     };
     let (a, b) = (words(a), words(b));
     let within = |x: &[String], y: &[String]| !x.is_empty() && x.iter().all(|w| y.contains(w));
@@ -1039,15 +1291,14 @@ fn found(r: sqlx::sqlite::SqliteRow) -> Option<FoundPlace> {
 
 /// Imported places inside a box.
 pub async fn imported_in(db: &SqlitePool, b: Bbox) -> sqlx::Result<Vec<FoundPlace>> {
-    let rows = sqlx::query(
-        "SELECT * FROM osm_places WHERE lat BETWEEN ? AND ? AND lng BETWEEN ? AND ?",
-    )
-    .bind(b.south)
-    .bind(b.north)
-    .bind(b.west)
-    .bind(b.east)
-    .fetch_all(db)
-    .await?;
+    let rows =
+        sqlx::query("SELECT * FROM osm_places WHERE lat BETWEEN ? AND ? AND lng BETWEEN ? AND ?")
+            .bind(b.south)
+            .bind(b.north)
+            .bind(b.west)
+            .bind(b.east)
+            .fetch_all(db)
+            .await?;
     Ok(rows.into_iter().filter_map(found).collect())
 }
 
@@ -1072,11 +1323,34 @@ mod tests {
     #[tokio::test]
     async fn imported_places_are_found_inside_a_box() {
         let db = connect("sqlite::memory:").await.unwrap();
-        let all = Bbox { south: -90.0, west: -180.0, north: 90.0, east: 180.0 };
-        replace_imported(&db, all, &[place("in", 50.88, 4.70, "greek"), place("out", 51.2, 4.4, "greek"), place("odd", 50.88, 4.70, "burger")])
-            .await
-            .unwrap();
-        let found = imported_in(&db, Bbox { south: 50.8, west: 4.6, north: 50.9, east: 4.8 }).await.unwrap();
+        let all = Bbox {
+            south: -90.0,
+            west: -180.0,
+            north: 90.0,
+            east: 180.0,
+        };
+        replace_imported(
+            &db,
+            all,
+            &[
+                place("in", 50.88, 4.70, "greek"),
+                place("out", 51.2, 4.4, "greek"),
+                place("odd", 50.88, 4.70, "burger"),
+            ],
+        )
+        .await
+        .unwrap();
+        let found = imported_in(
+            &db,
+            Bbox {
+                south: 50.8,
+                west: 4.6,
+                north: 50.9,
+                east: 4.8,
+            },
+        )
+        .await
+        .unwrap();
         assert_eq!(found.len(), 1);
         assert_eq!(found[0].id, "in");
         assert_eq!(found[0].countries, vec!["GR"]);
@@ -1109,11 +1383,26 @@ mod tests {
             cuisine: "ethiopian",
         };
         let day = |d| NaiveDate::from_ymd_opt(2026, 11, d).unwrap();
-        let mine = add_place(&db, a, &new("Lalibela", 50.88, 4.7), 1000, 5).await.unwrap().unwrap().id;
-        let theirs = add_place(&db, b, &new("lalibela", 50.88, 4.7), 1001, 5).await.unwrap().unwrap().id;
-        let far = add_place(&db, a, &new("Lalibela", 50.882, 4.7), 1002, 5).await.unwrap().unwrap().id;
+        let mine = add_place(&db, a, &new("Lalibela", 50.88, 4.7), 1000, 5)
+            .await
+            .unwrap()
+            .unwrap()
+            .id;
+        let theirs = add_place(&db, b, &new("lalibela", 50.88, 4.7), 1001, 5)
+            .await
+            .unwrap()
+            .unwrap()
+            .id;
+        let far = add_place(&db, a, &new("Lalibela", 50.882, 4.7), 1002, 5)
+            .await
+            .unwrap()
+            .unwrap()
+            .id;
         // 0.0012° of longitude is 46 m up here, past a fixed 0.001° box.
-        add_place(&db, a, &new("Polar", 70.0, 20.0), 1003, 5).await.unwrap().unwrap();
+        add_place(&db, a, &new("Polar", 70.0, 20.0), 1003, 5)
+            .await
+            .unwrap()
+            .unwrap();
 
         // `a` already checked in at the OSM place on the 19th, as well as at their own copy.
         let mut twin = place("osm-node-1", 50.8801, 4.7, "ethiopian");
@@ -1121,27 +1410,60 @@ mod tests {
         let mut conn = db.acquire().await.unwrap();
         upsert_place(&mut conn, &twin, 1000).await.unwrap();
         drop(conn);
-        let at_twin = add_visit(&db, a, "osm-node-1", true, 1000, day(19)).await.unwrap();
+        let at_twin = add_visit(&db, a, "osm-node-1", true, 1000, day(19))
+            .await
+            .unwrap();
         add_visit(&db, a, &mine, true, 1000, day(19)).await.unwrap();
         let mine_20th = add_visit(&db, a, &mine, true, 2000, day(20)).await.unwrap();
-        let theirs_19th = add_visit(&db, b, &theirs, true, 1000, day(19)).await.unwrap();
+        let theirs_19th = add_visit(&db, b, &theirs, true, 1000, day(19))
+            .await
+            .unwrap();
 
         let mut decoy = place("osm-node-2", 50.88, 4.7, "ethiopian");
         decoy.name = "Habesha".into();
         let mut polar = place("osm-node-3", 70.0, 20.0012, "ethiopian");
         polar.name = "Polar".into();
-        let all = Bbox { south: -90.0, west: -180.0, north: 90.0, east: 180.0 };
-        assert_eq!(replace_imported(&db, all, &[decoy, twin, polar]).await.unwrap(), 3);
+        let all = Bbox {
+            south: -90.0,
+            west: -180.0,
+            north: 90.0,
+            east: 180.0,
+        };
+        assert_eq!(
+            replace_imported(&db, all, &[decoy, twin, polar])
+                .await
+                .unwrap(),
+            3
+        );
 
-        let ids: Vec<String> = sqlx::query_scalar("SELECT id FROM places ORDER BY id").fetch_all(&db).await.unwrap();
-        assert_eq!(ids, vec!["osm-node-1".to_string(), "osm-node-3".into(), far]);
+        let ids: Vec<String> = sqlx::query_scalar("SELECT id FROM places ORDER BY id")
+            .fetch_all(&db)
+            .await
+            .unwrap();
+        assert_eq!(
+            ids,
+            vec!["osm-node-1".to_string(), "osm-node-3".into(), far]
+        );
         // Only the clashing visit on the 19th goes; the others keep their ids.
         let visits: Vec<(i64, String)> =
-            sqlx::query_as("SELECT id, place_id FROM visits ORDER BY id").fetch_all(&db).await.unwrap();
+            sqlx::query_as("SELECT id, place_id FROM visits ORDER BY id")
+                .fetch_all(&db)
+                .await
+                .unwrap();
         let on_twin = |v: &Visit| (v.id, "osm-node-1".to_string());
-        assert_eq!(visits, vec![on_twin(&at_twin), on_twin(&mine_20th), on_twin(&theirs_19th)]);
+        assert_eq!(
+            visits,
+            vec![
+                on_twin(&at_twin),
+                on_twin(&mine_20th),
+                on_twin(&theirs_19th)
+            ]
+        );
         let countries: Vec<String> =
-            sqlx::query_scalar("SELECT country FROM place_countries WHERE place_id = 'osm-node-1'").fetch_all(&db).await.unwrap();
+            sqlx::query_scalar("SELECT country FROM place_countries WHERE place_id = 'osm-node-1'")
+                .fetch_all(&db)
+                .await
+                .unwrap();
         assert_eq!(countries, vec!["ET"]);
     }
 
@@ -1165,13 +1487,24 @@ mod tests {
         }
         let mut twin = place("osm-node-1", 50.88, 4.7, "ethiopian");
         twin.name = "Lalibela".into();
-        let all = Bbox { south: -90.0, west: -180.0, north: 90.0, east: 180.0 };
+        let all = Bbox {
+            south: -90.0,
+            west: -180.0,
+            north: 90.0,
+            east: 180.0,
+        };
         replace_imported(&db, all, &[twin]).await.unwrap();
         let settled: Vec<(String, String, bool)> =
-            sqlx::query_as("SELECT place_id, bonus, rewarded FROM additions ORDER BY place_id").fetch_all(&db).await.unwrap();
+            sqlx::query_as("SELECT place_id, bonus, rewarded FROM additions ORDER BY place_id")
+                .fetch_all(&db)
+                .await
+                .unwrap();
         assert_eq!(
             settled,
-            vec![("user-a".into(), "country".into(), true), ("user-b".into(), "none".into(), false)]
+            vec![
+                ("user-a".into(), "country".into(), true),
+                ("user-b".into(), "none".into(), false)
+            ]
         );
     }
 
@@ -1190,18 +1523,41 @@ mod tests {
             cuisine: "ethiopian",
         };
         // The same user adds the same restaurant twice; the import confirms both.
-        let first = add_place(&db, &user, &new, 1000, 5).await.unwrap().unwrap().id;
-        let second = add_place(&db, &user, &new, 1001, 5).await.unwrap().unwrap().id;
+        let first = add_place(&db, &user, &new, 1000, 5)
+            .await
+            .unwrap()
+            .unwrap()
+            .id;
+        let second = add_place(&db, &user, &new, 1001, 5)
+            .await
+            .unwrap()
+            .unwrap()
+            .id;
         let mut twin = place("osm-node-1", 50.88, 4.7, "ethiopian");
         twin.name = "Lalibela".into();
-        let all = Bbox { south: -90.0, west: -180.0, north: 90.0, east: 180.0 };
+        let all = Bbox {
+            south: -90.0,
+            west: -180.0,
+            north: 90.0,
+            east: 180.0,
+        };
         replace_imported(&db, all, &[twin]).await.unwrap();
         let listed = additions(&db, &user).await.unwrap();
-        assert!(listed.iter().all(|a| a.place_id == "osm-node-1"), "both are the OSM place now");
+        assert!(
+            listed.iter().all(|a| a.place_id == "osm-node-1"),
+            "both are the OSM place now"
+        );
 
         // Told about the first only: the second is still news.
-        mark_additions_seen(&db, &user, std::slice::from_ref(&first)).await.unwrap();
-        let seen: Vec<(String, bool)> = additions(&db, &user).await.unwrap().into_iter().map(|a| (a.id, a.seen)).collect();
+        mark_additions_seen(&db, &user, std::slice::from_ref(&first))
+            .await
+            .unwrap();
+        let seen: Vec<(String, bool)> = additions(&db, &user)
+            .await
+            .unwrap()
+            .into_iter()
+            .map(|a| (a.id, a.seen))
+            .collect();
         assert_eq!(seen, vec![(second, false), (first, true)]);
     }
 
@@ -1210,14 +1566,28 @@ mod tests {
         let db = connect("sqlite::memory:").await.unwrap();
         let token = create_user(&db).await.unwrap();
         let user = user_for_token(&db, &token).await.unwrap().unwrap();
-        let shape = serde_json::to_string(&Shape::rect(Bbox { south: 50.8, west: 4.6, north: 50.95, east: 4.8 })).unwrap();
+        let shape = serde_json::to_string(&Shape::rect(Bbox {
+            south: 50.8,
+            west: 4.6,
+            north: 50.95,
+            east: 4.8,
+        }))
+        .unwrap();
         let area = |id: &str, kind: &str| {
             sqlx::query("INSERT INTO areas (id, name, kind, lat, lng, shape, provider, fetched_at) VALUES (?1, ?1, ?2, 50.88, 4.7, ?3, 'osm', 1000)")
                 .bind(id.to_string())
                 .bind(kind.to_string())
                 .bind(shape.clone())
         };
-        let new = NewPlace { name: "Lalibela".into(), lat: 50.88, lng: 4.7, address: None, url: None, country: "ET", cuisine: "ethiopian" };
+        let new = NewPlace {
+            name: "Lalibela".into(),
+            lat: 50.88,
+            lng: 4.7,
+            address: None,
+            url: None,
+            country: "ET",
+            cuisine: "ethiopian",
+        };
 
         // Only a postal code is cached: no bonus, though Ethiopia is new there.
         area("3000", "postal_code").execute(&db).await.unwrap();
@@ -1227,7 +1597,10 @@ mod tests {
         // With the city cached too, the bonus is judged there.
         area("leuven", "city").execute(&db).await.unwrap();
         let added = add_place(&db, &user, &new, 1001, 5).await.unwrap().unwrap();
-        assert_eq!((added.bonus, added.area_name.as_deref()), (Bonus::Continent, Some("leuven")));
+        assert_eq!(
+            (added.bonus, added.area_name.as_deref()),
+            (Bonus::Continent, Some("leuven"))
+        );
     }
 
     #[tokio::test]
@@ -1257,28 +1630,63 @@ mod tests {
             p.name = name.into();
             p
         };
-        let all = Bbox { south: -90.0, west: -180.0, north: 90.0, east: 180.0 };
+        let all = Bbox {
+            south: -90.0,
+            west: -180.0,
+            north: 90.0,
+            east: 180.0,
+        };
         let settled = || async {
-            sqlx::query_as::<_, (String, String, bool)>("SELECT place_id, bonus, rewarded FROM additions ORDER BY place_id")
-                .fetch_all(&db)
-                .await
-                .unwrap()
+            sqlx::query_as::<_, (String, String, bool)>(
+                "SELECT place_id, bonus, rewarded FROM additions ORDER BY place_id",
+            )
+            .fetch_all(&db)
+            .await
+            .unwrap()
         };
         let row = |id: &str, bonus: &str, rewarded| (id.to_string(), bonus.to_string(), rewarded);
 
         // Habesha and "Lalibela New" are mapped; "Lalibela Original" matches neither, and
         // still holds the bonus as the earliest claim.
-        replace_imported(&db, all, &[osm("osm-node-1", "Lalibela New", 50.88), osm("osm-node-2", "Habesha", 50.882)])
-            .await
-            .unwrap();
-        assert_eq!(settled().await, vec![row("user-a", "country", false), row("user-b", "none", true), row("user-c", "none", true)]);
+        replace_imported(
+            &db,
+            all,
+            &[
+                osm("osm-node-1", "Lalibela New", 50.88),
+                osm("osm-node-2", "Habesha", 50.882),
+            ],
+        )
+        .await
+        .unwrap();
+        assert_eq!(
+            settled().await,
+            vec![
+                row("user-a", "country", false),
+                row("user-b", "none", true),
+                row("user-c", "none", true)
+            ]
+        );
 
         // The mapper renames it "Lalibela": the first addition now matches, but the place
         // went to "Lalibela New". The bonus it held goes to Habesha, next in line.
-        replace_imported(&db, all, &[osm("osm-node-1", "Lalibela", 50.88), osm("osm-node-2", "Habesha", 50.882)])
-            .await
-            .unwrap();
-        assert_eq!(settled().await, vec![row("user-a", "none", false), row("user-b", "country", true), row("user-c", "none", true)]);
+        replace_imported(
+            &db,
+            all,
+            &[
+                osm("osm-node-1", "Lalibela", 50.88),
+                osm("osm-node-2", "Habesha", 50.882),
+            ],
+        )
+        .await
+        .unwrap();
+        assert_eq!(
+            settled().await,
+            vec![
+                row("user-a", "none", false),
+                row("user-b", "country", true),
+                row("user-c", "none", true)
+            ]
+        );
     }
 
     #[tokio::test]
@@ -1294,9 +1702,23 @@ mod tests {
                 .await
                 .unwrap();
         }
-        replace_imported(&db, Bbox { south: 49.4, west: 2.4, north: 51.6, east: 6.5 }, &[]).await.unwrap();
+        replace_imported(
+            &db,
+            Bbox {
+                south: 49.4,
+                west: 2.4,
+                north: 51.6,
+                east: 6.5,
+            },
+            &[],
+        )
+        .await
+        .unwrap();
         let fetched: Vec<(String, i64)> =
-            sqlx::query_as("SELECT id, fetched_at FROM areas ORDER BY id").fetch_all(&db).await.unwrap();
+            sqlx::query_as("SELECT id, fetched_at FROM areas ORDER BY id")
+                .fetch_all(&db)
+                .await
+                .unwrap();
         assert_eq!(fetched, vec![("leuven".into(), 0), ("paris".into(), 1000)]);
     }
 }

@@ -2,9 +2,10 @@
 //!
 //! Every few minutes the server looks at each subscription in the subscriber's own
 //! time zone. From 10:00 on the day a celebration or event starts it sends one
-//! notification, but only when the subscriber's area has places of that country.
+//! notification, but only when the subscriber's area has places of that country. It also
+//! says when food from a country the subscriber hasn't eaten yet appears in their area.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::time::Duration as StdDuration;
 
 use base64::engine::general_purpose::URL_SAFE_NO_PAD;
@@ -17,7 +18,8 @@ use web_push::{
     WebPushMessageBuilder,
 };
 
-use crate::{calendar, catalog, store, AppState};
+use crate::game::PlaceRow;
+use crate::{calendar, catalog, providers::osm, store, AppState};
 
 /// Reminders are sent from this local hour until the end of the evening.
 const FIRST_HOUR: u32 = 10;
@@ -66,7 +68,11 @@ pub enum Delivery {
 
 impl Pusher {
     /// Uses the key in `VAPID_PRIVATE_KEY`, or one stored in the database, creating it on first run.
-    pub async fn load(db: &SqlitePool, configured: Option<String>, subject: String) -> anyhow::Result<Self> {
+    pub async fn load(
+        db: &SqlitePool,
+        configured: Option<String>,
+        subject: String,
+    ) -> anyhow::Result<Self> {
         let private_key = match configured {
             Some(key) => key,
             None => match store::setting(db, "vapid_private_key").await? {
@@ -83,12 +89,24 @@ impl Pusher {
                 .map_err(|e| anyhow::anyhow!("invalid VAPID key: {e}"))?
                 .get_public_key(),
         );
-        let http = reqwest::Client::builder().timeout(StdDuration::from_secs(20)).build()?;
-        Ok(Self { http, private_key, public_key, subject })
+        let http = reqwest::Client::builder()
+            .timeout(StdDuration::from_secs(20))
+            .build()?;
+        Ok(Self {
+            http,
+            private_key,
+            public_key,
+            subject,
+        })
     }
 
-    pub async fn send(&self, to: &Subscription, notification: &Notification) -> anyhow::Result<Delivery> {
-        let info = SubscriptionInfo::new(to.endpoint.as_str(), to.p256dh.as_str(), to.auth.as_str());
+    pub async fn send(
+        &self,
+        to: &Subscription,
+        notification: &Notification,
+    ) -> anyhow::Result<Delivery> {
+        let info =
+            SubscriptionInfo::new(to.endpoint.as_str(), to.p256dh.as_str(), to.auth.as_str());
         let mut signature = VapidSignatureBuilder::from_base64(&self.private_key, &info)?;
         signature.add_claim("sub", self.subject.as_str());
         let payload = serde_json::to_vec(notification)?;
@@ -107,7 +125,10 @@ impl Pusher {
         match response.status().as_u16() {
             200..=299 => Ok(Delivery::Sent),
             404 | 410 => Ok(Delivery::Gone),
-            status => anyhow::bail!("push service answered {status}: {}", response.text().await.unwrap_or_default()),
+            status => anyhow::bail!(
+                "push service answered {status}: {}",
+                response.text().await.unwrap_or_default()
+            ),
         }
     }
 }
@@ -125,26 +146,36 @@ fn new_private_key() -> anyhow::Result<String> {
     }
 }
 
-/// "Lebanese", "Chinese or Vietnamese", "Chinese, Korean or Vietnamese".
-fn cuisine_names(codes: &[&str]) -> String {
+/// "Lebanese", "Chinese or Vietnamese", "Chinese, Korean or Vietnamese", with `last_word`
+/// before the last name.
+fn cuisine_names(codes: &[&str], last_word: &str) -> String {
     let names: Vec<String> = codes
         .iter()
-        .filter_map(|code| catalog::cuisine_adjective(code).or_else(|| Some(catalog::country(code)?.name.clone())))
+        .filter_map(|code| {
+            catalog::cuisine_adjective(code).or_else(|| Some(catalog::country(code)?.name.clone()))
+        })
         .collect();
     match names.as_slice() {
         [] => String::new(),
         [one] => one.clone(),
-        [rest @ .., last] => format!("{} or {last}", rest.join(", ")),
+        [rest @ .., last] => format!("{} {last_word} {last}", rest.join(", ")),
     }
 }
 
 fn places(n: u32) -> String {
-    if n == 1 { "1 place".into() } else { format!("{n} places") }
+    if n == 1 {
+        "1 place".into()
+    } else {
+        format!("{n} places")
+    }
 }
 
 /// The reminder for a celebration, or None when none of its countries has places nearby.
 /// The apps use the same text for the notifications they schedule themselves.
-pub fn celebration_notification(celebration: &calendar::Celebration, counts: &HashMap<String, u32>) -> Option<Notification> {
+pub fn celebration_notification(
+    celebration: &calendar::Celebration,
+    counts: &HashMap<String, u32>,
+) -> Option<Notification> {
     let nearby: Vec<&str> = celebration
         .countries
         .iter()
@@ -153,18 +184,61 @@ pub fn celebration_notification(celebration: &calendar::Celebration, counts: &Ha
         .collect();
     let first = *nearby.first()?;
     let total: u32 = nearby.iter().map(|c| counts[*c]).sum();
-    let when = if celebration.ends > celebration.starts { "starts today" } else { "is today" };
+    let when = if celebration.ends > celebration.starts {
+        "starts today"
+    } else {
+        "is today"
+    };
     Some(Notification {
         title: format!("{} {when}", celebration.title),
         body: format!(
             "{} Celebrate at one of {} serving {} food near you.",
             celebration.description,
             places(total),
-            cuisine_names(&nearby)
+            cuisine_names(&nearby, "or")
         ),
         url: format!("/?country={first}"),
         tag: format!("celebration-{}", celebration.id),
     })
+}
+
+/// The alert for food from `countries` newly in the area, or None when there are none.
+///
+/// `rows` are the area's places; one serving several of the countries counts once.
+pub fn new_food_notification(
+    countries: &[&str],
+    rows: &[PlaceRow],
+    area: &str,
+) -> Option<Notification> {
+    let first = *countries.first()?;
+    let serving: HashSet<&str> = rows
+        .iter()
+        .filter(|r| countries.contains(&r.country.as_str()))
+        .map(|r| r.place_id.as_str())
+        .collect();
+    let total = serving.len() as u32;
+    let them = if countries.len() == 1 { "it" } else { "them" };
+    Some(Notification {
+        title: format!("{} food is now near you", cuisine_names(countries, "and")),
+        body: format!("{} in {area}. You haven't tried {them} yet.", places(total)),
+        url: format!("/?country={first}"),
+        tag: "new-food".into(),
+    })
+}
+
+/// Sends one notification. None when it failed and the next pass should try again.
+async fn deliver(
+    pusher: &Pusher,
+    to: &Subscription,
+    notification: &Notification,
+) -> Option<Delivery> {
+    match pusher.send(to, notification).await {
+        Ok(delivery) => Some(delivery),
+        Err(error) => {
+            tracing::warn!(error = format!("{error:#}"), "push failed");
+            None
+        }
+    }
 }
 
 /// The reminders due for one subscriber on `day`, keyed for de-duplication.
@@ -177,12 +251,19 @@ async fn due(
     let mut out = Vec::new();
     for celebration in calendar::starting_on(day) {
         if let Some(notification) = celebration_notification(&celebration, counts) {
-            out.push((format!("celebration:{}:{day}", celebration.id), notification));
+            out.push((
+                format!("celebration:{}:{day}", celebration.id),
+                notification,
+            ));
         }
     }
 
     for event in calendar::events() {
-        let nearby: u32 = event.countries.iter().map(|c| counts.get(c).copied().unwrap_or(0)).sum();
+        let nearby: u32 = event
+            .countries
+            .iter()
+            .map(|c| counts.get(c).copied().unwrap_or(0))
+            .sum();
         if nearby == 0 {
             continue;
         }
@@ -197,7 +278,9 @@ async fn due(
                 },
             ));
         } else if event.ends - Duration::days(LAST_CHANCE_DAYS - 1) == day {
-            let done = store::visits_between(&state.db, user, &event.countries, event.starts, event.ends).await?;
+            let done =
+                store::visits_between(&state.db, user, &event.countries, event.starts, event.ends)
+                    .await?;
             if done < event.target {
                 let left = event.target - done;
                 out.push((
@@ -225,32 +308,72 @@ pub async fn run_once(state: &AppState, pusher: &Pusher) -> anyhow::Result<usize
         if !(FIRST_HOUR..=LAST_HOUR).contains(&local.hour()) {
             continue;
         }
-        // Only look at areas already in the cache: never call a provider from here.
-        let Some(area_id) = &sub.area_id else { continue };
-        if store::find_area(&state.db, area_id).await?.is_none() {
+        // Only look at areas already in the cache, and refresh a stale one from the local
+        // OpenStreetMap copy at most: never call a provider from here.
+        let Some(area_id) = &sub.area_id else {
             continue;
+        };
+        let Some(area) = store::find_area(&state.db, area_id).await? else {
+            continue;
+        };
+        if state.now() - area.fetched_at >= state.cache_ttl_secs {
+            if let Some(found) = osm::from_import(&state.db, &area.boundary).await? {
+                store::save_area(
+                    &state.db,
+                    &store::Area {
+                        fetched_at: state.now(),
+                        ..area.clone()
+                    },
+                    &found,
+                )
+                .await?;
+            }
         }
+        let rows = store::area_rows(&state.db, area_id, None).await?;
         let mut counts: HashMap<String, u32> = HashMap::new();
-        for row in store::area_rows(&state.db, area_id, None).await? {
-            *counts.entry(row.country).or_default() += 1;
+        for row in &rows {
+            *counts.entry(row.country.clone()).or_default() += 1;
         }
 
+        let mut gone = false;
         for (dedupe, notification) in due(state, &user, local.date_naive(), &counts).await? {
             if !store::mark_push_sent(&state.db, &sub.endpoint, &dedupe, state.now()).await? {
                 continue;
             }
-            match pusher.send(&sub, &notification).await {
-                Ok(Delivery::Sent) => sent += 1,
-                Ok(Delivery::Gone) => {
-                    store::remove_push_subscription(&state.db, &sub.endpoint).await?;
+            match deliver(pusher, &sub, &notification).await {
+                Some(Delivery::Sent) => sent += 1,
+                Some(Delivery::Gone) => {
+                    gone = true;
                     break;
                 }
-                Err(error) => {
-                    // Let the next pass try again.
-                    tracing::warn!(error = format!("{error:#}"), "push failed");
-                    store::unmark_push_sent(&state.db, &sub.endpoint, &dedupe).await?;
+                None => store::unmark_push_sent(&state.db, &sub.endpoint, &dedupe).await?,
+            }
+        }
+
+        if !gone {
+            let mut present: Vec<String> = counts.keys().cloned().collect();
+            present.sort();
+            // Read before marking, so a failure here leaves the countries for the next pass.
+            let visited = store::visited_countries(&state.db, &user).await?;
+            let new =
+                store::take_new_countries(&state.db, &sub.endpoint, area_id, &present).await?;
+            let untried: Vec<&str> = new
+                .iter()
+                .filter(|c| !visited.contains(c))
+                .map(String::as_str)
+                .collect();
+            if let Some(notification) =
+                new_food_notification(&untried, &rows, &area.boundary.info.name)
+            {
+                match deliver(pusher, &sub, &notification).await {
+                    Some(Delivery::Sent) => sent += 1,
+                    Some(Delivery::Gone) => gone = true,
+                    None => store::forget_countries(&state.db, &sub.endpoint, &new).await?,
                 }
             }
+        }
+        if gone {
+            store::remove_push_subscription(&state.db, &sub.endpoint).await?;
         }
     }
     Ok(sent)
@@ -289,8 +412,36 @@ mod tests {
 
     #[test]
     fn names_cuisines_naturally() {
-        assert_eq!(cuisine_names(&["LB"]), "Lebanese");
-        assert_eq!(cuisine_names(&["CN", "VN"]), "Chinese or Vietnamese");
-        assert_eq!(cuisine_names(&["CN", "KR", "VN"]), "Chinese, Korean or Vietnamese");
+        assert_eq!(cuisine_names(&["LB"], "or"), "Lebanese");
+        assert_eq!(cuisine_names(&["CN", "VN"], "or"), "Chinese or Vietnamese");
+        assert_eq!(
+            cuisine_names(&["CN", "KR", "VN"], "or"),
+            "Chinese, Korean or Vietnamese"
+        );
+    }
+
+    #[test]
+    fn groups_new_food_in_one_alert() {
+        let row = |place: &str, country: &str| PlaceRow {
+            place_id: place.into(),
+            country: country.into(),
+            visited: false,
+        };
+        // "b" serves both and counts once.
+        let rows = [
+            row("a", "ET"),
+            row("b", "PE"),
+            row("b", "ET"),
+            row("c", "PE"),
+            row("d", "JP"),
+        ];
+        let one = new_food_notification(&["JP"], &rows, "Leuven").unwrap();
+        assert_eq!(one.title, "Japanese food is now near you");
+        assert_eq!(one.body, "1 place in Leuven. You haven't tried it yet.");
+        let two = new_food_notification(&["ET", "PE"], &rows, "Leuven").unwrap();
+        assert_eq!(two.title, "Ethiopian and Peruvian food is now near you");
+        assert_eq!(two.body, "3 places in Leuven. You haven't tried them yet.");
+        assert_eq!(two.url, "/?country=ET");
+        assert!(new_food_notification(&[], &rows, "Leuven").is_none());
     }
 }

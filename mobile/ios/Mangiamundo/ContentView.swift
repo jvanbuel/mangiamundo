@@ -110,15 +110,33 @@ struct ContentView: View {
     }
 
     private var addLink: some View {
-        VStack(spacing: 4) {
-            Button("Is a restaurant missing? Add it") { adding = true }
-            Button(model.lookingNearby ? "Looking…" : "Just added it in an OpenStreetMap app? Look again") {
-                Task { await model.lookAgainNearby() }
+        VStack(spacing: 8) {
+            Text("Is a restaurant missing?")
+                .font(Theme.font(.footnote))
+                .foregroundStyle(Theme.muted)
+            HStack(spacing: 8) {
+                Button { adding = true } label: {
+                    Label("Add it", systemImage: "plus")
+                }
+                .accessibilityLabel("Is a restaurant missing? Add it")
+                Button {
+                    Task { await model.lookAgainNearby() }
+                } label: {
+                    Label {
+                        Text("Look again")
+                    } icon: {
+                        if model.lookingNearby {
+                            ProgressRing(lineWidth: 2.5).frame(width: 13, height: 13)
+                        } else {
+                            Image(systemName: "arrow.clockwise")
+                        }
+                    }
+                }
+                .disabled(model.lookingNearby)
+                .accessibilityLabel(model.lookingNearby ? "Looking" : "Just added it in an OpenStreetMap app? Look again")
             }
-            .disabled(model.lookingNearby)
+            .buttonStyle(ChunkyButtonStyle(face: Theme.panelRaised, content: Theme.text, small: true))
         }
-        .font(Theme.font(.footnote))
-        .foregroundStyle(Theme.muted)
         .frame(maxWidth: .infinity)
         .padding(.top, 8)
     }

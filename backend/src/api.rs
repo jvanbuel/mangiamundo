@@ -50,7 +50,10 @@ struct BearerToken;
 impl utoipa::Modify for BearerToken {
     fn modify(&self, openapi: &mut utoipa::openapi::OpenApi) {
         let components = openapi.components.get_or_insert_with(Default::default);
-        components.add_security_scheme("token", SecurityScheme::Http(HttpBuilder::new().scheme(HttpAuthScheme::Bearer).build()));
+        components.add_security_scheme(
+            "token",
+            SecurityScheme::Http(HttpBuilder::new().scheme(HttpAuthScheme::Bearer).build()),
+        );
     }
 }
 
@@ -90,15 +93,18 @@ fn api_router() -> (Router<AppState>, utoipa::openapi::OpenApi) {
 pub fn router(state: AppState) -> Router {
     let (api, doc) = api_router();
     // The document itself and the catch-alls below are the only routes not in it.
-    api.route("/api/openapi.json", get(move || std::future::ready(Json(doc.clone()))))
-        // Unknown API paths get a JSON 404 rather than the web app's index.html.
-        .route("/api", any(not_found))
-        .route("/api/", any(not_found))
-        .route("/api/{*rest}", any(not_found))
-        .method_not_allowed_fallback(|| async { ApiError::MethodNotAllowed })
-        .layer(CorsLayer::permissive())
-        .layer(TraceLayer::new_for_http())
-        .with_state(state)
+    api.route(
+        "/api/openapi.json",
+        get(move || std::future::ready(Json(doc.clone()))),
+    )
+    // Unknown API paths get a JSON 404 rather than the web app's index.html.
+    .route("/api", any(not_found))
+    .route("/api/", any(not_found))
+    .route("/api/{*rest}", any(not_found))
+    .method_not_allowed_fallback(|| async { ApiError::MethodNotAllowed })
+    .layer(CorsLayer::permissive())
+    .layer(TraceLayer::new_for_http())
+    .with_state(state)
 }
 
 #[derive(Serialize, ToSchema)]
@@ -115,7 +121,11 @@ struct Health {
 /// Liveness check, also telling clients which build of the server they talk to.
 #[utoipa::path(get, path = "/api/health", tag = "meta", responses((status = 200, body = Health)))]
 async fn health() -> Json<Health> {
-    Json(Health { ok: true, version: env!("CARGO_PKG_VERSION"), commit: option_env!("GIT_COMMIT") })
+    Json(Health {
+        ok: true,
+        version: env!("CARGO_PKG_VERSION"),
+        commit: option_env!("GIT_COMMIT"),
+    })
 }
 
 /// Serves the web app from `dir` next to the API. It is a single-page app, so unknown
@@ -185,10 +195,14 @@ impl IntoResponse for ApiError {
         let (status, code) = match &self {
             ApiError::BadRequest(_) => (StatusCode::BAD_REQUEST, ErrorCode::BadRequest),
             ApiError::Rejected(status, _) => (*status, ErrorCode::BadRequest),
-            ApiError::MethodNotAllowed => (StatusCode::METHOD_NOT_ALLOWED, ErrorCode::MethodNotAllowed),
+            ApiError::MethodNotAllowed => {
+                (StatusCode::METHOD_NOT_ALLOWED, ErrorCode::MethodNotAllowed)
+            }
             ApiError::Unauthorized => (StatusCode::UNAUTHORIZED, ErrorCode::Unauthorized),
             ApiError::NotFound(_) => (StatusCode::NOT_FOUND, ErrorCode::NotFound),
-            ApiError::TooManyRequests(_) => (StatusCode::TOO_MANY_REQUESTS, ErrorCode::TooManyRequests),
+            ApiError::TooManyRequests(_) => {
+                (StatusCode::TOO_MANY_REQUESTS, ErrorCode::TooManyRequests)
+            }
             ApiError::Upstream(error) => {
                 tracing::error!(error = format!("{error:#}"), "provider request failed");
                 (StatusCode::BAD_GATEWAY, ErrorCode::Upstream)
@@ -198,7 +212,14 @@ impl IntoResponse for ApiError {
                 (StatusCode::INTERNAL_SERVER_ERROR, ErrorCode::Internal)
             }
         };
-        (status, Json(ErrorBody { error: self.to_string(), code })).into_response()
+        (
+            status,
+            Json(ErrorBody {
+                error: self.to_string(),
+                code,
+            }),
+        )
+            .into_response()
     }
 }
 
@@ -227,7 +248,8 @@ impl<S: Send + Sync, T: DeserializeOwned> FromRequestParts<S> for Query<T> {
     type Rejection = ApiError;
 
     async fn from_request_parts(parts: &mut Parts, state: &S) -> Result<Self, ApiError> {
-        let axum::extract::Query(value) = axum::extract::Query::from_request_parts(parts, state).await?;
+        let axum::extract::Query(value) =
+            axum::extract::Query::from_request_parts(parts, state).await?;
         Ok(Query(value))
     }
 }
@@ -239,7 +261,8 @@ impl<S: Send + Sync, T: DeserializeOwned + Send> FromRequestParts<S> for Path<T>
     type Rejection = ApiError;
 
     async fn from_request_parts(parts: &mut Parts, state: &S) -> Result<Self, ApiError> {
-        let axum::extract::Path(value) = axum::extract::Path::from_request_parts(parts, state).await?;
+        let axum::extract::Path(value) =
+            axum::extract::Path::from_request_parts(parts, state).await?;
         Ok(Path(value))
     }
 }
@@ -345,7 +368,10 @@ struct NewSession {
     request_body(content = Option<NewSession>, description = "Optional."),
     responses((status = 200, body = Session), (status = "default", description = "An error", body = ErrorBody)),
 )]
-async fn create_session(State(state): State<AppState>, body: Option<JsonBody<NewSession>>) -> ApiResult<Session> {
+async fn create_session(
+    State(state): State<AppState>,
+    body: Option<JsonBody<NewSession>>,
+) -> ApiResult<Session> {
     let device = body.and_then(|JsonBody(b)| b.device);
     let token = account::create_user(&state.db, device.as_deref(), state.now()).await?;
     Ok(Json(Session { token }))
@@ -380,9 +406,15 @@ async fn restore_session(
     MaybeSession(current): MaybeSession,
     JsonBody(body): JsonBody<Restore>,
 ) -> ApiResult<Session> {
-    let token = account::redeem(&state.db, &body.code, current.as_ref(), body.device.as_deref(), state.now())
-        .await?
-        .ok_or(ApiError::NotFound("code"))?;
+    let token = account::redeem(
+        &state.db,
+        &body.code,
+        current.as_ref(),
+        body.device.as_deref(),
+        state.now(),
+    )
+    .await?
+    .ok_or(ApiError::NotFound("code"))?;
     Ok(Json(Session { token }))
 }
 
@@ -391,7 +423,10 @@ async fn restore_session(
     get, path = "/api/account", tag = "account", security(("token" = [])),
     responses((status = 200, body = account::Account), (status = "default", description = "An error", body = ErrorBody)),
 )]
-async fn get_account(State(state): State<AppState>, CurrentSession(session): CurrentSession) -> ApiResult<account::Account> {
+async fn get_account(
+    State(state): State<AppState>,
+    CurrentSession(session): CurrentSession,
+) -> ApiResult<account::Account> {
     Ok(Json(account::account(&state.db, &session).await?))
 }
 
@@ -401,7 +436,10 @@ async fn get_account(State(state): State<AppState>, CurrentSession(session): Cur
     delete, path = "/api/account", tag = "account", security(("token" = [])),
     responses((status = 204, description = "Deleted"), (status = "default", description = "An error", body = ErrorBody)),
 )]
-async fn delete_account(State(state): State<AppState>, User(user): User) -> Result<StatusCode, ApiError> {
+async fn delete_account(
+    State(state): State<AppState>,
+    User(user): User,
+) -> Result<StatusCode, ApiError> {
     account::delete(&state.db, &user).await?;
     Ok(StatusCode::NO_CONTENT)
 }
@@ -418,8 +456,13 @@ struct RecoveryCode {
     post, path = "/api/account/recovery-code", tag = "account", security(("token" = [])),
     responses((status = 200, body = RecoveryCode), (status = "default", description = "An error", body = ErrorBody)),
 )]
-async fn new_recovery_code(State(state): State<AppState>, User(user): User) -> ApiResult<RecoveryCode> {
-    Ok(Json(RecoveryCode { code: account::new_recovery_code(&state.db, &user, state.now()).await? }))
+async fn new_recovery_code(
+    State(state): State<AppState>,
+    User(user): User,
+) -> ApiResult<RecoveryCode> {
+    Ok(Json(RecoveryCode {
+        code: account::new_recovery_code(&state.db, &user, state.now()).await?,
+    }))
 }
 
 #[derive(Serialize, ToSchema)]
@@ -442,7 +485,9 @@ struct LinkCode {
 async fn new_link_code(State(state): State<AppState>, User(user): User) -> ApiResult<LinkCode> {
     let now = state.now();
     if !state.limits.allow(&user, "link_code", 10, 3600, now) {
-        return Err(ApiError::TooManyRequests("too many link codes, try again later"));
+        return Err(ApiError::TooManyRequests(
+            "too many link codes, try again later",
+        ));
     }
     let (code, expires_at) = account::new_link_code(&state.db, &user, now).await?;
     Ok(Json(LinkCode { code, expires_at }))
@@ -483,7 +528,10 @@ struct Continent {
 async fn countries() -> Json<Catalog> {
     Json(Catalog {
         countries: catalog::countries(),
-        continents: catalog::CONTINENTS.iter().map(|&(code, name)| Continent { code, name }).collect(),
+        continents: catalog::CONTINENTS
+            .iter()
+            .map(|&(code, name)| Continent { code, name })
+            .collect(),
     })
 }
 
@@ -514,7 +562,11 @@ fn zone(tz: Option<&str>) -> Tz {
 }
 
 fn valid_area_id(id: &str) -> bool {
-    !id.is_empty() && id.len() <= 100 && id.bytes().all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'-')
+    !id.is_empty()
+        && id.len() <= 100
+        && id
+            .bytes()
+            .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'-')
 }
 
 /// The step an area's fetch is in: it runs from `from` to `to` percent and should take
@@ -537,7 +589,10 @@ struct Load {
 /// Recent requests per user and kind, for rate limits. In memory: the server runs as one
 /// machine, and a restart forgetting them is harmless.
 #[derive(Clone, Default)]
-pub struct Limits(Arc<Mutex<HashMap<(String, &'static str), Vec<i64>>>>);
+pub struct Limits(Arc<Mutex<HashMap<LimitKey, Vec<i64>>>>);
+
+/// A user id and the kind of request.
+type LimitKey = (String, &'static str);
 
 impl Limits {
     /// Counts the request and returns true when `user` made fewer than `max` requests of this
@@ -562,13 +617,24 @@ pub struct Loads(Arc<Mutex<HashMap<String, Load>>>);
 impl Loads {
     /// Counts a fetch of the area until the returned guard drops, also on an error.
     fn begin<'a>(&'a self, id: &'a str) -> LoadDone<'a> {
-        self.0.lock().unwrap().entry(id.to_string()).or_default().running += 1;
+        self.0
+            .lock()
+            .unwrap()
+            .entry(id.to_string())
+            .or_default()
+            .running += 1;
         LoadDone(self, id)
     }
 
     fn step(&self, id: &str, from: f64, to: f64, text: &'static str, expected_secs: f64) {
         if let Some(load) = self.0.lock().unwrap().get_mut(id) {
-            load.step = Some(LoadStep { from, to, text, started: Instant::now(), expected_secs });
+            load.step = Some(LoadStep {
+                from,
+                to,
+                text,
+                started: Instant::now(),
+                expected_secs,
+            });
         }
     }
 
@@ -583,7 +649,12 @@ impl Loads {
     fn progress(&self, id: &str) -> Option<(u8, &'static str)> {
         let loads = self.0.lock().unwrap();
         let step = loads.get(id)?.step.as_ref()?;
-        let percent = estimate(step.from, step.to, step.started.elapsed().as_secs_f64(), step.expected_secs);
+        let percent = estimate(
+            step.from,
+            step.to,
+            step.started.elapsed().as_secs_f64(),
+            step.expected_secs,
+        );
         Some((percent as u8, step.text))
     }
 }
@@ -645,20 +716,29 @@ async fn resolve_area(state: &AppState, id: &str) -> Result<Area, ApiError> {
         }
     };
     let expected = state.places.expected_secs(&boundary);
-    state.loads.step(id, 15.0, 95.0, "Looking for restaurants", expected);
+    state
+        .loads
+        .step(id, 15.0, 95.0, "Looking for restaurants", expected);
     // Another server starts the estimate over from where the wheel is.
     let next_server = || state.loads.restart(id, "Trying another server", expected);
     match state.places.search(&boundary, &next_server).await {
         Ok(found) => {
             state.loads.step(id, 95.0, 100.0, "Counting countries", 0.5);
-            let area = Area { boundary, provider: state.places.name().into(), fetched_at: state.now() };
+            let area = Area {
+                boundary,
+                provider: state.places.name().into(),
+                fetched_at: state.now(),
+            };
             store::save_area(&state.db, &area, &found).await?;
             tracing::info!(area = area.id(), places = found.len(), "area refreshed");
             Ok(area)
         }
         Err(error) => match cached {
             Some(area) => {
-                tracing::warn!(error = format!("{error:#}"), "provider failed, serving stale area");
+                tracing::warn!(
+                    error = format!("{error:#}"),
+                    "provider failed, serving stale area"
+                );
                 Ok(area)
             }
             None => Err(ApiError::Upstream(error)),
@@ -676,7 +756,10 @@ struct AreaView {
 
 impl From<&Area> for AreaView {
     fn from(area: &Area) -> Self {
-        AreaView { info: area.boundary.info.clone(), fetched_at: area.fetched_at }
+        AreaView {
+            info: area.boundary.info.clone(),
+            fetched_at: area.fetched_at,
+        }
     }
 }
 
@@ -730,7 +813,8 @@ async fn event_progress(
     for event in calendar::relevant_events(today, 30) {
         let progress = match user {
             Some(user) => {
-                store::visits_between(&state.db, user, &event.countries, event.starts, event.ends).await?
+                store::visits_between(&state.db, user, &event.countries, event.starts, event.ends)
+                    .await?
             }
             None => 0,
         };
@@ -746,7 +830,11 @@ async fn event_progress(
             continue;
         }
         out.push(EventProgress {
-            places_nearby: event.countries.iter().map(|c| counts.get(c.as_str()).copied().unwrap_or(0)).sum(),
+            places_nearby: event
+                .countries
+                .iter()
+                .map(|c| counts.get(c.as_str()).copied().unwrap_or(0))
+                .sum(),
             event: event.clone(),
             status,
             progress: progress.min(event.target),
@@ -777,7 +865,11 @@ async fn discover(
         None => Lifetime::default(),
     };
     let events = event_progress(&state, user.as_deref(), &rows, zone).await?;
-    Ok(Json(Discover { summary: game::summarize(&rows, lifetime), area: (&area).into(), events }))
+    Ok(Json(Discover {
+        summary: game::summarize(&rows, lifetime),
+        area: (&area).into(),
+        events,
+    }))
 }
 
 #[derive(Deserialize, IntoParams)]
@@ -825,18 +917,32 @@ async fn celebrations(
     Ok(Json(nearby_celebrations(state.today(zone), days, &counts)))
 }
 
-fn nearby_celebrations(today: NaiveDate, days: i64, counts: &HashMap<&str, u32>) -> Vec<CelebrationView> {
+fn nearby_celebrations(
+    today: NaiveDate,
+    days: i64,
+    counts: &HashMap<&str, u32>,
+) -> Vec<CelebrationView> {
     calendar::upcoming(today, days)
         .into_iter()
         .filter_map(|celebration| {
             let nearby: Vec<NearbyCountry> = celebration
                 .countries
                 .iter()
-                .filter_map(|code| Some(NearbyCountry { code: code.clone(), places: *counts.get(code.as_str())? }))
+                .filter_map(|code| {
+                    Some(NearbyCountry {
+                        code: code.clone(),
+                        places: *counts.get(code.as_str())?,
+                    })
+                })
                 .collect();
-            let owned: HashMap<String, u32> = nearby.iter().map(|n| (n.code.clone(), n.places)).collect();
+            let owned: HashMap<String, u32> =
+                nearby.iter().map(|n| (n.code.clone(), n.places)).collect();
             let reminder = crate::push::celebration_notification(&celebration, &owned)?;
-            Some(CelebrationView { celebration, nearby, reminder })
+            Some(CelebrationView {
+                celebration,
+                nearby,
+                reminder,
+            })
         })
         .collect()
 }
@@ -867,7 +973,8 @@ async fn places(
 ) -> ApiResult<Vec<PlaceView>> {
     let area = resolve_area(&state, &query.area).await?;
     let country = query.country.map(|c| c.to_uppercase());
-    let mut places = store::area_places(&state.db, area.id(), country.as_deref(), user.as_deref()).await?;
+    let mut places =
+        store::area_places(&state.db, area.id(), country.as_deref(), user.as_deref()).await?;
     let info = &area.boundary.info;
     let (from_lat, from_lng) = match (query.lat, query.lng) {
         (Some(lat), Some(lng)) => (lat, lng),
@@ -888,7 +995,8 @@ fn complete(place: &mut PlaceView, from_lat: f64, from_lng: f64, now: i64) {
     place.osm_url = osm_link(&place.id);
     place.distance_m = geo::distance_m(from_lat, from_lng, place.lat, place.lng).round() as u32;
     if let Some(h) = &mut place.hours {
-        h.status = hours::status(&h.raw, place.lat, place.lng, now).map(|(open, text)| HoursStatus { open, text });
+        h.status = hours::status(&h.raw, place.lat, place.lng, now)
+            .map(|(open, text)| HoursStatus { open, text });
     }
 }
 
@@ -922,9 +1030,13 @@ struct AddPlace {
 
 /// Trimmed, `None` when empty; an error past `max` characters.
 fn text(value: Option<String>, field: &str, max: usize) -> Result<Option<String>, ApiError> {
-    let value = value.map(|v| v.trim().to_string()).filter(|v| !v.is_empty());
+    let value = value
+        .map(|v| v.trim().to_string())
+        .filter(|v| !v.is_empty());
     if value.as_ref().is_some_and(|v| v.chars().count() > max) {
-        return Err(ApiError::BadRequest(format!("{field} is longer than {max} characters")));
+        return Err(ApiError::BadRequest(format!(
+            "{field} is longer than {max} characters"
+        )));
     }
     Ok(value)
 }
@@ -962,11 +1074,17 @@ async fn add_place(
     User(user): User,
     JsonBody(body): JsonBody<AddPlace>,
 ) -> ApiResult<AddedPlace> {
-    let name = text(Some(body.name), "name", 100)?.ok_or(ApiError::BadRequest("name is missing".into()))?;
+    let name = text(Some(body.name), "name", 100)?
+        .ok_or(ApiError::BadRequest("name is missing".into()))?;
     let address = text(body.address, "address", 200)?;
     let url = text(body.website, "website", 300)?;
-    if url.as_ref().is_some_and(|u| !u.starts_with("https://") && !u.starts_with("http://")) {
-        return Err(ApiError::BadRequest("website must be an http or https URL".into()));
+    if url
+        .as_ref()
+        .is_some_and(|u| !u.starts_with("https://") && !u.starts_with("http://"))
+    {
+        return Err(ApiError::BadRequest(
+            "website must be an http or https URL".into(),
+        ));
     }
     if !(-90.0..=90.0).contains(&body.lat) || !(-180.0..=180.0).contains(&body.lng) {
         return Err(ApiError::BadRequest("lat/lng out of range".into()));
@@ -976,14 +1094,32 @@ async fn add_place(
         .zip(catalog::cuisine_tag(&code))
         .ok_or(ApiError::BadRequest("unknown country".into()))?;
     let now = state.now();
-    let new = store::NewPlace { name, lat: body.lat, lng: body.lng, address, url, country: &country.code, cuisine };
+    let new = store::NewPlace {
+        name,
+        lat: body.lat,
+        lng: body.lng,
+        address,
+        url,
+        country: &country.code,
+        cuisine,
+    };
     let added = store::add_place(&state.db, &user, &new, now, PLACES_PER_DAY)
         .await?
-        .ok_or(ApiError::TooManyRequests("you have added 5 places today; try again tomorrow"))?;
-    let reward = Reward { xp: added.bonus.xp(), bonus: added.bonus, area_name: added.area_name };
+        .ok_or(ApiError::TooManyRequests(
+            "you have added 5 places today; try again tomorrow",
+        ))?;
+    let reward = Reward {
+        xp: added.bonus.xp(),
+        bonus: added.bonus,
+        area_name: added.area_name,
+    };
     let id = added.id;
 
-    if let Some(notes) = state.osm_notes_url.clone().filter(|_| body.note != Some(false)) {
+    if let Some(notes) = state
+        .osm_notes_url
+        .clone()
+        .filter(|_| body.note != Some(false))
+    {
         let (db, id, token) = (state.db.clone(), id.clone(), state.osm_notes_token.clone());
         let text = missing_place_note(&new);
         tokio::spawn(async move {
@@ -994,7 +1130,9 @@ async fn add_place(
             }
         });
     }
-    let mut place = store::place(&state.db, &id, Some(&user)).await?.ok_or(ApiError::NotFound("place"))?;
+    let mut place = store::place(&state.db, &id, Some(&user))
+        .await?
+        .ok_or(ApiError::NotFound("place"))?;
     let (lat, lng) = (place.lat, place.lng);
     complete(&mut place, lat, lng, now);
     Ok(Json(AddedPlace { place, reward }))
@@ -1007,7 +1145,10 @@ async fn add_place(
     security(("token" = [])),
     responses((status = 200, body = Vec<store::Addition>), (status = "default", description = "An error", body = ErrorBody)),
 )]
-async fn additions(State(state): State<AppState>, User(user): User) -> ApiResult<Vec<store::Addition>> {
+async fn additions(
+    State(state): State<AppState>,
+    User(user): User,
+) -> ApiResult<Vec<store::Addition>> {
     Ok(Json(store::additions(&state.db, &user).await?))
 }
 
@@ -1079,28 +1220,42 @@ async fn refresh_place(
     Query(query): Query<PlaceQuery>,
 ) -> ApiResult<RefreshResult> {
     if osm_link(&place_id).is_none() {
-        return Err(ApiError::BadRequest("only OpenStreetMap places can be refreshed".into()));
+        return Err(ApiError::BadRequest(
+            "only OpenStreetMap places can be refreshed".into(),
+        ));
     }
-    store::place_summary(&state.db, &place_id, &user).await?.ok_or(ApiError::NotFound("place"))?;
+    store::place_summary(&state.db, &place_id, &user)
+        .await?
+        .ok_or(ApiError::NotFound("place"))?;
     let now = state.now();
     if !state.limits.allow(&user, "refresh_place", 5, 60, now) {
-        return Err(ApiError::TooManyRequests("you refreshed 5 places this minute; try again in a moment"));
+        return Err(ApiError::TooManyRequests(
+            "you refreshed 5 places this minute; try again in a moment",
+        ));
     }
-    let lookup = state.places.place(&place_id).await.map_err(ApiError::Upstream)?;
+    let lookup = state
+        .places
+        .place(&place_id)
+        .await
+        .map_err(ApiError::Upstream)?;
     let status = store::refresh_place(&state.db, &place_id, &lookup, now).await?;
     let place = match lookup {
         Lookup::Gone => None,
-        Lookup::Found(_) => store::place(&state.db, &place_id, Some(&user)).await?.map(|mut place| {
-            let (from_lat, from_lng) = match (query.lat, query.lng) {
-                (Some(lat), Some(lng)) => (lat, lng),
-                _ => (place.lat, place.lng),
-            };
-            complete(&mut place, from_lat, from_lng, now);
-            if let Some(h) = &mut place.hours {
-                h.week = hours::week(&h.raw, place.lat, place.lng, now);
-            }
-            place
-        }),
+        Lookup::Found(_) => {
+            store::place(&state.db, &place_id, Some(&user))
+                .await?
+                .map(|mut place| {
+                    let (from_lat, from_lng) = match (query.lat, query.lng) {
+                        (Some(lat), Some(lng)) => (lat, lng),
+                        _ => (place.lat, place.lng),
+                    };
+                    complete(&mut place, from_lat, from_lng, now);
+                    if let Some(h) = &mut place.hours {
+                        h.week = hours::week(&h.raw, place.lat, place.lng, now);
+                    }
+                    place
+                })
+        }
     };
     tracing::info!(place_id, ?status, "place refreshed from osm");
     Ok(Json(RefreshResult { status, place }))
@@ -1145,9 +1300,15 @@ async fn refresh_nearby(
     }
     let now = state.now();
     if !state.limits.allow(&user, "refresh_nearby", 5, 3600, now) {
-        return Err(ApiError::TooManyRequests("you looked again 5 times this hour; try again later"));
+        return Err(ApiError::TooManyRequests(
+            "you looked again 5 times this hour; try again later",
+        ));
     }
-    let found = state.places.nearby(lat, lng, NEARBY_RADIUS_M).await.map_err(ApiError::Upstream)?;
+    let found = state
+        .places
+        .nearby(lat, lng, NEARBY_RADIUS_M)
+        .await
+        .map_err(ApiError::Upstream)?;
     let (new, matched) = store::add_nearby(&state.db, &found, now).await?;
     let mut added = Vec::new();
     for id in new {
@@ -1157,8 +1318,16 @@ async fn refresh_nearby(
         }
     }
     added.sort_by_key(|p| p.distance_m);
-    tracing::info!(found = found.len(), added = added.len(), matched, "nearby places refreshed from osm");
-    Ok(Json(NearbyResult { added, matched: matched as u32 }))
+    tracing::info!(
+        found = found.len(),
+        added = added.len(),
+        matched,
+        "nearby places refreshed from osm"
+    );
+    Ok(Json(NearbyResult {
+        added,
+        matched: matched as u32,
+    }))
 }
 
 #[derive(Deserialize, IntoParams)]
@@ -1183,7 +1352,9 @@ async fn place(
     Path(place_id): Path<String>,
     Query(query): Query<PlaceQuery>,
 ) -> ApiResult<PlaceView> {
-    let mut place = store::place(&state.db, &place_id, user.as_deref()).await?.ok_or(ApiError::NotFound("place"))?;
+    let mut place = store::place(&state.db, &place_id, user.as_deref())
+        .await?
+        .ok_or(ApiError::NotFound("place"))?;
     let (from_lat, from_lng) = match (query.lat, query.lng) {
         (Some(lat), Some(lng)) => (lat, lng),
         _ => (place.lat, place.lng),
@@ -1247,8 +1418,15 @@ async fn add_visit(
     let verified = check_in
         .position
         .is_some_and(|p| geo::distance_m(p.lat, p.lng, plat, plng) <= VERIFY_DISTANCE_M);
-    let visit = store::add_visit(&state.db, &user, &place_id, verified, state.now(), state.today(zone(query.tz.as_deref())))
-            .await?;
+    let visit = store::add_visit(
+        &state.db,
+        &user,
+        &place_id,
+        verified,
+        state.now(),
+        state.today(zone(query.tz.as_deref())),
+    )
+    .await?;
     let profile = game::profile(store::lifetime(&state.db, &user).await?);
     Ok(Json(VisitResult { visit, profile }))
 }
@@ -1280,7 +1458,9 @@ async fn report_closed(
     User(user): User,
     Path(place_id): Path<String>,
 ) -> Result<StatusCode, ApiError> {
-    let (name, lat, lng) = store::place_summary(&state.db, &place_id, &user).await?.ok_or(ApiError::NotFound("place"))?;
+    let (name, lat, lng) = store::place_summary(&state.db, &place_id, &user)
+        .await?
+        .ok_or(ApiError::NotFound("place"))?;
     let reports = store::report_closed(&state.db, &user, &place_id, state.now()).await?;
     // Tell OSM once, when the place gets hidden for everyone, so one person cannot spam mappers.
     if let (Some(2), Some(url), Some(osm)) = (reports, &state.osm_notes_url, osm_link(&place_id)) {
@@ -1288,7 +1468,13 @@ async fn report_closed(
             "Two Mangiamundo users reported that \"{name}\" ({osm}) has closed. \
              Could someone check and update or remove it?"
         );
-        tokio::spawn(post_osm_note(url.clone(), state.osm_notes_token.clone(), lat, lng, text));
+        tokio::spawn(post_osm_note(
+            url.clone(),
+            state.osm_notes_token.clone(),
+            lat,
+            lng,
+            text,
+        ));
     }
     Ok(StatusCode::NO_CONTENT)
 }
@@ -1301,13 +1487,26 @@ fn osm_link(place_id: &str) -> Option<String> {
 
 /// Posts an OSM note, as the account `token` belongs to or anonymously, and returns its id.
 /// Best effort: a failure is logged, not retried.
-async fn post_osm_note(url: String, token: Option<String>, lat: f64, lng: f64, text: String) -> Option<i64> {
+async fn post_osm_note(
+    url: String,
+    token: Option<String>,
+    lat: f64,
+    lng: f64,
+    text: String,
+) -> Option<i64> {
     // The `.json` endpoint answers with the note as GeoJSON instead of XML.
     let result = async {
         let mut request = reqwest::Client::new()
             .post(format!("{url}.json"))
-            .header(header::USER_AGENT, concat!("mangiamundo/", env!("CARGO_PKG_VERSION")))
-            .form(&[("lat", lat.to_string()), ("lon", lng.to_string()), ("text", text)]);
+            .header(
+                header::USER_AGENT,
+                concat!("mangiamundo/", env!("CARGO_PKG_VERSION")),
+            )
+            .form(&[
+                ("lat", lat.to_string()),
+                ("lon", lng.to_string()),
+                ("text", text),
+            ]);
         if let Some(token) = token {
             request = request.bearer_auth(token);
         }
@@ -1426,12 +1625,20 @@ struct SearchQuery {
     get, path = "/api/areas", tag = "areas", params(SearchQuery),
     responses((status = 200, body = Vec<AreaInfo>), (status = "default", description = "An error", body = ErrorBody)),
 )]
-async fn search_areas(State(state): State<AppState>, Query(query): Query<SearchQuery>) -> ApiResult<Vec<AreaInfo>> {
+async fn search_areas(
+    State(state): State<AppState>,
+    Query(query): Query<SearchQuery>,
+) -> ApiResult<Vec<AreaInfo>> {
     let q = query.q.trim();
     if q.chars().count() < 2 {
         return Ok(Json(Vec::new()));
     }
-    state.areas.search(q).await.map(Json).map_err(ApiError::Upstream)
+    state
+        .areas
+        .search(q)
+        .await
+        .map(Json)
+        .map_err(ApiError::Upstream)
 }
 
 #[derive(Deserialize, IntoParams)]
@@ -1449,13 +1656,21 @@ struct SuggestQuery {
     get, path = "/api/areas/suggest", tag = "areas", params(SuggestQuery),
     responses((status = 200, body = Vec<AreaInfo>), (status = "default", description = "An error", body = ErrorBody)),
 )]
-async fn suggest_areas(State(state): State<AppState>, Query(query): Query<SuggestQuery>) -> ApiResult<Vec<AreaInfo>> {
+async fn suggest_areas(
+    State(state): State<AppState>,
+    Query(query): Query<SuggestQuery>,
+) -> ApiResult<Vec<AreaInfo>> {
     let q = query.q.trim();
     if q.chars().count() < 2 {
         return Ok(Json(Vec::new()));
     }
     let near = query.lat.zip(query.lng);
-    state.areas.suggest(q, near).await.map(Json).map_err(ApiError::Upstream)
+    state
+        .areas
+        .suggest(q, near)
+        .await
+        .map(Json)
+        .map_err(ApiError::Upstream)
 }
 
 #[derive(Deserialize, IntoParams)]
@@ -1479,8 +1694,19 @@ struct LoadProgress {
     get, path = "/api/areas/{area_id}/progress", tag = "areas", params(("area_id" = String, Path, description = "An area id.")),
     responses((status = 200, body = Option<LoadProgress>), (status = "default", description = "An error", body = ErrorBody)),
 )]
-async fn area_progress(State(state): State<AppState>, Path(area_id): Path<String>) -> Json<Option<LoadProgress>> {
-    Json(state.loads.progress(&area_id).map(|(percent, text)| LoadProgress { percent, text: text.into() }))
+async fn area_progress(
+    State(state): State<AppState>,
+    Path(area_id): Path<String>,
+) -> Json<Option<LoadProgress>> {
+    Json(
+        state
+            .loads
+            .progress(&area_id)
+            .map(|(percent, text)| LoadProgress {
+                percent,
+                text: text.into(),
+            }),
+    )
 }
 
 /// The city and postal code a point (usually the device's position) lies in.
@@ -1488,11 +1714,19 @@ async fn area_progress(State(state): State<AppState>, Path(area_id): Path<String
     get, path = "/api/areas/locate", tag = "areas", params(LocateQuery),
     responses((status = 200, body = Located), (status = "default", description = "An error", body = ErrorBody)),
 )]
-async fn locate_area(State(state): State<AppState>, Query(query): Query<LocateQuery>) -> ApiResult<Located> {
+async fn locate_area(
+    State(state): State<AppState>,
+    Query(query): Query<LocateQuery>,
+) -> ApiResult<Located> {
     if !(-90.0..=90.0).contains(&query.lat) || !(-180.0..=180.0).contains(&query.lng) {
         return Err(ApiError::BadRequest("lat/lng out of range".into()));
     }
-    state.areas.locate(query.lat, query.lng).await.map(Json).map_err(ApiError::Upstream)
+    state
+        .areas
+        .locate(query.lat, query.lng)
+        .await
+        .map(Json)
+        .map_err(ApiError::Upstream)
 }
 
 #[cfg(test)]
@@ -1513,9 +1747,15 @@ mod tests {
         let first = loads.begin("leuven");
         let second = loads.begin("leuven");
         loads.step("leuven", 15.0, 95.0, "Looking for restaurants", 20.0);
-        assert_eq!(loads.progress("leuven"), Some((15, "Looking for restaurants")));
+        assert_eq!(
+            loads.progress("leuven"),
+            Some((15, "Looking for restaurants"))
+        );
         drop(first);
-        assert_eq!(loads.progress("leuven"), Some((15, "Looking for restaurants")));
+        assert_eq!(
+            loads.progress("leuven"),
+            Some((15, "Looking for restaurants"))
+        );
         drop(second);
         assert_eq!(loads.progress("leuven"), None);
     }

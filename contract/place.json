@@ -1,72 +1,79 @@
 {
-  "address": "200 Demo Street",
+  "address": "103 Demo Street",
   "countries": [
-    "AL"
+    "AZ"
   ],
-  "cuisine": "albanian",
-  "distance_m": 1711,
+  "cuisine": "azerbaijani",
+  "distance_m": 4315,
   "hours": {
-    "raw": "24/7",
+    "raw": "Mo-Su 11:30-14:00,18:00-22:00",
     "status": {
       "open": true,
-      "text": "Open"
+      "text": "Open until 14:00"
     },
     "week": [
       {
         "name": "Monday",
         "open": [
-          "24 hours"
+          "11:30-14:00",
+          "18:00-22:00"
         ],
         "today": true
       },
       {
         "name": "Tuesday",
         "open": [
-          "24 hours"
+          "11:30-14:00",
+          "18:00-22:00"
         ],
         "today": false
       },
       {
         "name": "Wednesday",
         "open": [
-          "24 hours"
+          "11:30-14:00",
+          "18:00-22:00"
         ],
         "today": false
       },
       {
         "name": "Thursday",
         "open": [
-          "24 hours"
+          "11:30-14:00",
+          "18:00-22:00"
         ],
         "today": false
       },
       {
         "name": "Friday",
         "open": [
-          "24 hours"
+          "11:30-14:00",
+          "18:00-22:00"
         ],
         "today": false
       },
       {
         "name": "Saturday",
         "open": [
-          "24 hours"
+          "11:30-14:00",
+          "18:00-22:00"
         ],
         "today": false
       },
       {
         "name": "Sunday",
         "open": [
-          "24 hours"
+          "11:30-14:00",
+          "18:00-22:00"
         ],
         "today": false
       }
     ]
   },
-  "id": "demo-leuven-AL-1",
-  "lat": 50.89448040522253,
-  "lng": 4.707786056764152,
-  "name": "Little Albania",
+  "id": "demo-leuven-AZ-2",
+  "lat": 50.90943981213245,
+  "lng": 4.740201887511225,
+  "name": "Mama's Azerbaijan",
   "osm_url": null,
   "url": null,
   "visits": [

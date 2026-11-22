@@ -238,12 +238,54 @@ pub fn summarize(rows: &[PlaceRow], lifetime: Lifetime) -> Summary {
 
     use BadgeKind::*;
     let mut badges = vec![
-        badge("first-bite", Visits, "First check-in", "Check in at any place.", lifetime.visits, 1),
-        badge("flags-5", Countries, "5 countries", "Eat the food of 5 countries.", lifetime.countries, 5),
-        badge("flags-10", Countries, "10 countries", "Eat the food of 10 countries.", lifetime.countries, 10),
-        badge("flags-25", Countries, "25 countries", "Eat the food of 25 countries.", lifetime.countries, 25),
-        badge("complete-1", Completed, "1 country complete", "Visit every place of a country here.", world.completed, 1),
-        badge("complete-5", Completed, "5 countries complete", "Visit every place of 5 countries here.", world.completed, 5),
+        badge(
+            "first-bite",
+            Visits,
+            "First check-in",
+            "Check in at any place.",
+            lifetime.visits,
+            1,
+        ),
+        badge(
+            "flags-5",
+            Countries,
+            "5 countries",
+            "Eat the food of 5 countries.",
+            lifetime.countries,
+            5,
+        ),
+        badge(
+            "flags-10",
+            Countries,
+            "10 countries",
+            "Eat the food of 10 countries.",
+            lifetime.countries,
+            10,
+        ),
+        badge(
+            "flags-25",
+            Countries,
+            "25 countries",
+            "Eat the food of 25 countries.",
+            lifetime.countries,
+            25,
+        ),
+        badge(
+            "complete-1",
+            Completed,
+            "1 country complete",
+            "Visit every place of a country here.",
+            world.completed,
+            1,
+        ),
+        badge(
+            "complete-5",
+            Completed,
+            "5 countries complete",
+            "Visit every place of 5 countries here.",
+            world.completed,
+            5,
+        ),
         badge(
             "pioneer",
             Pioneer,
@@ -296,11 +338,20 @@ mod tests {
     use super::*;
 
     fn row(place: &str, country: &str, visited: bool) -> PlaceRow {
-        PlaceRow { place_id: place.into(), country: country.into(), visited }
+        PlaceRow {
+            place_id: place.into(),
+            country: country.into(),
+            visited,
+        }
     }
 
     fn earned(summary: &Summary, id: &str) -> bool {
-        summary.badges.iter().find(|b| b.id == id).unwrap_or_else(|| panic!("no badge {id}")).earned
+        summary
+            .badges
+            .iter()
+            .find(|b| b.id == id)
+            .unwrap_or_else(|| panic!("no badge {id}"))
+            .earned
     }
 
     #[test]
@@ -320,7 +371,14 @@ mod tests {
             row("d", "FR", false),
             row("e", "JP", false),
         ];
-        let s = summarize(&rows, Lifetime { visits: 3, countries: 2, ..Default::default() });
+        let s = summarize(
+            &rows,
+            Lifetime {
+                visits: 3,
+                countries: 2,
+                ..Default::default()
+            },
+        );
 
         let italy = s.countries.iter().find(|c| c.code == "IT").unwrap();
         assert!(italy.completed() && italy.discovered());
@@ -328,8 +386,14 @@ mod tests {
         assert!(france.discovered() && !france.completed());
 
         let europe = s.continents.iter().find(|c| c.code == "EU").unwrap();
-        assert_eq!((europe.available, europe.discovered, europe.completed), (2, 2, 1));
-        assert_eq!((s.world.available, s.world.discovered, s.world.completed), (3, 2, 1));
+        assert_eq!(
+            (europe.available, europe.discovered, europe.completed),
+            (2, 2, 1)
+        );
+        assert_eq!(
+            (s.world.available, s.world.discovered, s.world.completed),
+            (3, 2, 1)
+        );
         assert_eq!((s.places, s.places_visited), (5, 3));
 
         assert!(earned(&s, "first-bite"));
@@ -344,7 +408,14 @@ mod tests {
     #[test]
     fn a_place_serving_two_countries_counts_once_as_a_place() {
         let rows = [row("a", "TH", true), row("a", "VN", true)];
-        let s = summarize(&rows, Lifetime { visits: 1, countries: 2, ..Default::default() });
+        let s = summarize(
+            &rows,
+            Lifetime {
+                visits: 1,
+                countries: 2,
+                ..Default::default()
+            },
+        );
         assert_eq!((s.places, s.places_visited), (1, 1));
         assert_eq!(s.world.discovered, 2);
         assert!(earned(&s, "world") && earned(&s, "world-complete"));
@@ -354,23 +425,62 @@ mod tests {
     fn levels_follow_the_quadratic_curve() {
         assert_eq!(profile(Lifetime::default()).level, 1);
         // 1 visit in a new country: 60 XP, still level 1.
-        let p = profile(Lifetime { visits: 1, countries: 1, ..Default::default() });
-        assert_eq!((p.xp, p.level, p.level_xp, p.next_level_xp), (60, 1, 0, 100));
+        let p = profile(Lifetime {
+            visits: 1,
+            countries: 1,
+            ..Default::default()
+        });
+        assert_eq!(
+            (p.xp, p.level, p.level_xp, p.next_level_xp),
+            (60, 1, 0, 100)
+        );
         // 5 visits over 5 countries: 300 XP, level 2 (100..400).
-        let p = profile(Lifetime { visits: 5, countries: 5, ..Default::default() });
-        assert_eq!((p.xp, p.level, p.level_xp, p.next_level_xp), (300, 2, 100, 400));
-        assert_eq!(profile(Lifetime { visits: 10, countries: 6, ..Default::default() }).level, 3);
+        let p = profile(Lifetime {
+            visits: 5,
+            countries: 5,
+            ..Default::default()
+        });
+        assert_eq!(
+            (p.xp, p.level, p.level_xp, p.next_level_xp),
+            (300, 2, 100, 400)
+        );
+        assert_eq!(
+            profile(Lifetime {
+                visits: 10,
+                countries: 6,
+                ..Default::default()
+            })
+            .level,
+            3
+        );
     }
 
     #[test]
     fn added_restaurants_earn_xp_with_bonuses_for_new_countries_and_continents() {
-        assert_eq!((Bonus::None.xp(), Bonus::Country.xp(), Bonus::Continent.xp()), (30, 130, 380));
+        assert_eq!(
+            (Bonus::None.xp(), Bonus::Country.xp(), Bonus::Continent.xp()),
+            (30, 130, 380)
+        );
         // One plain addition, one new country, one new continent (which is a new country too).
-        let lifetime = Lifetime { added: 3, country_bonuses: 2, continent_bonuses: 1, ..Default::default() };
+        let lifetime = Lifetime {
+            added: 3,
+            country_bonuses: 2,
+            continent_bonuses: 1,
+            ..Default::default()
+        };
         let p = profile(lifetime);
         assert_eq!((p.xp, p.added), (30 + 130 + 380, 3));
         let s = summarize(&[], lifetime);
         assert!(earned(&s, "pioneer"));
-        assert!(!earned(&summarize(&[], Lifetime { added: 1, ..Default::default() }), "pioneer"));
+        assert!(!earned(
+            &summarize(
+                &[],
+                Lifetime {
+                    added: 1,
+                    ..Default::default()
+                }
+            ),
+            "pioneer"
+        ));
     }
 }
