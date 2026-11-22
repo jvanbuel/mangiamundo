@@ -2,25 +2,25 @@
   {
     "approximate": false,
     "countries": [
-      "LB"
+      "GB"
     ],
-    "description": "Mezze, kibbeh and knafeh.",
-    "ends": "2026-11-22",
-    "id": "lebanese-independence",
+    "description": "Haggis, neeps and tatties for Scotland's national poet.",
+    "ends": "2027-01-25",
+    "id": "burns-night",
     "nearby": [
       {
-        "code": "LB",
+        "code": "GB",
         "places": 2
       }
     ],
     "reminder": {
-      "body": "Mezze, kibbeh and knafeh. Celebrate at one of 2 places serving Lebanese food near you.",
-      "tag": "celebration-lebanese-independence",
-      "title": "Lebanese Independence Day is today",
-      "url": "/?country=LB"
+      "body": "Haggis, neeps and tatties for Scotland's national poet. Celebrate at one of 2 places serving British food near you.",
+      "tag": "celebration-burns-night",
+      "title": "Burns Night is today",
+      "url": "/?country=GB"
     },
-    "starts": "2026-11-22",
-    "title": "Lebanese Independence Day"
+    "starts": "2027-01-25",
+    "title": "Burns Night"
   },
   {
     "approximate": false,
@@ -37,19 +37,19 @@
     "id": "lunar-new-year",
     "nearby": [
       {
-        "code": "VN",
-        "places": 2
+        "code": "KR",
+        "places": 4
       },
       {
-        "code": "TW",
-        "places": 4
+        "code": "SG",
+        "places": 3
       }
     ],
     "reminder": {
-      "body": "Dumplings, spring rolls and long noodles for a long life. Celebrate at one of 6 places serving Vietnamese or Taiwanese food near you.",
+      "body": "Dumplings, spring rolls and long noodles for a long life. Celebrate at one of 7 places serving Korean or Singaporean food near you.",
       "tag": "celebration-lunar-new-year",
       "title": "Lunar New Year starts today",
-      "url": "/?country=VN"
+      "url": "/?country=KR"
     },
     "starts": "2027-02-06",
     "title": "Lunar New Year"

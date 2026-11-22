@@ -78,7 +78,7 @@
       "id": "continent-AF",
       "kind": "continent",
       "progress": 0,
-      "target": 6,
+      "target": 7,
       "title": "Africa"
     },
     {
@@ -86,7 +86,7 @@
       "earned": false,
       "id": "continent-AS",
       "kind": "continent",
-      "progress": 0,
+      "progress": 1,
       "target": 13,
       "title": "Asia"
     },
@@ -95,8 +95,8 @@
       "earned": false,
       "id": "continent-EU",
       "kind": "continent",
-      "progress": 1,
-      "target": 20,
+      "progress": 0,
+      "target": 12,
       "title": "Europe"
     },
     {
@@ -105,7 +105,7 @@
       "id": "continent-NA",
       "kind": "continent",
       "progress": 0,
-      "target": 4,
+      "target": 5,
       "title": "North America"
     },
     {
@@ -114,7 +114,7 @@
       "id": "continent-SA",
       "kind": "continent",
       "progress": 0,
-      "target": 3,
+      "target": 2,
       "title": "South America"
     },
     {
@@ -123,7 +123,7 @@
       "id": "world",
       "kind": "world",
       "progress": 1,
-      "target": 46,
+      "target": 39,
       "title": "Whole world"
     },
     {
@@ -132,13 +132,13 @@
       "id": "world-complete",
       "kind": "everything",
       "progress": 2,
-      "target": 106,
+      "target": 88,
       "title": "Every place"
     }
   ],
   "continents": [
     {
-      "available": 6,
+      "available": 7,
       "code": "AF",
       "completed": 0,
       "discovered": 0,
@@ -148,18 +148,18 @@
       "available": 13,
       "code": "AS",
       "completed": 0,
-      "discovered": 0,
+      "discovered": 1,
       "name": "Asia"
     },
     {
-      "available": 20,
+      "available": 12,
       "code": "EU",
       "completed": 0,
-      "discovered": 1,
+      "discovered": 0,
       "name": "Europe"
     },
     {
-      "available": 4,
+      "available": 5,
       "code": "NA",
       "completed": 0,
       "discovered": 0,
@@ -173,7 +173,7 @@
       "name": "Oceania"
     },
     {
-      "available": 3,
+      "available": 2,
       "code": "SA",
       "completed": 0,
       "discovered": 0,
@@ -182,33 +182,21 @@
   ],
   "countries": [
     {
-      "code": "AF",
+      "code": "AE",
       "continent": "AS",
-      "places": 1,
-      "visited": 0
-    },
-    {
-      "code": "AL",
-      "continent": "EU",
-      "places": 3,
-      "visited": 2
-    },
-    {
-      "code": "AM",
-      "continent": "AS",
-      "places": 1,
-      "visited": 0
-    },
-    {
-      "code": "AT",
-      "continent": "EU",
-      "places": 4,
+      "places": 2,
       "visited": 0
     },
     {
       "code": "AZ",
       "continent": "AS",
-      "places": 1,
+      "places": 3,
+      "visited": 2
+    },
+    {
+      "code": "BA",
+      "continent": "EU",
+      "places": 3,
       "visited": 0
     },
     {
@@ -218,21 +206,9 @@
       "visited": 0
     },
     {
-      "code": "BG",
-      "continent": "EU",
-      "places": 1,
-      "visited": 0
-    },
-    {
-      "code": "CA",
-      "continent": "NA",
+      "code": "BR",
+      "continent": "SA",
       "places": 2,
-      "visited": 0
-    },
-    {
-      "code": "CD",
-      "continent": "AF",
-      "places": 3,
       "visited": 0
     },
     {
@@ -242,97 +218,97 @@
       "visited": 0
     },
     {
-      "code": "CI",
-      "continent": "AF",
-      "places": 2,
-      "visited": 0
-    },
-    {
-      "code": "CY",
-      "continent": "EU",
-      "places": 2,
-      "visited": 0
-    },
-    {
-      "code": "DE",
-      "continent": "EU",
-      "places": 3,
-      "visited": 0
-    },
-    {
-      "code": "DK",
-      "continent": "EU",
+      "code": "CR",
+      "continent": "NA",
       "places": 3,
       "visited": 0
     },
     {
       "code": "DO",
       "continent": "NA",
-      "places": 4,
-      "visited": 0
-    },
-    {
-      "code": "EC",
-      "continent": "SA",
       "places": 2,
       "visited": 0
     },
     {
-      "code": "ET",
+      "code": "DZ",
       "continent": "AF",
-      "places": 1,
+      "places": 4,
       "visited": 0
     },
     {
-      "code": "FI",
-      "continent": "EU",
-      "places": 1,
+      "code": "ER",
+      "continent": "AF",
+      "places": 2,
       "visited": 0
     },
     {
       "code": "FR",
       "continent": "EU",
-      "places": 3,
+      "places": 2,
       "visited": 0
     },
     {
-      "code": "HU",
+      "code": "GB",
       "continent": "EU",
       "places": 2,
       "visited": 0
     },
     {
-      "code": "ID",
-      "continent": "AS",
-      "places": 1,
+      "code": "GH",
+      "continent": "AF",
+      "places": 2,
       "visited": 0
     },
     {
-      "code": "IE",
+      "code": "HR",
       "continent": "EU",
       "places": 1,
       "visited": 0
     },
     {
-      "code": "IL",
+      "code": "JM",
+      "continent": "NA",
+      "places": 1,
+      "visited": 0
+    },
+    {
+      "code": "KG",
       "continent": "AS",
       "places": 2,
       "visited": 0
     },
     {
-      "code": "IN",
+      "code": "KR",
       "continent": "AS",
+      "places": 4,
+      "visited": 0
+    },
+    {
+      "code": "KZ",
+      "continent": "AS",
+      "places": 1,
+      "visited": 0
+    },
+    {
+      "code": "LT",
+      "continent": "EU",
       "places": 2,
       "visited": 0
     },
     {
-      "code": "LB",
-      "continent": "AS",
-      "places": 2,
+      "code": "LU",
+      "continent": "EU",
+      "places": 4,
       "visited": 0
     },
     {
       "code": "LV",
+      "continent": "EU",
+      "places": 2,
+      "visited": 0
+    },
+    {
+      "code": "ME",
       "continent": "EU",
       "places": 4,
       "visited": 0
@@ -340,121 +316,103 @@
     {
       "code": "MM",
       "continent": "AS",
-      "places": 1,
+      "places": 3,
       "visited": 0
     },
     {
-      "code": "MX",
-      "continent": "NA",
+      "code": "MU",
+      "continent": "AF",
       "places": 2,
-      "visited": 0
-    },
-    {
-      "code": "NL",
-      "continent": "EU",
-      "places": 4,
-      "visited": 0
-    },
-    {
-      "code": "NO",
-      "continent": "EU",
-      "places": 1,
       "visited": 0
     },
     {
       "code": "NP",
       "continent": "AS",
-      "places": 3,
-      "visited": 0
-    },
-    {
-      "code": "PE",
-      "continent": "SA",
-      "places": 2,
+      "places": 4,
       "visited": 0
     },
     {
       "code": "PH",
       "continent": "AS",
-      "places": 2,
+      "places": 4,
       "visited": 0
     },
     {
       "code": "PL",
       "continent": "EU",
+      "places": 1,
+      "visited": 0
+    },
+    {
+      "code": "PR",
+      "continent": "NA",
+      "places": 2,
+      "visited": 0
+    },
+    {
+      "code": "PY",
+      "continent": "SA",
+      "places": 1,
+      "visited": 0
+    },
+    {
+      "code": "RW",
+      "continent": "AF",
+      "places": 1,
+      "visited": 0
+    },
+    {
+      "code": "SG",
+      "continent": "AS",
       "places": 3,
       "visited": 0
     },
     {
-      "code": "PT",
-      "continent": "EU",
+      "code": "TH",
+      "continent": "AS",
       "places": 2,
       "visited": 0
     },
     {
-      "code": "RS",
-      "continent": "EU",
+      "code": "TM",
+      "continent": "AS",
       "places": 2,
-      "visited": 0
-    },
-    {
-      "code": "SE",
-      "continent": "EU",
-      "places": 2,
-      "visited": 0
-    },
-    {
-      "code": "SI",
-      "continent": "EU",
-      "places": 2,
-      "visited": 0
-    },
-    {
-      "code": "SN",
-      "continent": "AF",
-      "places": 2,
-      "visited": 0
-    },
-    {
-      "code": "SV",
-      "continent": "NA",
-      "places": 4,
       "visited": 0
     },
     {
       "code": "TN",
       "continent": "AF",
-      "places": 2,
+      "places": 3,
       "visited": 0
     },
     {
-      "code": "TW",
+      "code": "TR",
       "continent": "AS",
-      "places": 4,
+      "places": 1,
+      "visited": 0
+    },
+    {
+      "code": "TT",
+      "continent": "NA",
+      "places": 3,
+      "visited": 0
+    },
+    {
+      "code": "TZ",
+      "continent": "AF",
+      "places": 1,
+      "visited": 0
+    },
+    {
+      "code": "UA",
+      "continent": "EU",
+      "places": 1,
       "visited": 0
     },
     {
       "code": "UZ",
       "continent": "AS",
-      "places": 3,
-      "visited": 0
-    },
-    {
-      "code": "VE",
-      "continent": "SA",
-      "places": 4,
-      "visited": 0
-    },
-    {
-      "code": "VN",
-      "continent": "AS",
-      "places": 2,
-      "visited": 0
-    },
-    {
-      "code": "ZA",
-      "continent": "AF",
-      "places": 3,
+      "places": 1,
       "visited": 0
     }
   ],
@@ -469,7 +427,7 @@
       "earned": false,
       "ends": "2026-11-30",
       "id": "levant-month-2026-11",
-      "places_nearby": 2,
+      "places_nearby": 0,
       "progress": 0,
       "starts": "2026-11-01",
       "status": "active",
@@ -492,7 +450,7 @@
       "title": "Japan month"
     }
   ],
-  "places": 106,
+  "places": 88,
   "places_visited": 2,
   "profile": {
     "added": 0,
@@ -504,7 +462,7 @@
     "xp": 70
   },
   "world": {
-    "available": 46,
+    "available": 39,
     "code": "WORLD",
     "completed": 0,
     "discovered": 1,

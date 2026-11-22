@@ -222,6 +222,7 @@ fn parse(body: &str) -> anyhow::Result<Vec<FoundPlace>> {
 fn places(elements: Vec<Element>) -> Vec<FoundPlace> {
     let today = chrono::Utc::now().format("%Y-%m-%d").to_string();
     let mut places = Vec::new();
+    let mut dropped: HashMap<String, usize> = HashMap::new();
     for el in elements {
         let (Some(name), Some(cuisine)) = (el.tags.get("name"), el.tags.get("cuisine")) else {
             continue;
@@ -231,6 +232,11 @@ fn places(elements: Vec<Element>) -> Vec<FoundPlace> {
         }
         let countries = catalog::countries_for_cuisine_tag(cuisine);
         if countries.is_empty() {
+            // Only tags that cost us the whole place: the extra `pizza` in `italian;pizza`
+            // loses nothing and would crowd out the ones that do.
+            for tag in cuisine.split([';', ',']) {
+                *dropped.entry(tag.trim().to_lowercase()).or_default() += 1;
+            }
             continue;
         }
         let (lat, lng) = match (el.lat, el.lon, &el.center) {
@@ -268,6 +274,18 @@ fn places(elements: Vec<Element>) -> Vec<FoundPlace> {
             opening_hours: el.tags.get("opening_hours").cloned(),
             countries,
         });
+    }
+    if !dropped.is_empty() {
+        // Which tags the catalog misses, most common first: the list to extend it from.
+        let mut top: Vec<_> = dropped.into_iter().collect();
+        top.sort_by(|a, b| b.1.cmp(&a.1).then_with(|| a.0.cmp(&b.0)));
+        let top = top
+            .iter()
+            .take(30)
+            .map(|(tag, n)| format!("{tag}:{n}"))
+            .collect::<Vec<_>>()
+            .join(", ");
+        tracing::info!(top, "cuisine tags without a country");
     }
     places
 }
