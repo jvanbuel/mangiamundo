@@ -136,7 +136,7 @@
 				</div>
 				<Account />
 				<p><a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">Map data © OpenStreetMap contributors</a></p>
-				<p class="build">Web {version}{app.server ? ` · Server ${app.server}` : ''}</p>
+				<p class="build">Web {version}{app.server ? ` · Server ${app.server}` : ''} · <a href="/privacy/">Privacy</a></p>
 			</div>
 		{/if}
 

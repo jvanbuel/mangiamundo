@@ -1,0 +1,107 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Privacy · Mangiamundo</title>
+<meta name="description" content="What Mangiamundo stores about you, why, and how to delete it.">
+<link rel="icon" href="/icon.svg">
+<style>
+  :root { --bg: #f2f5f8; --panel: #fff; --text: #14263a; --muted: #5a6a7d; --accent: #1d5a9e; --line: #d5dee8; }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg: #0d1a28; --panel: #132536; --text: #eaf1f8; --muted: #93a6bb; --accent: #8fc1f2; --line: #24384d; }
+  }
+  body { margin: 0; background: var(--bg); color: var(--text); font: 16px/1.6 system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif; }
+  main { max-width: 680px; margin: 0 auto; padding: 32px 16px 64px; }
+  h1 { font-size: 30px; margin: 0 0 4px; }
+  h2 { font-size: 19px; margin: 32px 0 6px; }
+  p, li { margin: 6px 0; }
+  ul { padding-left: 20px; }
+  a { color: var(--accent); }
+  .muted { color: var(--muted); }
+  .card { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 4px 18px; margin-top: 18px; }
+</style>
+</head>
+<body>
+<main>
+<p><a href="/">← Mangiamundo</a></p>
+<h1>Privacy</h1>
+<p class="muted">Last updated 22 November 2026</p>
+
+<div class="card">
+  <p><strong>In short:</strong> Mangiamundo works without an account or any personal details. It keeps
+  only what the game needs: which restaurants you checked in at, and, if you choose to sign in, your
+  email address. No ads, no analytics, no tracking, and nothing is sold.</p>
+</div>
+
+<h2>Who is responsible</h2>
+<p>Mangiamundo is run by Lightcone, Eeuwfeeststraat 51, 3010 Kessel-Lo, Belgium (company number BE1002.736.213). For any
+question about your data, or to have it deleted, write to
+<a href="mailto:hello@mangiamundo.com">hello@mangiamundo.com</a>.</p>
+
+<h2>What we store, and why</h2>
+<ul>
+  <li><strong>Your account.</strong> On first use the app gets a random account, with no name or email.
+  Each device signed in to it has a session: the device's name (such as "iPhone" or "Firefox on Mac")
+  and when it was first and last used, so you can see and sign out your devices.</li>
+  <li><strong>Check-ins.</strong> Which places you checked in at and on which day, and whether you were
+  at the place when you did. That is the game: countries tasted, levels and badges.</li>
+  <li><strong>Your location, only when you use it.</strong> To find the city you're in, measure
+  distances to restaurants, or check that you're at a place when checking in, the app sends your
+  position to our server. We use it for that request and don't store it. To find your city, the
+  server asks OpenStreetMap's Nominatim service with that position.</li>
+  <li><strong>Places you add or report as closed.</strong> We keep them with your account, and send the
+  place's name, position and cuisine (or that it closed) to OpenStreetMap as a public note, without
+  your name or account.</li>
+  <li><strong>Reminders.</strong> If you turn on reminders on the website, we store your browser's push
+  address, your area and your time zone, to send celebration reminders and news about new food nearby.
+  The apps schedule reminders on your phone instead.</li>
+  <li><strong>Signing in (optional).</strong> If you sign in with Apple or Google, we store the account
+  id they give us and the email address they share (with Apple this can be a private relay address).
+  If you sign in with a code by email, we store your email address; the code itself is kept only as a
+  hash, for 10 minutes.</li>
+  <li><strong>Recovery and link codes.</strong> Kept only as hashes, so we can't read them.</li>
+  <li><strong>Sharing (optional).</strong> When you share your map or a check-in, we make a public page
+  with it. Your map's page shows your area, level, countries per continent and badges; a shared
+  check-in shows the place, its food and the date. You can turn your map's link off in Settings;
+  removing a check-in removes its page.</li>
+  <li><strong>On your device.</strong> The website keeps your session and settings (theme, chosen city,
+  recent cities) in your browser's local storage. It sets no cookies.</li>
+</ul>
+<p>We use this to provide the app you asked for (the GDPR's "performance of a contract"). Reminders,
+sign-in and sharing happen only when you turn them on, and you can turn them off again.</p>
+
+<h2>Who else handles it</h2>
+<p>We use a few services to run Mangiamundo. They process data only to provide their service to us.</p>
+<ul>
+  <li><strong>Fly.io</strong> hosts our server and database, in Amsterdam. Like any server, it keeps
+  short-lived technical logs (such as IP addresses) to keep the service running.</li>
+  <li><strong>Cloudflare</strong> handles the mangiamundo.com domain and passes traffic to our server.</li>
+  <li><strong>Resend</strong> sends sign-in codes to your email address.</li>
+  <li><strong>Apple and Google</strong>, when you choose to sign in with them, under their own privacy
+  policies.</li>
+  <li><strong>OpenStreetMap</strong> provides the restaurants and areas, and receives the notes about
+  added and closed places described above.</li>
+  <li><strong>Push services</strong> of your browser (Apple, Google or Mozilla) deliver web reminders.</li>
+</ul>
+<p>Some of these companies are based outside the European Union; where data leaves the EU, it is
+covered by the safeguards the GDPR requires, such as the EU's standard contractual clauses.</p>
+
+<h2>How long we keep it</h2>
+<p>As long as you have an account. You can delete it at any time in the app under
+<strong>Settings → Delete my account</strong>: everything above goes at once, on all your devices.
+Places you added stay on OpenStreetMap if its mappers accepted them, without any link to you.</p>
+
+<h2>Your rights</h2>
+<p>Under the GDPR you can ask to see, correct, export or delete your data, or object to how we use it.
+Most of this you can do in the app; for anything else, write to
+<a href="mailto:hello@mangiamundo.com">hello@mangiamundo.com</a>. If you're not satisfied with our
+answer, you can complain to the Belgian Data Protection Authority
+(<a href="https://www.dataprotectionauthority.be">dataprotectionauthority.be</a>).</p>
+
+<h2>Changes</h2>
+<p>If we change how we use your data, we'll update this page and its date, and mention bigger
+changes in the app.</p>
+</main>
+</body>
+</html>
