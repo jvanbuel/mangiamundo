@@ -26,6 +26,20 @@ struct WorldCountry {
         minLng = west; maxLng = east; minLat = south; maxLat = north
     }
 
+    /// Where a spin lands: the middle of the outline with the most points (the mainland, not
+    /// overseas islands), and a zoom that fits it.
+    func landing() -> Camera {
+        let ring = rings.max { $0.count < $1.count } ?? []
+        var west = Double.greatestFiniteMagnitude, east = -Double.greatestFiniteMagnitude
+        var south = Double.greatestFiniteMagnitude, north = -Double.greatestFiniteMagnitude
+        for i in stride(from: 0, to: ring.count - 1, by: 2) {
+            west = min(west, ring[i]); east = max(east, ring[i])
+            south = min(south, ring[i + 1]); north = max(north, ring[i + 1])
+        }
+        let span = max(east - west, north - south, 1)
+        return Camera(lng: (west + east) / 2, lat: (south + north) / 2, zoom: min(max(60 / span, 1), 4)).normalized()
+    }
+
     /// Even-odd point-in-polygon test.
     func contains(lng: Double, lat: Double) -> Bool {
         guard lat >= minLat, lat <= maxLat, lng >= minLng, lng <= maxLng else { return false }

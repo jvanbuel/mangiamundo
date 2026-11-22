@@ -15,6 +15,15 @@ class CoreTest {
     private val world = World.parse(File("../../shared/world.json").readText())
 
     @Test
+    fun spinsLandOnTheMainland() {
+        val france = world.countries.first { it.code == "FR" }.landing()
+        assertTrue(abs(france.lng - 2.5) < 4 && abs(france.lat - 46.5) < 4, "$france")
+        val belgium = world.countries.first { it.code == "BE" }.landing()
+        assertEquals("BE", world.countryAt(belgium.lng, belgium.lat)?.code)
+        assertEquals(4.0, belgium.zoom)
+    }
+
+    @Test
     fun findsCountriesByPosition() {
         assertEquals("BE", world.countryAt(4.70, 50.88)?.code)
         assertEquals("JP", world.countryAt(139.65, 35.68)?.code)

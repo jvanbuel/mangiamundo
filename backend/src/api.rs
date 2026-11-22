@@ -76,6 +76,7 @@ fn api_router() -> (Router<AppState>, utoipa::openapi::OpenApi) {
         .routes(routes!(additions))
         .routes(routes!(mark_additions_seen))
         .routes(routes!(place))
+        .routes(routes!(suggestion))
         .routes(routes!(celebrations))
         .routes(routes!(report_closed))
         .routes(routes!(add_visit))
@@ -160,6 +161,9 @@ struct ErrorBody {
 /// - `unauthorized` (401): a missing or unknown session token.
 /// - `not_found` (404): an unknown place, area, device, code or `/api` path.
 /// - `method_not_allowed` (405): the path exists, but not with this method.
+/// - `nothing_open` (404): `/api/suggestion` found unvisited places, but none open now;
+///   ask again with `open=false`.
+/// - `nothing_left` (404): `/api/suggestion` found no unvisited place at all.
 /// - `too_many_requests` (429): a limit was reached, such as places added per day.
 /// - `upstream` (502): the places or areas provider failed.
 /// - `internal` (500): anything else, such as a database error.
@@ -170,6 +174,8 @@ enum ErrorCode {
     Unauthorized,
     NotFound,
     MethodNotAllowed,
+    NothingOpen,
+    NothingLeft,
     TooManyRequests,
     Upstream,
     Internal,
@@ -191,6 +197,10 @@ pub enum ApiError {
     NotFound(&'static str),
     #[error("{0}")]
     TooManyRequests(&'static str),
+    #[error("no unvisited place is open now")]
+    NothingOpen,
+    #[error("no unvisited place left in the area")]
+    NothingLeft,
     #[error("the places provider is unavailable")]
     Upstream(#[source] anyhow::Error),
     #[error("internal error")]
@@ -209,6 +219,8 @@ impl IntoResponse for ApiError {
             }
             ApiError::Unauthorized => (StatusCode::UNAUTHORIZED, ErrorCode::Unauthorized),
             ApiError::NotFound(_) => (StatusCode::NOT_FOUND, ErrorCode::NotFound),
+            ApiError::NothingOpen => (StatusCode::NOT_FOUND, ErrorCode::NothingOpen),
+            ApiError::NothingLeft => (StatusCode::NOT_FOUND, ErrorCode::NothingLeft),
             ApiError::TooManyRequests(_) => {
                 (StatusCode::TOO_MANY_REQUESTS, ErrorCode::TooManyRequests)
             }
@@ -1019,6 +1031,118 @@ fn group(place: &PlaceView) -> u8 {
         Some(HoursStatus { open: false, .. }) => 1,
         None => 2,
     }
+}
+
+#[derive(Deserialize, IntoParams)]
+#[into_params(parameter_in = Query)]
+struct SuggestionQuery {
+    /// As for `/api/discover`.
+    area: String,
+    /// As for `/api/places`.
+    lat: Option<f64>,
+    lng: Option<f64>,
+    /// Comma-separated place ids not to suggest, such as the ones spun before.
+    exclude: Option<String>,
+    /// `false` also suggests places that are closed now or have unknown hours. Defaults to `true`.
+    open: Option<bool>,
+}
+
+/// One restaurant to try and the country the globe lands on.
+#[derive(Serialize, ToSchema)]
+struct Suggestion {
+    /// One of the place's `countries`.
+    country: String,
+    place: PlaceView,
+}
+
+/// A random place in the area the user hasn't checked in at, open now unless `open=false`.
+/// Countries not tasted yet and nearer places are more likely. A 404 with code
+/// `nothing_open` or `nothing_left` when nothing qualifies.
+#[utoipa::path(
+    get, path = "/api/suggestion", tag = "game", params(SuggestionQuery),
+    security((), ("token" = [])),
+    responses((status = 200, body = Suggestion), (status = "default", description = "An error", body = ErrorBody)),
+)]
+async fn suggestion(
+    State(state): State<AppState>,
+    MaybeUser(user): MaybeUser,
+    Query(query): Query<SuggestionQuery>,
+) -> ApiResult<Suggestion> {
+    let area = resolve_area(&state, &query.area).await?;
+    let exclude = query.exclude.unwrap_or_default();
+    let exclude: Vec<&str> = exclude.split(',').collect();
+    let tasted = match &user {
+        Some(user) => store::visited_countries(&state.db, user).await?,
+        None => Vec::new(),
+    };
+    let info = &area.boundary.info;
+    let (from_lat, from_lng) = (query.lat.unwrap_or(info.lat), query.lng.unwrap_or(info.lng));
+    let now = state.now();
+    let mut unvisited: Vec<PlaceView> =
+        store::area_places(&state.db, area.id(), None, user.as_deref())
+            .await?
+            .into_iter()
+            .filter(|p| {
+                p.visits.is_empty() && !p.countries.is_empty() && !exclude.contains(&p.id.as_str())
+            })
+            .collect();
+    if unvisited.is_empty() {
+        return Err(ApiError::NothingLeft);
+    }
+    for place in &mut unvisited {
+        complete(place, from_lat, from_lng, now);
+    }
+    if query.open.unwrap_or(true) {
+        unvisited.retain(|p| group(p) == 0);
+        if unvisited.is_empty() {
+            return Err(ApiError::NothingOpen);
+        }
+    }
+    let weights: Vec<f64> = unvisited
+        .iter()
+        .map(|p| suggestion_weight(p, &tasted))
+        .collect();
+    let mut place = unvisited.swap_remove(pick(&weights, random_unit()));
+    // The country to land on: an untasted one when the place serves several.
+    let country = place
+        .countries
+        .iter()
+        .find(|c| !tasted.contains(c))
+        .unwrap_or(&place.countries[0])
+        .clone();
+    place.countries.sort_by_key(|c| *c != country);
+    Ok(Json(Suggestion { country, place }))
+}
+
+/// How likely a place is suggested: three times as likely when it serves a country not
+/// tasted yet, and halving every 2 km away.
+// ponytail: no levels (#72) or quests (#73) in the weighting yet; add them here.
+fn suggestion_weight(place: &PlaceView, tasted: &[String]) -> f64 {
+    let new = place.countries.iter().any(|c| !tasted.contains(c));
+    let near = 0.5f64.powf(f64::from(place.distance_m) / 2000.0);
+    if new {
+        3.0 * near
+    } else {
+        near
+    }
+}
+
+/// The index `r` (in `[0, 1)`) lands on when each index takes its weight's share of the line.
+fn pick(weights: &[f64], r: f64) -> usize {
+    let mut left = r * weights.iter().sum::<f64>();
+    for (i, w) in weights.iter().enumerate() {
+        if left < *w {
+            return i;
+        }
+        left -= w;
+    }
+    weights.len() - 1
+}
+
+fn random_unit() -> f64 {
+    let mut bytes = [0u8; 8];
+    getrandom::fill(&mut bytes).expect("the system has no randomness");
+    (u64::from_le_bytes(bytes) >> 11) as f64 / (1u64 << 53) as f64
 }
 
 /// Places a user may add per day, so the app never floods OpenStreetMap with notes.
@@ -1924,6 +2048,36 @@ async fn locate_area(
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn pick_follows_the_weights() {
+        let w = [1.0, 0.0, 3.0];
+        assert_eq!(super::pick(&w, 0.0), 0);
+        assert_eq!(super::pick(&w, 0.24), 0);
+        assert_eq!(super::pick(&w, 0.25), 2);
+        assert_eq!(super::pick(&w, 0.999), 2);
+        let place = |country: &str, distance_m| crate::store::PlaceView {
+            id: String::new(),
+            name: String::new(),
+            lat: 0.0,
+            lng: 0.0,
+            address: None,
+            url: None,
+            cuisine: None,
+            hours: None,
+            countries: vec![country.into()],
+            distance_m,
+            visits: vec![],
+            osm_url: None,
+        };
+        let tasted = ["JP".to_string()];
+        let weight = |c, d| super::suggestion_weight(&place(c, d), &tasted);
+        assert_eq!(weight("PE", 0), 3.0);
+        assert_eq!(weight("JP", 0), 1.0);
+        assert_eq!(weight("JP", 2000), 0.5);
+        let r = super::random_unit();
+        assert!((0.0..1.0).contains(&r));
+    }
+
     use super::*;
 
     #[test]

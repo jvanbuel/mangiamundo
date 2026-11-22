@@ -1,4 +1,4 @@
-import type { Account, AddPlace, AddedPlace, Addition, NearbyResult, RefreshResult, Area, AreaProgress, Catalog, Celebration, Discover, Health, Located, Place, ShareLink, VisitResult } from './types';
+import type { Account, AddPlace, AddedPlace, Addition, NearbyResult, RefreshResult, Area, AreaProgress, Catalog, Celebration, Discover, Health, Located, Place, ShareLink, Suggestion, VisitResult } from './types';
 
 const BASE = import.meta.env.VITE_API_BASE ?? '';
 const TOKEN_KEY = 'mangiamundo.token';
@@ -13,7 +13,9 @@ function deviceName(): string {
 export class ApiError extends Error {
 	constructor(
 		public status: number,
-		message: string
+		message: string,
+		/** The server's `code`, such as `nothing_open`. */
+		public code?: string
 	) {
 		super(message);
 	}
@@ -35,7 +37,7 @@ async function raw<T>(method: string, path: string, token: string | null, body?:
 	}
 	if (!response.ok) {
 		const detail = await response.json().catch(() => null);
-		throw new ApiError(response.status, detail?.error ?? `Request failed (${response.status})`);
+		throw new ApiError(response.status, detail?.error ?? `Request failed (${response.status})`, detail?.code);
 	}
 	return response.status === 204 ? (undefined as T) : response.json();
 }
@@ -89,6 +91,13 @@ export const places = (areaId: string, country: string, from: { lat: number; lng
 	authed<Place[]>(
 		'GET',
 		`/api/places?${area(areaId)}&country=${country}${from ? `&lat=${from.lat}&lng=${from.lng}` : ''}`
+	);
+
+/** A random unvisited place to try, open now unless `open` is false. */
+export const suggestion = (areaId: string, from: { lat: number; lng: number } | null, exclude: string[], open: boolean) =>
+	authed<Suggestion>(
+		'GET',
+		`/api/suggestion?${area(areaId)}&open=${open}&exclude=${exclude.map(encodeURIComponent).join(',')}${from ? `&lat=${from.lat}&lng=${from.lng}` : ''}`
 	);
 
 /** One place with all of the user's visits; the distance is measured from `from` when given. */

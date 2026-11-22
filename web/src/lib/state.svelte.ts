@@ -1,4 +1,5 @@
 import { tick } from 'svelte';
+import { prefersReducedMotion } from 'svelte/motion';
 import * as api from './api';
 import * as push from './push';
 import { hideSplash } from './splash';
@@ -24,6 +25,9 @@ const LOCATION_KEY = 'mangiamundo.location';
 const PROJECTION_KEY = 'mangiamundo.projection';
 const THEME_KEY = 'mangiamundo.theme';
 const RECENTS_KEY = 'mangiamundo.recentAreas';
+const NOT_TODAY_KEY = 'mangiamundo.notToday';
+/** How long the globe turns before landing on a spin's country. */
+export const SPIN_MS = 1600;
 /** Areas kept as recent, including the current one; the picker shows the others. */
 const MAX_RECENTS = 6;
 
@@ -70,6 +74,10 @@ export const app = $state({
 	busyPlace: null as string | null,
 	/** The place being read again from OpenStreetMap. */
 	refreshingPlace: null as string | null,
+	/** While true the map turns the globe; when it ends the map flies to the selected country. */
+	spinning: false,
+	/** The place the last spin landed on, whose details offer to spin again. */
+	spun: null as string | null,
 	/** Asking OpenStreetMap for places just mapped nearby. */
 	lookingNearby: false,
 	locating: false,
@@ -218,6 +226,71 @@ export async function openPlace(id: string) {
 	await loadPlace(id);
 }
 
+/** Places suggested since the area was picked, so spinning again finds another. */
+let spunIds: string[] = [];
+
+/** Places put off with "Not today", by id, with when they come back (ms). */
+function notToday(): Record<string, number> {
+	try {
+		const all: Record<string, number> = JSON.parse(localStorage.getItem(NOT_TODAY_KEY) ?? '{}');
+		return Object.fromEntries(Object.entries(all).filter(([, until]) => until > Date.now()));
+	} catch {
+		return {};
+	}
+}
+
+/** Spins the globe: it lands on a country and opens an unvisited place there, open now if any is. */
+export async function spin() {
+	const location = app.location;
+	if (!location || app.spinning) return;
+	app.spinning = true;
+	// The globe turns for a while even when the answer comes back at once.
+	const turning = new Promise((done) => setTimeout(done, prefersReducedMotion.current ? 0 : SPIN_MS));
+	const exclude = [...spunIds, ...Object.keys(notToday())];
+	try {
+		let found;
+		try {
+			found = await api.suggestion(location.area.id, here(), exclude, true);
+		} catch (error) {
+			if (!(error instanceof api.ApiError && error.code === 'nothing_open')) throw error;
+			found = await api.suggestion(location.area.id, here(), exclude, false);
+			toast(null, 'Nothing open right now', 'Here is one for another time.');
+		}
+		await turning;
+		if (app.location !== location) return;
+		spunIds.push(found.place.id);
+		app.spun = found.place.id;
+		void loadPlaces(found.country);
+		// Landing: the map stops turning and flies to the country just selected.
+		app.spinning = false;
+		// Spinning again from a suggestion replaces it, so Back still leaves the details.
+		if (app.placeId) {
+			history.replaceState({ place: found.place.id }, '', `?place=${encodeURIComponent(found.place.id)}`);
+			await loadPlace(found.place.id);
+		} else await openPlace(found.place.id);
+	} catch (error) {
+		await turning;
+		if (error instanceof api.ApiError && error.code === 'nothing_left') {
+			if (spunIds.length) {
+				spunIds = [];
+				toast(null, 'That was every place', 'Spin again to start over.');
+			} else toast(null, 'Nowhere new left', `You have been to every place in ${location.area.name}.`);
+		} else toast(null, 'Could not spin', message(error));
+	} finally {
+		app.spinning = false;
+	}
+}
+
+/** "Not today": keeps the place out of spins for 20 hours, and spins again. */
+export function notTodaySpin(id: string) {
+	try {
+		localStorage.setItem(NOT_TODAY_KEY, JSON.stringify({ ...notToday(), [id]: Date.now() + 20 * 3600_000 }));
+	} catch {
+		// Storage unavailable: it still stays out of spins until the page closes.
+	}
+	void spin();
+}
+
 /** Closes the details: back to where they were opened from, or to the list after a link. */
 export function closePlace() {
 	if (history.state?.place) {
@@ -310,6 +383,7 @@ export async function setLocation(location: Location) {
 	// The area being left counts too, so a location saved before recents existed is kept.
 	const left = app.location ? remembering(app.location.area, app.recents) : app.recents;
 	app.location = location;
+	spunIds = [];
 	saveRecents(remembering(location.area, left));
 	app.selected = null;
 	app.places = [];

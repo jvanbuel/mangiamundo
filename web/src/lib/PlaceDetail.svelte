@@ -1,9 +1,10 @@
 <script lang="ts">
 	import ArrowLeft from '@lucide/svelte/icons/arrow-left';
+	import Dices from '@lucide/svelte/icons/dices';
 	import CheckIn from './CheckIn.svelte';
 	import ShareButton from './ShareButton.svelte';
 	import { shareVisit } from './api';
-	import { app, closePlace, country, editingOnOsm, refreshPlace, reportClosed } from './state.svelte';
+	import { app, closePlace, country, editingOnOsm, notTodaySpin, refreshPlace, reportClosed, spin } from './state.svelte';
 	import { directions, distance, type Place } from './types';
 
 	let { place }: { place: Place | null } = $props();
@@ -51,6 +52,13 @@
 		<a href={directions(place.lat, place.lng)} target="_blank" rel="noopener">Directions</a>
 		{#if place.url}<a href={place.url} target="_blank" rel="noopener">Website</a>{/if}
 	</div>
+
+	{#if app.spun === place.id}
+		<div class="spun">
+			<button disabled={app.spinning} onclick={spin}><Dices size={16} strokeWidth={2.5} aria-hidden="true" /> Spin again</button>
+			<button disabled={app.spinning} onclick={() => place && notTodaySpin(place.id)}>Not today</button>
+		</div>
+	{/if}
 
 	{@const where = [place.address, place.distance_m > 0 ? `${distance(place.distance_m)} away` : null]}
 	{#if where.some(Boolean)}<p>{where.filter(Boolean).join(' · ')}</p>{/if}
@@ -191,6 +199,35 @@
 	.actions a {
 		text-decoration: none;
 		padding: 12px 0;
+	}
+
+	/* Small chunky buttons, like the check-in one but on the panel colour. */
+	.spun {
+		display: flex;
+		gap: 8px;
+		margin-bottom: 10px;
+	}
+
+	.spun button {
+		display: inline-flex;
+		align-items: center;
+		gap: 4px;
+		padding: 6px 12px 8px;
+		border-radius: 10px;
+		background: var(--glass);
+		border: 1px solid var(--line);
+		font-size: var(--text-sm);
+		font-weight: 700;
+		box-shadow: inset 0 -3px 0 var(--line);
+	}
+
+	.spun button:active {
+		padding: 7px 12px;
+		box-shadow: none;
+	}
+
+	.spun button:disabled {
+		opacity: 0.6;
 	}
 
 	section {

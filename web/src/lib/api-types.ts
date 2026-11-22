@@ -505,6 +505,27 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/suggestion": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * A random place in the area the user hasn't checked in at, open now unless `open=false`.
+         *     Countries not tasted yet and nearer places are more likely. A 404 with code
+         *     `nothing_open` or `nothing_left` when nothing qualifies.
+         */
+        get: operations["suggestion"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/visits/{visit_id}": {
         parameters: {
             query?: never;
@@ -781,12 +802,15 @@ export interface components {
          *     - `unauthorized` (401): a missing or unknown session token.
          *     - `not_found` (404): an unknown place, area, device, code or `/api` path.
          *     - `method_not_allowed` (405): the path exists, but not with this method.
+         *     - `nothing_open` (404): `/api/suggestion` found unvisited places, but none open now;
+         *       ask again with `open=false`.
+         *     - `nothing_left` (404): `/api/suggestion` found no unvisited place at all.
          *     - `too_many_requests` (429): a limit was reached, such as places added per day.
          *     - `upstream` (502): the places or areas provider failed.
          *     - `internal` (500): anything else, such as a database error.
          * @enum {string}
          */
-        ErrorCode: "bad_request" | "unauthorized" | "not_found" | "method_not_allowed" | "too_many_requests" | "upstream" | "internal";
+        ErrorCode: "bad_request" | "unauthorized" | "not_found" | "method_not_allowed" | "nothing_open" | "nothing_left" | "too_many_requests" | "upstream" | "internal";
         /** @description A time-limited challenge, like "Japan month". Earned badges are kept for good. */
         Event: {
             countries: string[];
@@ -1040,6 +1064,12 @@ export interface components {
         SubscribeKeys: {
             auth: string;
             p256dh: string;
+        };
+        /** @description One restaurant to try and the country the globe lands on. */
+        Suggestion: {
+            /** @description One of the place's `countries`. */
+            country: string;
+            place: components["schemas"]["PlaceView"];
         };
         Summary: {
             badges: components["schemas"]["Badge"][];
@@ -1979,6 +2009,44 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+            /** @description An error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    suggestion: {
+        parameters: {
+            query: {
+                /** @description As for `/api/discover`. */
+                area: string;
+                /** @description As for `/api/places`. */
+                lat?: number;
+                lng?: number;
+                /** @description Comma-separated place ids not to suggest, such as the ones spun before. */
+                exclude?: string;
+                /** @description `false` also suggests places that are closed now or have unknown hours. Defaults to `true`. */
+                open?: boolean;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Suggestion"];
+                };
             };
             /** @description An error */
             default: {

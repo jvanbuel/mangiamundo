@@ -4,6 +4,8 @@ import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.Casino
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -173,6 +175,18 @@ fun AppScreen(vm: AppViewModel = viewModel()) {
                             modifier = Modifier.fillMaxSize(),
                         )
                     }
+                    if (discover != null) {
+                        ChunkyButton(
+                            if (vm.spinning) "Spinning…" else "Spin",
+                            vm::spin,
+                            Modifier
+                                .align(Alignment.TopStart)
+                                .windowInsetsPadding(WindowInsets.statusBars)
+                                .padding(8.dp),
+                            enabled = !vm.spinning,
+                            icon = Icons.Rounded.Casino,
+                        )
+                    }
                     SingleChoiceSegmentedButtonRow(
                         Modifier
                             .align(Alignment.TopEnd)
@@ -278,6 +292,10 @@ fun AppScreen(vm: AppViewModel = viewModel()) {
                         onEdit = { vm.editingOnOsm(place.id) },
                         onShareVisit = vm::shareVisit,
                         sharing = vm.sharing,
+                        spun = vm.spun == place.id,
+                        spinning = vm.spinning,
+                        onSpin = vm::spin,
+                        onNotToday = { vm.notToday(place.id) },
                     ) {
                         vm.toggleVisit(place)
                     }

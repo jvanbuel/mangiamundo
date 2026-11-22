@@ -29,6 +29,20 @@ class WorldCountry(
         minLng = w; maxLng = e; minLat = s; maxLat = n
     }
 
+    /**
+     * Where a spin lands: the middle of the outline with the most points (the mainland, not
+     * overseas islands), and a zoom that fits it.
+     */
+    fun landing(): Camera {
+        val ring = rings.maxBy { it.size }
+        var w = Double.MAX_VALUE; var e = -Double.MAX_VALUE; var s = Double.MAX_VALUE; var n = -Double.MAX_VALUE
+        for (i in ring.indices step 2) {
+            w = minOf(w, ring[i]); e = maxOf(e, ring[i]); s = minOf(s, ring[i + 1]); n = maxOf(n, ring[i + 1])
+        }
+        val span = maxOf(e - w, n - s, 1.0)
+        return Camera(lng = (w + e) / 2, lat = (s + n) / 2, zoom = (60.0 / span).coerceIn(1.0, 4.0)).normalized()
+    }
+
     /** Even-odd point-in-polygon test. */
     fun contains(lng: Double, lat: Double): Boolean {
         if (lat < minLat || lat > maxLat || lng < minLng || lng > maxLng) return false

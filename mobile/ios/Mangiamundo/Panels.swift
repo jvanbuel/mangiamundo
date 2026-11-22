@@ -995,6 +995,16 @@ struct PlaceDetail: View {
             }
             .padding(.vertical, 10)
 
+            if model.spun == place.id {
+                HStack(spacing: 8) {
+                    Button { Task { await model.spin() } } label: { Label("Spin again", systemImage: "dice.fill") }
+                    Button("Not today") { Task { await model.notToday(place.id) } }
+                }
+                .buttonStyle(ChunkyButtonStyle(face: Theme.panelRaised, content: Theme.text, small: true))
+                .disabled(model.spinning)
+                .padding(.bottom, 10)
+            }
+
             if !whereText.isEmpty {
                 Text(whereText).font(Theme.font(.subheadline))
             }

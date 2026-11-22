@@ -6,6 +6,8 @@ import app.mangiamundo.core.Area
 import app.mangiamundo.core.ProjectionKind
 import app.mangiamundo.core.TokenStore
 import kotlinx.serialization.builtins.ListSerializer
+import kotlinx.serialization.builtins.MapSerializer
+import kotlinx.serialization.builtins.serializer
 import kotlinx.serialization.json.Json
 
 /**
@@ -22,6 +24,7 @@ data class SavedLocation(
 )
 
 private val json = Json { ignoreUnknownKeys = true }
+private val notTodaySerializer = MapSerializer(String.serializer(), Long.serializer())
 
 /** Small values that survive restarts. */
 class Settings(context: Context) : TokenStore {
@@ -74,6 +77,14 @@ class Settings(context: Context) : TokenStore {
             json.decodeFromString(ListSerializer(Area.serializer()), prefs.getString("recentAreas", "[]")!!)
         }.getOrDefault(emptyList())
         set(value) = prefs.edit { putString("recentAreas", json.encodeToString(ListSerializer(Area.serializer()), value)) }
+
+    /** Places put off with "Not today", by id, with when they come back (epoch ms). */
+    var notToday: Map<String, Long>
+        get() = runCatching {
+            json.decodeFromString(notTodaySerializer, prefs.getString("notToday", "{}")!!)
+                .filterValues { it > System.currentTimeMillis() }
+        }.getOrDefault(emptyMap())
+        set(value) = prefs.edit { putString("notToday", json.encodeToString(notTodaySerializer, value)) }
 
     /** A location saved before areas existed (a point and a radius): (lat, lng, from GPS). */
     val legacyLocation: Triple<Double, Double, Boolean>?

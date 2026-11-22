@@ -626,12 +626,14 @@
         "type": "object"
       },
       "ErrorCode": {
-        "description": "What went wrong, for clients that react to a specific case:\n\n- `bad_request` (400, 413, 415, 422): invalid or missing parameters, or a malformed,\n  oversized (over 2 MiB) or non-JSON body.\n- `unauthorized` (401): a missing or unknown session token.\n- `not_found` (404): an unknown place, area, device, code or `/api` path.\n- `method_not_allowed` (405): the path exists, but not with this method.\n- `too_many_requests` (429): a limit was reached, such as places added per day.\n- `upstream` (502): the places or areas provider failed.\n- `internal` (500): anything else, such as a database error.",
+        "description": "What went wrong, for clients that react to a specific case:\n\n- `bad_request` (400, 413, 415, 422): invalid or missing parameters, or a malformed,\n  oversized (over 2 MiB) or non-JSON body.\n- `unauthorized` (401): a missing or unknown session token.\n- `not_found` (404): an unknown place, area, device, code or `/api` path.\n- `method_not_allowed` (405): the path exists, but not with this method.\n- `nothing_open` (404): `/api/suggestion` found unvisited places, but none open now;\n  ask again with `open=false`.\n- `nothing_left` (404): `/api/suggestion` found no unvisited place at all.\n- `too_many_requests` (429): a limit was reached, such as places added per day.\n- `upstream` (502): the places or areas provider failed.\n- `internal` (500): anything else, such as a database error.",
         "enum": [
           "bad_request",
           "unauthorized",
           "not_found",
           "method_not_allowed",
+          "nothing_open",
+          "nothing_left",
           "too_many_requests",
           "upstream",
           "internal"
@@ -1339,6 +1341,23 @@
         "required": [
           "p256dh",
           "auth"
+        ],
+        "type": "object"
+      },
+      "Suggestion": {
+        "description": "One restaurant to try and the country the globe lands on.",
+        "properties": {
+          "country": {
+            "description": "One of the place's `countries`.",
+            "type": "string"
+          },
+          "place": {
+            "$ref": "#/components/schemas/PlaceView"
+          }
+        },
+        "required": [
+          "country",
+          "place"
         ],
         "type": "object"
       },
@@ -2792,6 +2811,90 @@
         "summary": "Shares the user's progress in an area: makes their public page (the first time) or\nmoves it to this area, and returns its link. `DELETE` turns the page off.",
         "tags": [
           "share"
+        ]
+      }
+    },
+    "/api/suggestion": {
+      "get": {
+        "operationId": "suggestion",
+        "parameters": [
+          {
+            "description": "As for `/api/discover`.",
+            "in": "query",
+            "name": "area",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "As for `/api/places`.",
+            "in": "query",
+            "name": "lat",
+            "required": false,
+            "schema": {
+              "format": "double",
+              "type": "number"
+            }
+          },
+          {
+            "in": "query",
+            "name": "lng",
+            "required": false,
+            "schema": {
+              "format": "double",
+              "type": "number"
+            }
+          },
+          {
+            "description": "Comma-separated place ids not to suggest, such as the ones spun before.",
+            "in": "query",
+            "name": "exclude",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "`false` also suggests places that are closed now or have unknown hours. Defaults to `true`.",
+            "in": "query",
+            "name": "open",
+            "required": false,
+            "schema": {
+              "type": "boolean"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Suggestion"
+                }
+              }
+            }
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "An error"
+          }
+        },
+        "security": [
+          {},
+          {
+            "token": []
+          }
+        ],
+        "summary": "A random place in the area the user hasn't checked in at, open now unless `open=false`.\nCountries not tasted yet and nearer places are more likely. A 404 with code\n`nothing_open` or `nothing_left` when nothing qualifies.",
+        "tags": [
+          "game"
         ]
       }
     },
