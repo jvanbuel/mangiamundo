@@ -71,24 +71,40 @@ question about your data, or to have it deleted, write to
 <p>We use this to provide the app you asked for (the GDPR's "performance of a contract"). Reminders,
 sign-in and sharing happen only when you turn them on, and you can turn them off again.</p>
 
-<h2>Signing in with Google or Apple</h2>
-<p>Signing in is optional. If you choose "Sign in with Google" or "Sign in with Apple":</p>
+<h2>Google user data</h2>
+<p>Signing in with Google is optional. If you choose "Sign in with Google", Mangiamundo asks Google
+only for the basic sign-in scopes <code>openid</code>, <code>email</code> and <code>profile</code>.
+This is how Mangiamundo handles the Google user data it receives:</p>
 <ul>
-  <li><strong>What we receive:</strong> only the basic sign-in information you approve: your Google or
-  Apple account id, and your email address. Google may also send your name and profile picture; we
-  don't store or use those. We ask for no other access to your Google or Apple account: not your
-  contacts, files, calendar or anything else.</li>
-  <li><strong>How we use it:</strong> only to sign you in, so the same Mangiamundo account opens on every
-  device you sign in on, and to show in Settings which account you're signed in with.</li>
-  <li><strong>Sharing:</strong> we don't sell it, share it, or use it for advertising, and we don't
-  transfer it to anyone. It stays in our database with your Mangiamundo account.</li>
-  <li><strong>Deleting it:</strong> it's deleted together with your account (Settings → Delete my
-  account), or on request at <a href="mailto:hello@mangiamundo.com">hello@mangiamundo.com</a>. You can
-  also remove Mangiamundo's access in your Google or Apple account settings at any time.</li>
+  <li><strong>Data accessed:</strong> your Google account id, your email address and whether Google has
+  verified it, and, as part of the <code>profile</code> scope, your name and profile picture. We
+  request no other Google data: not your contacts, Gmail, Drive, calendar or anything else.</li>
+  <li><strong>Data use:</strong> the account id and email address are used only to sign you in, so the
+  same Mangiamundo account opens on every device where you sign in, and to show in Settings which
+  Google account you're signed in with. Your name and profile picture are not used.</li>
+  <li><strong>Data storage:</strong> we store only the Google account id and email address, with your
+  Mangiamundo account, in our database at Fly.io in Amsterdam. Your name and profile picture are
+  not stored.</li>
+  <li><strong>Data sharing:</strong> we don't sell, rent or share Google user data with anyone, don't
+  transfer it to third parties, don't use it for advertising, and don't use it to train AI models.</li>
+  <li><strong>Data protection:</strong> all traffic to Mangiamundo is encrypted (HTTPS). The database
+  is a file on our server's own disk, not reachable from the internet, and only we can access the
+  hosting account.</li>
+  <li><strong>Data retention and deletion:</strong> we keep it as long as you have a Mangiamundo account.
+  It is deleted, together with everything else, when you delete your account (Settings → Delete my
+  account), or within 30 days of a request to
+  <a href="mailto:hello@mangiamundo.com">hello@mangiamundo.com</a>. You can also revoke Mangiamundo's
+  access at any time at <a href="https://myaccount.google.com/connections">myaccount.google.com/connections</a>.</li>
 </ul>
-<p>Mangiamundo's use of information received from Google APIs adheres to the
+<p>Mangiamundo's use and transfer of information received from Google APIs adheres to the
 <a href="https://developers.google.com/terms/api-services-user-data-policy">Google API Services User
 Data Policy</a>, including the Limited Use requirements.</p>
+
+<h2>Signing in with Apple</h2>
+<p>If you choose "Sign in with Apple", we receive your Apple account id and the email address you choose
+to share (which can be a private relay address). We use and store them in the same way as Google's
+above: only to sign you in, never shared, and deleted with your account. You can stop using
+Sign in with Apple with Mangiamundo in your Apple ID settings.</p>
 
 <h2>Who else handles it</h2>
 <p>We use a few services to run Mangiamundo. They process data only to provide their service to us.</p>
