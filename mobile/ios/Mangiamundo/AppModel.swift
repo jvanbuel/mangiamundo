@@ -1,5 +1,6 @@
 import Foundation
 import Observation
+import UIKit
 
 struct Toast: Identifiable, Equatable {
     let id = UUID()
@@ -59,6 +60,14 @@ final class AppModel {
     /// Short announcements (badges, discoveries, errors), newest last.
     private(set) var toasts: [Toast] = []
 
+    /// The account's recovery code status and devices, loaded when settings open.
+    private(set) var account: Account?
+    private(set) var accountError: String?
+    private(set) var accountBusy = false
+    /// Shown once, right after it is made.
+    private(set) var recoveryCode: String?
+    private(set) var linkCode: LinkCode?
+
     @ObservationIgnored private let api: APIClient
     @ObservationIgnored private let locationService = LocationService()
     @ObservationIgnored private let defaults = UserDefaults.standard
@@ -75,7 +84,7 @@ final class AppModel {
 
     init() {
         let base = Bundle.main.object(forInfoDictionaryKey: "APIBaseURL") as? String
-        api = APIClient(baseURL: base ?? "http://localhost:8080")
+        api = APIClient(baseURL: base ?? "http://localhost:8080", deviceName: UIDevice.current.model)
         defaults.removeObject(forKey: "mangiamundo.radius")
         if let raw = defaults.string(forKey: "mangiamundo.directions"), let preference = DirectionsPreference(rawValue: raw) {
             directionsWith = preference
@@ -635,6 +644,82 @@ final class AppModel {
         }
         if after.profile.level > before.profile.level {
             toast("Level \(after.profile.level)")
+        }
+    }
+
+    // MARK: - Account
+
+    func loadAccount() async {
+        do {
+            account = try await api.account()
+            accountError = nil
+        } catch {
+            accountError = error.localizedDescription
+        }
+    }
+
+    /// Runs one account action at a time, reporting failures in a toast.
+    private func accountAction(_ work: @escaping @MainActor () async throws -> Void) {
+        guard !accountBusy else { return }
+        accountBusy = true
+        Task {
+            do {
+                try await work()
+            } catch {
+                toast("That did not work: \(error.localizedDescription)")
+            }
+            accountBusy = false
+        }
+    }
+
+    func makeRecoveryCode() {
+        accountAction {
+            self.recoveryCode = try await self.api.newRecoveryCode()
+            self.account = try await self.api.account()
+        }
+    }
+
+    func makeLinkCode() {
+        accountAction { self.linkCode = try await self.api.newLinkCode() }
+    }
+
+    func clearLinkCode() {
+        linkCode = nil
+    }
+
+    /// Signs in to the account of a recovery or link code; what this device did moves into it.
+    func restore(code: String, onRestored: @escaping @MainActor () -> Void) {
+        accountAction {
+            do {
+                try await self.api.restore(code: code)
+            } catch let error as APIError where error.status == 404 {
+                self.toast("Code not recognised. A link code works once, for 10 minutes.")
+                return
+            }
+            self.recoveryCode = nil
+            self.linkCode = nil
+            onRestored()
+            self.toast("Welcome back. Your progress is on this device now.")
+            self.account = try await self.api.account()
+            self.refresh()
+        }
+    }
+
+    func signOut(deviceID: String) {
+        accountAction {
+            try await self.api.removeDevice(id: deviceID)
+            self.account = try await self.api.account()
+        }
+    }
+
+    func deleteAccount() {
+        accountAction {
+            try await self.api.deleteAccount()
+            self.recoveryCode = nil
+            self.linkCode = nil
+            self.toast("Account deleted. You start fresh on this device.")
+            self.account = try await self.api.account()
+            self.refresh()
         }
     }
 
