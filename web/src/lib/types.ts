@@ -31,6 +31,8 @@ export type Visit = Schemas['Visit'];
 export type Day = Schemas['Day'];
 export type VisitResult = Schemas['VisitResult'];
 export type Health = Schemas['Health'];
+export type Account = Schemas['Account'];
+export type Device = Schemas['Device'];
 
 export interface Location {
 	area: Area;

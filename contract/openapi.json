@@ -1,6 +1,35 @@
 {
   "components": {
     "schemas": {
+      "Account": {
+        "properties": {
+          "created_at": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "devices": {
+            "description": "Most recently used first.",
+            "items": {
+              "$ref": "#/components/schemas/Device"
+            },
+            "type": "array"
+          },
+          "recovery_code_created_at": {
+            "description": "When the current recovery code was made, `null` when there is none yet.",
+            "format": "int64",
+            "type": [
+              "integer",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "created_at",
+          "recovery_code_created_at",
+          "devices"
+        ],
+        "type": "object"
+      },
       "AddPlace": {
         "description": "A restaurant missing from the map.",
         "properties": {
@@ -498,6 +527,43 @@
         ],
         "type": "object"
       },
+      "Device": {
+        "description": "A device signed in to the account.",
+        "properties": {
+          "created_at": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "current": {
+            "description": "The device this request came from.",
+            "type": "boolean"
+          },
+          "id": {
+            "description": "Pass it to `DELETE /api/account/devices/{device_id}` to sign the device out.",
+            "type": "string"
+          },
+          "last_used_at": {
+            "description": "Updated about once an hour.",
+            "format": "int64",
+            "type": "integer"
+          },
+          "name": {
+            "description": "What the app called itself (\"iPhone\", \"Android\", \"Web\"), `null` for devices from\nbefore devices had names.",
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "created_at",
+          "last_used_at",
+          "current"
+        ],
+        "type": "object"
+      },
       "Discover": {
         "allOf": [
           {
@@ -541,7 +607,7 @@
         "type": "object"
       },
       "ErrorCode": {
-        "description": "What went wrong, for clients that react to a specific case:\n\n- `bad_request` (400, 413, 415, 422): invalid or missing parameters, or a malformed,\n  oversized (over 2 MiB) or non-JSON body.\n- `unauthorized` (401): a missing or unknown session token.\n- `not_found` (404): an unknown place, area or `/api` path.\n- `method_not_allowed` (405): the path exists, but not with this method.\n- `too_many_requests` (429): a limit was reached, such as places added per day.\n- `upstream` (502): the places or areas provider failed.\n- `internal` (500): anything else, such as a database error.",
+        "description": "What went wrong, for clients that react to a specific case:\n\n- `bad_request` (400, 413, 415, 422): invalid or missing parameters, or a malformed,\n  oversized (over 2 MiB) or non-JSON body.\n- `unauthorized` (401): a missing or unknown session token.\n- `not_found` (404): an unknown place, area, device, code or `/api` path.\n- `method_not_allowed` (405): the path exists, but not with this method.\n- `too_many_requests` (429): a limit was reached, such as places added per day.\n- `upstream` (502): the places or areas provider failed.\n- `internal` (500): anything else, such as a database error.",
         "enum": [
           "bad_request",
           "unauthorized",
@@ -771,6 +837,23 @@
         ],
         "type": "object"
       },
+      "LinkCode": {
+        "properties": {
+          "code": {
+            "description": "`XXXX-XXXX`, to enter on the other device. It works once.",
+            "type": "string"
+          },
+          "expires_at": {
+            "format": "int64",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "code",
+          "expires_at"
+        ],
+        "type": "object"
+      },
       "LoadProgress": {
         "properties": {
           "percent": {
@@ -858,6 +941,18 @@
           "added",
           "matched"
         ],
+        "type": "object"
+      },
+      "NewSession": {
+        "properties": {
+          "device": {
+            "description": "What the app calls this device in the account's device list, such as \"iPhone\",\n\"Android\" or \"Web\". At most 60 characters are kept.",
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
         "type": "object"
       },
       "Notification": {
@@ -1033,6 +1128,18 @@
         },
         "required": [
           "public_key"
+        ],
+        "type": "object"
+      },
+      "RecoveryCode": {
+        "properties": {
+          "code": {
+            "description": "`XXXX-XXXX-XXXX-XXXX-XXXX`. Shown this once: the server keeps only a hash.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "code"
         ],
         "type": "object"
       },
@@ -1280,6 +1387,188 @@
   },
   "openapi": "3.1.0",
   "paths": {
+    "/api/account": {
+      "delete": {
+        "operationId": "delete_account",
+        "responses": {
+          "204": {
+            "description": "Deleted"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "An error"
+          }
+        },
+        "security": [
+          {
+            "token": []
+          }
+        ],
+        "summary": "Deletes the account and everything in it: check-ins, added places, closed reports,\nreminders, and the sessions of every device. It can't be undone.",
+        "tags": [
+          "account"
+        ]
+      },
+      "get": {
+        "operationId": "get_account",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Account"
+                }
+              }
+            }
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "An error"
+          }
+        },
+        "security": [
+          {
+            "token": []
+          }
+        ],
+        "summary": "The account: whether it has a recovery code, and the devices signed in to it.",
+        "tags": [
+          "account"
+        ]
+      }
+    },
+    "/api/account/devices/{device_id}": {
+      "delete": {
+        "operationId": "remove_device",
+        "parameters": [
+          {
+            "description": "A device id from `GET /api/account`.",
+            "in": "path",
+            "name": "device_id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Signed out"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "An error"
+          }
+        },
+        "security": [
+          {
+            "token": []
+          }
+        ],
+        "summary": "Signs a device out of the account. Signing out the current device ends this session.",
+        "tags": [
+          "account"
+        ]
+      }
+    },
+    "/api/account/link-code": {
+      "post": {
+        "operationId": "new_link_code",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LinkCode"
+                }
+              }
+            }
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "`too_many_requests`: more than 10 codes in an hour"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "An error"
+          }
+        },
+        "security": [
+          {
+            "token": []
+          }
+        ],
+        "summary": "Makes a code that signs another device in to this account, through\n`POST /api/session/restore`, within 10 minutes.",
+        "tags": [
+          "account"
+        ]
+      }
+    },
+    "/api/account/recovery-code": {
+      "post": {
+        "operationId": "new_recovery_code",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RecoveryCode"
+                }
+              }
+            }
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "An error"
+          }
+        },
+        "security": [
+          {
+            "token": []
+          }
+        ],
+        "summary": "Makes a new recovery code, which restores the account on any device through\n`POST /api/session/restore`. The previous code stops working.",
+        "tags": [
+          "account"
+        ]
+      }
+    },
     "/api/additions": {
       "get": {
         "operationId": "additions",
@@ -2252,6 +2541,23 @@
     "/api/session": {
       "post": {
         "operationId": "create_session",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "oneOf": [
+                  {
+                    "$ref": "#/components/schemas/NewSession"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              }
+            }
+          },
+          "description": "Optional."
+        },
         "responses": {
           "200": {
             "content": {
@@ -2274,6 +2580,53 @@
           }
         },
         "summary": "Creates an anonymous account. A device asks for a token once and keeps it.",
+        "tags": [
+          "account"
+        ]
+      }
+    },
+    "/api/session/restore": {
+      "post": {
+        "description": "Sent with the device's current token, that session ends, and when it belonged to\nanother account, that account's check-ins, added places and the rest move into the\nrestored account, which then replaces it. A link code works once.",
+        "operationId": "restore_session",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Session"
+                }
+              }
+            }
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "`not_found`: an unknown, used or expired code"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "An error"
+          }
+        },
+        "security": [
+          {},
+          {
+            "token": []
+          }
+        ],
+        "summary": "Signs this device in to the account a recovery code or link code belongs to.",
         "tags": [
           "account"
         ]
