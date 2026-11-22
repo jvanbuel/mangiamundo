@@ -16,9 +16,12 @@ actor APIClient {
     private let defaults = UserDefaults.standard
     private static let tokenKey = "mangiamundo.token"
     private var pendingToken: Task<String, Error>?
+    /// How this device shows up in the account's device list, such as "iPhone".
+    private let deviceName: String?
 
-    init(baseURL: String) {
+    init(baseURL: String, deviceName: String? = nil) {
         self.baseURL = baseURL.hasSuffix("/") ? String(baseURL.dropLast()) : baseURL
+        self.deviceName = deviceName
         let configuration = URLSessionConfiguration.default
         configuration.timeoutIntervalForRequest = 100
         session = URLSession(configuration: configuration)
@@ -126,6 +129,56 @@ actor APIClient {
         try decode(await request("GET", "/api/areas/locate?lat=\(lat)&lng=\(lng)"))
     }
 
+    // MARK: - Account
+
+    /// The account's recovery code status and the devices signed in to it.
+    func account() async throws -> Account {
+        try decode(await authed("GET", "/api/account"))
+    }
+
+    /// A new recovery code, shown once. The previous one stops working.
+    func newRecoveryCode() async throws -> String {
+        struct RecoveryCode: Decodable { let code: String }
+        let made: RecoveryCode = try decode(await authed("POST", "/api/account/recovery-code"))
+        return made.code
+    }
+
+    /// A code that signs another device in to this account, once, within 10 minutes.
+    func newLinkCode() async throws -> LinkCode {
+        try decode(await authed("POST", "/api/account/link-code"))
+    }
+
+    /// Signs this device in to the account of a recovery or link code. What this device did
+    /// before moves into that account. An unknown, used or expired code is a 404.
+    func restore(code: String) async throws {
+        var body: [String: Any] = ["code": code]
+        body["device"] = deviceName
+        let data = try JSONSerialization.data(withJSONObject: body)
+        struct Session: Decodable { let token: String }
+        let current = defaults.string(forKey: Self.tokenKey)
+        let session: Session
+        do {
+            // The current token lets what this device did merge into the restored account.
+            session = try decode(await request("POST", "/api/session/restore", body: data, token: current))
+        } catch let error as APIError where error.status == 401 && current != nil {
+            // This device was signed out elsewhere: drop that token and restore without it.
+            if defaults.string(forKey: Self.tokenKey) == current { defaults.removeObject(forKey: Self.tokenKey) }
+            session = try decode(await request("POST", "/api/session/restore", body: data))
+        }
+        defaults.set(session.token, forKey: Self.tokenKey)
+    }
+
+    /// Signs another device out of this account.
+    func removeDevice(id: String) async throws {
+        _ = try await authed("DELETE", "/api/account/devices/\(encode(id))")
+    }
+
+    /// Deletes the account and everything in it. This device starts over with a new one.
+    func deleteAccount() async throws {
+        _ = try await authed("DELETE", "/api/account")
+        defaults.removeObject(forKey: Self.tokenKey)
+    }
+
     // MARK: - Plumbing
 
     private func area(_ id: String) -> String {
@@ -152,22 +205,29 @@ actor APIClient {
         if let pendingToken { return try await pendingToken.value }
         let task = Task<String, Error> {
             struct Session: Decodable { let token: String }
-            let session: Session = try decode(await request("POST", "/api/session"))
+            var body: [String: Any] = [:]
+            body["device"] = deviceName
+            let data = try JSONSerialization.data(withJSONObject: body)
+            let session: Session = try decode(await request("POST", "/api/session", body: data))
             return session.token
         }
         pendingToken = task
         defer { pendingToken = nil }
         let token = try await task.value
+        // A restore may have stored a token meanwhile: keep that one.
+        if let stored = defaults.string(forKey: Self.tokenKey) { return stored }
         defaults.set(token, forKey: Self.tokenKey)
         return token
     }
 
     private func authed(_ method: String, _ path: String, body: Data? = nil) async throws -> Data {
+        let sent = try await token()
         do {
-            return try await request(method, path, body: body, token: try await token())
+            return try await request(method, path, body: body, token: sent)
         } catch let error as APIError where error.status == 401 {
             // The server no longer knows this token (its database was reset): start over once.
-            defaults.removeObject(forKey: Self.tokenKey)
+            // A token stored meanwhile (by a restore) is newer: keep it.
+            if defaults.string(forKey: Self.tokenKey) == sent { defaults.removeObject(forKey: Self.tokenKey) }
             return try await request(method, path, body: body, token: try await token())
         }
     }

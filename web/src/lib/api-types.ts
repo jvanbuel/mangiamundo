@@ -4,6 +4,84 @@
  */
 
 export interface paths {
+    "/api/account": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** The account: whether it has a recovery code, and the devices signed in to it. */
+        get: operations["get_account"];
+        put?: never;
+        post?: never;
+        /**
+         * Deletes the account and everything in it: check-ins, added places, closed reports,
+         *     reminders, and the sessions of every device. It can't be undone.
+         */
+        delete: operations["delete_account"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/account/devices/{device_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Signs a device out of the account. Signing out the current device ends this session. */
+        delete: operations["remove_device"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/account/link-code": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Makes a code that signs another device in to this account, through
+         *     `POST /api/session/restore`, within 10 minutes.
+         */
+        post: operations["new_link_code"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/account/recovery-code": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Makes a new recovery code, which restores the account on any device through
+         *     `POST /api/session/restore`. The previous code stops working.
+         */
+        post: operations["new_recovery_code"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/additions": {
         parameters: {
             query?: never;
@@ -384,6 +462,28 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/session/restore": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Signs this device in to the account a recovery code or link code belongs to.
+         * @description Sent with the device's current token, that session ends, and when it belonged to
+         *     another account, that account's check-ins, added places and the rest move into the
+         *     restored account, which then replaces it. A link code works once.
+         */
+        post: operations["restore_session"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/visits/{visit_id}": {
         parameters: {
             query?: never;
@@ -405,6 +505,17 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        Account: {
+            /** Format: int64 */
+            created_at: number;
+            /** @description Most recently used first. */
+            devices: components["schemas"]["Device"][];
+            /**
+             * Format: int64
+             * @description When the current recovery code was made, `null` when there is none yet.
+             */
+            recovery_code_created_at: number | null;
+        };
         /** @description A restaurant missing from the map. */
         AddPlace: {
             address?: string | null;
@@ -581,6 +692,25 @@ export interface components {
             /** @description The current day where the place is. */
             today: boolean;
         };
+        /** @description A device signed in to the account. */
+        Device: {
+            /** Format: int64 */
+            created_at: number;
+            /** @description The device this request came from. */
+            current: boolean;
+            /** @description Pass it to `DELETE /api/account/devices/{device_id}` to sign the device out. */
+            id: string;
+            /**
+             * Format: int64
+             * @description Updated about once an hour.
+             */
+            last_used_at: number;
+            /**
+             * @description What the app called itself ("iPhone", "Android", "Web"), `null` for devices from
+             *     before devices had names.
+             */
+            name: string | null;
+        };
         Discover: components["schemas"]["Summary"] & {
             area: components["schemas"]["AreaView"];
             events: components["schemas"]["EventProgress"][];
@@ -597,7 +727,7 @@ export interface components {
          *     - `bad_request` (400, 413, 415, 422): invalid or missing parameters, or a malformed,
          *       oversized (over 2 MiB) or non-JSON body.
          *     - `unauthorized` (401): a missing or unknown session token.
-         *     - `not_found` (404): an unknown place, area or `/api` path.
+         *     - `not_found` (404): an unknown place, area, device, code or `/api` path.
          *     - `method_not_allowed` (405): the path exists, but not with this method.
          *     - `too_many_requests` (429): a limit was reached, such as places added per day.
          *     - `upstream` (502): the places or areas provider failed.
@@ -689,6 +819,12 @@ export interface components {
             /** Format: double */
             lng: number;
         };
+        LinkCode: {
+            /** @description `XXXX-XXXX`, to enter on the other device. It works once. */
+            code: string;
+            /** Format: int64 */
+            expires_at: number;
+        };
         LoadProgress: {
             /**
              * Format: int32
@@ -717,6 +853,13 @@ export interface components {
              * @description Pending additions, anyone's, now matched to one of the places found.
              */
             matched: number;
+        };
+        NewSession: {
+            /**
+             * @description What the app calls this device in the account's device list, such as "iPhone",
+             *     "Android" or "Web". At most 60 characters are kept.
+             */
+            device?: string | null;
         };
         Notification: {
             body: string;
@@ -778,6 +921,10 @@ export interface components {
             /** @description The VAPID public key browsers subscribe with. */
             public_key: string;
         };
+        RecoveryCode: {
+            /** @description `XXXX-XXXX-XXXX-XXXX-XXXX`. Shown this once: the server keeps only a hash. */
+            code: string;
+        };
         /** @description What a refresh from OpenStreetMap found. */
         RefreshResult: {
             place: components["schemas"]["PlaceView"] | null;
@@ -788,6 +935,15 @@ export interface components {
          * @enum {string}
          */
         Refreshed: "updated" | "unchanged" | "gone";
+        Restore: {
+            /**
+             * @description A recovery code (`XXXX-XXXX-XXXX-XXXX-XXXX`) or a link code (`XXXX-XXXX`). Case,
+             *     spaces and dashes don't matter.
+             */
+            code: string;
+            /** @description As in `POST /api/session`. */
+            device?: string | null;
+        };
         /** @description XP for an added restaurant, granted once OpenStreetMap has it. */
         Reward: {
             /** @description The city the bonus was judged in. `null` when no city around it was cached. */
@@ -857,6 +1013,156 @@ export interface components {
 }
 export type $defs = Record<string, never>;
 export interface operations {
+    get_account: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Account"];
+                };
+            };
+            /** @description An error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    delete_account: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Deleted */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description An error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    remove_device: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description A device id from `GET /api/account`. */
+                device_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Signed out */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description An error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    new_link_code: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LinkCode"];
+                };
+            };
+            /** @description `too_many_requests`: more than 10 codes in an hour */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description An error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    new_recovery_code: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RecoveryCode"];
+                };
+            };
+            /** @description An error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
     additions: {
         parameters: {
             query?: never;
@@ -1488,7 +1794,12 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: never;
+        /** @description Optional. */
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["NewSession"] | null;
+            };
+        };
         responses: {
             200: {
                 headers: {
@@ -1496,6 +1807,47 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["Session"];
+                };
+            };
+            /** @description An error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    restore_session: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["Restore"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Session"];
+                };
+            };
+            /** @description `not_found`: an unknown, used or expired code */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
                 };
             };
             /** @description An error */

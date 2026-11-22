@@ -6,7 +6,10 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import app.mangiamundo.core.Account
 import app.mangiamundo.core.ApiClient
+import app.mangiamundo.core.ApiException
+import app.mangiamundo.core.LinkCode
 import app.mangiamundo.core.Camera
 import app.mangiamundo.core.Catalog
 import app.mangiamundo.core.Celebration
@@ -38,7 +41,7 @@ private const val NOT_REACHED = "not reached"
 
 class AppViewModel(application: Application) : AndroidViewModel(application) {
     private val settings = Settings(application)
-    private val api = ApiClient(BuildConfig.API_BASE, settings)
+    private val api = ApiClient(BuildConfig.API_BASE, settings, android.os.Build.MODEL)
 
     var world by mutableStateOf<World?>(null); private set
     var catalog by mutableStateOf<Catalog?>(null); private set
@@ -75,6 +78,14 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     var tab by mutableStateOf(0)
     /** The server's version and commit; null until it answers, "not reached" after a failure. */
     var server by mutableStateOf<String?>(null); private set
+
+    /** The account's recovery code status and devices, loaded when settings open. */
+    var account by mutableStateOf<Account?>(null); private set
+    var accountError by mutableStateOf<String?>(null); private set
+    var accountBusy by mutableStateOf(false); private set
+    /** Shown once, right after it is made. */
+    var recoveryCode by mutableStateOf<String?>(null); private set
+    var linkCode by mutableStateOf<LinkCode?>(null); private set
 
     var projection by mutableStateOf(settings.projection); private set
     var camera by mutableStateOf(Camera())
@@ -621,6 +632,80 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         if (after.profile.level > before.profile.level) {
             messageChannel.trySend("Level ${after.profile.level}")
         }
+    }
+
+    fun loadAccount() {
+        viewModelScope.launch {
+            try {
+                account = api.account()
+                accountError = null
+            } catch (e: Exception) {
+                accountError = e.message
+            }
+        }
+    }
+
+    /** Runs one account action at a time, reporting failures in the snackbar. */
+    private fun accountAction(work: suspend () -> Unit) {
+        if (accountBusy) return
+        accountBusy = true
+        viewModelScope.launch {
+            try {
+                work()
+            } catch (e: Exception) {
+                messageChannel.trySend("That did not work: ${e.message}")
+            }
+            accountBusy = false
+        }
+    }
+
+    fun makeRecoveryCode() = accountAction {
+        recoveryCode = api.newRecoveryCode()
+        account = api.account()
+    }
+
+    fun makeLinkCode() = accountAction { linkCode = api.newLinkCode() }
+
+    fun clearLinkCode() {
+        linkCode = null
+    }
+
+    /** Signs in to the account of a recovery or link code; what this device did moves into it. */
+    fun restore(code: String, onRestored: () -> Unit) = accountAction {
+        try {
+            api.restore(code)
+        } catch (e: ApiException) {
+            if (e.status != 404) throw e
+            messageChannel.trySend("Code not recognised. A link code works once, for 10 minutes.")
+            return@accountAction
+        }
+        recoveryCode = null
+        linkCode = null
+        onRestored()
+        messageChannel.trySend("Welcome back. Your progress is on this device now.")
+        accountChanged()
+    }
+
+    fun signOut(deviceId: String) = accountAction {
+        api.removeDevice(deviceId)
+        account = api.account()
+    }
+
+    fun deleteAccount() = accountAction {
+        api.deleteAccount()
+        recoveryCode = null
+        linkCode = null
+        messageChannel.trySend("Account deleted. You start fresh on this device.")
+        accountChanged()
+    }
+
+    /** This device is in another account now: drop what was loaded for the previous one. */
+    private fun accountChanged() {
+        closePlace()
+        select(selected)
+        refresh()
+        account = null
+        loadAccount()
     }
 }
 

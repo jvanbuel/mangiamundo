@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import { version } from '$app/env';
+	import Account from '#lib/Account.svelte';
 	import AddPlace from '#lib/AddPlace.svelte';
 	import Badges from '#lib/Badges.svelte';
 	import CountryDetail from '#lib/CountryDetail.svelte';
@@ -125,6 +126,7 @@
 						{/each}
 					</div>
 				</div>
+				<Account />
 				<p><a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">Map data © OpenStreetMap contributors</a></p>
 				<p class="build">Web {version}{app.server ? ` · Server ${app.server}` : ''}</p>
 			</div>

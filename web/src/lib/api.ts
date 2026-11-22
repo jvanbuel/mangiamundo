@@ -1,7 +1,14 @@
-import type { AddPlace, AddedPlace, Addition, NearbyResult, RefreshResult, Area, AreaProgress, Catalog, Celebration, Discover, Health, Located, Place, VisitResult } from './types';
+import type { Account, AddPlace, AddedPlace, Addition, NearbyResult, RefreshResult, Area, AreaProgress, Catalog, Celebration, Discover, Health, Located, Place, VisitResult } from './types';
 
 const BASE = import.meta.env.VITE_API_BASE ?? '';
 const TOKEN_KEY = 'mangiamundo.token';
+/** How this device shows up in the account's device list, such as "Firefox on Windows". */
+function deviceName(): string {
+	const ua = navigator.userAgent;
+	const browser = /Edg\//.test(ua) ? 'Edge' : /Firefox\//.test(ua) ? 'Firefox' : /Chrome\//.test(ua) ? 'Chrome' : /Safari\//.test(ua) ? 'Safari' : 'Browser';
+	const os = /iPhone|iPad/.test(ua) ? 'iPhone' : /Android/.test(ua) ? 'Android' : /Mac/.test(ua) ? 'Mac' : /Windows/.test(ua) ? 'Windows' : /Linux/.test(ua) ? 'Linux' : null;
+	return os ? `${browser} on ${os}` : browser;
+}
 
 export class ApiError extends Error {
 	constructor(
@@ -39,8 +46,11 @@ let pendingToken: Promise<string> | null = null;
 function token(): Promise<string> {
 	const stored = localStorage.getItem(TOKEN_KEY);
 	if (stored) return Promise.resolve(stored);
-	pendingToken ??= raw<{ token: string }>('POST', '/api/session', null)
+	pendingToken ??= raw<{ token: string }>('POST', '/api/session', null, { device: deviceName() })
 		.then(({ token }) => {
+			// A restore that finished meanwhile stored its token; keep that one.
+			const restored = localStorage.getItem(TOKEN_KEY);
+			if (restored) return restored;
 			localStorage.setItem(TOKEN_KEY, token);
 			return token;
 		})
@@ -49,12 +59,14 @@ function token(): Promise<string> {
 }
 
 async function authed<T>(method: string, path: string, body?: unknown): Promise<T> {
+	const sent = await token();
 	try {
-		return await raw<T>(method, path, await token(), body);
+		return await raw<T>(method, path, sent, body);
 	} catch (error) {
 		// The server no longer knows this token (e.g. its database was reset): start over once.
+		// A newer token, such as one a restore stored meanwhile, stays.
 		if (error instanceof ApiError && error.status === 401) {
-			localStorage.removeItem(TOKEN_KEY);
+			if (localStorage.getItem(TOKEN_KEY) === sent) localStorage.removeItem(TOKEN_KEY);
 			return raw<T>(method, path, await token(), body);
 		}
 		throw error;
@@ -152,3 +164,43 @@ export const savePushSubscription = (subscription: PushSubscriptionJSON, target:
 
 export const deletePushSubscription = (endpoint: string) =>
 	authed<void>('POST', '/api/push/subscription/delete', { endpoint });
+
+/** Whether this device has an account yet; it gets one on first use. */
+export const hasAccount = () => localStorage.getItem(TOKEN_KEY) !== null;
+
+/** The account's recovery code status and the devices signed in to it. */
+export const account = () => authed<Account>('GET', '/api/account');
+
+/** A new recovery code, shown once. The previous one stops working. */
+export const newRecoveryCode = () => authed<{ code: string }>('POST', '/api/account/recovery-code');
+
+/** A code that signs another device in to this account, once, within 10 minutes. */
+export const newLinkCode = () => authed<{ code: string; expires_at: number }>('POST', '/api/account/link-code');
+
+/**
+ * Signs this device in to the account of a recovery or link code. What this device did
+ * before moves into that account.
+ */
+export async function restore(code: string): Promise<void> {
+	const body = { code, device: deviceName() };
+	const path = '/api/session/restore';
+	let session: { token: string };
+	try {
+		session = await raw<{ token: string }>('POST', path, localStorage.getItem(TOKEN_KEY), body);
+	} catch (error) {
+		// This device's session was ended (say, from another device): restore without it.
+		if (!(error instanceof ApiError && error.status === 401)) throw error;
+		localStorage.removeItem(TOKEN_KEY);
+		session = await raw<{ token: string }>('POST', path, null, body);
+	}
+	localStorage.setItem(TOKEN_KEY, session.token);
+}
+
+/** Signs another device out of this account. */
+export const removeDevice = (id: string) => authed<void>('DELETE', `/api/account/devices/${encodeURIComponent(id)}`);
+
+/** Deletes the account and everything in it. This device starts over with a new one. */
+export async function deleteAccount(): Promise<void> {
+	await authed<void>('DELETE', '/api/account');
+	localStorage.removeItem(TOKEN_KEY);
+}

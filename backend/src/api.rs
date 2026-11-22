@@ -31,7 +31,7 @@ use crate::calendar::{self, Celebration};
 use crate::game::{self, Lifetime, PlaceRow, Summary};
 use crate::providers::{AreaInfo, Located, Lookup};
 use crate::store::{self, Area, HoursStatus, PlaceView, Visit};
-use crate::{catalog, geo, hours, AppState};
+use crate::{account, catalog, geo, hours, AppState};
 
 /// A check-in counts as verified when made within this distance of the place.
 const VERIFY_DISTANCE_M: f64 = 250.0;
@@ -63,6 +63,11 @@ fn api_router() -> (Router<AppState>, utoipa::openapi::OpenApi) {
     OpenApiRouter::with_openapi(ApiDoc::openapi())
         .routes(routes!(health))
         .routes(routes!(create_session))
+        .routes(routes!(restore_session))
+        .routes(routes!(get_account, delete_account))
+        .routes(routes!(new_recovery_code))
+        .routes(routes!(new_link_code))
+        .routes(routes!(remove_device))
         .routes(routes!(countries))
         .routes(routes!(discover))
         .routes(routes!(places, add_place))
@@ -146,7 +151,7 @@ struct ErrorBody {
 /// - `bad_request` (400, 413, 415, 422): invalid or missing parameters, or a malformed,
 ///   oversized (over 2 MiB) or non-JSON body.
 /// - `unauthorized` (401): a missing or unknown session token.
-/// - `not_found` (404): an unknown place, area or `/api` path.
+/// - `not_found` (404): an unknown place, area, device, code or `/api` path.
 /// - `method_not_allowed` (405): the path exists, but not with this method.
 /// - `too_many_requests` (429): a limit was reached, such as places added per day.
 /// - `upstream` (502): the places or areas provider failed.
@@ -286,27 +291,51 @@ impl<S: Send + Sync, T: DeserializeOwned> OptionalFromRequest<S> for JsonBody<T>
 
 type ApiResult<T> = Result<Json<T>, ApiError>;
 
+/// The session behind the `Authorization: Bearer <token>` header, if there is one.
+struct MaybeSession(Option<account::Session>);
+/// Like [`MaybeSession`] but rejects anonymous requests.
+struct CurrentSession(account::Session);
 /// The user behind the `Authorization: Bearer <token>` header, if there is one.
 struct MaybeUser(Option<String>);
 /// Like [`MaybeUser`] but rejects anonymous requests.
 struct User(String);
 
-impl FromRequestParts<AppState> for MaybeUser {
+impl FromRequestParts<AppState> for MaybeSession {
     type Rejection = ApiError;
 
     async fn from_request_parts(parts: &mut Parts, state: &AppState) -> Result<Self, ApiError> {
         let Some(value) = parts.headers.get(header::AUTHORIZATION) else {
-            return Ok(MaybeUser(None));
+            return Ok(MaybeSession(None));
         };
         let token = value
             .to_str()
             .ok()
             .and_then(|v| v.strip_prefix("Bearer "))
             .ok_or(ApiError::Unauthorized)?;
-        match store::user_for_token(&state.db, token).await? {
-            Some(user) => Ok(MaybeUser(Some(user))),
+        match account::session_for_token(&state.db, token, state.now()).await? {
+            Some(session) => Ok(MaybeSession(Some(session))),
             None => Err(ApiError::Unauthorized),
         }
+    }
+}
+
+impl FromRequestParts<AppState> for CurrentSession {
+    type Rejection = ApiError;
+
+    async fn from_request_parts(parts: &mut Parts, state: &AppState) -> Result<Self, ApiError> {
+        match MaybeSession::from_request_parts(parts, state).await? {
+            MaybeSession(Some(session)) => Ok(CurrentSession(session)),
+            MaybeSession(None) => Err(ApiError::Unauthorized),
+        }
+    }
+}
+
+impl FromRequestParts<AppState> for MaybeUser {
+    type Rejection = ApiError;
+
+    async fn from_request_parts(parts: &mut Parts, state: &AppState) -> Result<Self, ApiError> {
+        let MaybeSession(session) = MaybeSession::from_request_parts(parts, state).await?;
+        Ok(MaybeUser(session.map(|s| s.user)))
     }
 }
 
@@ -314,10 +343,8 @@ impl FromRequestParts<AppState> for User {
     type Rejection = ApiError;
 
     async fn from_request_parts(parts: &mut Parts, state: &AppState) -> Result<Self, ApiError> {
-        match MaybeUser::from_request_parts(parts, state).await? {
-            MaybeUser(Some(user)) => Ok(User(user)),
-            MaybeUser(None) => Err(ApiError::Unauthorized),
-        }
+        let CurrentSession(session) = CurrentSession::from_request_parts(parts, state).await?;
+        Ok(User(session.user))
     }
 }
 
@@ -327,11 +354,161 @@ struct Session {
     token: String,
 }
 
+#[derive(Deserialize, ToSchema)]
+struct NewSession {
+    /// What the app calls this device in the account's device list, such as "iPhone",
+    /// "Android" or "Web". At most 60 characters are kept.
+    #[serde(default)]
+    device: Option<String>,
+}
+
 /// Creates an anonymous account. A device asks for a token once and keeps it.
-#[utoipa::path(post, path = "/api/session", tag = "account", responses((status = 200, body = Session), (status = "default", description = "An error", body = ErrorBody)))]
-async fn create_session(State(state): State<AppState>) -> ApiResult<Session> {
-    let token = store::create_user(&state.db).await?;
+#[utoipa::path(
+    post, path = "/api/session", tag = "account",
+    request_body(content = Option<NewSession>, description = "Optional."),
+    responses((status = 200, body = Session), (status = "default", description = "An error", body = ErrorBody)),
+)]
+async fn create_session(
+    State(state): State<AppState>,
+    body: Option<JsonBody<NewSession>>,
+) -> ApiResult<Session> {
+    let device = body.and_then(|JsonBody(b)| b.device);
+    let token = account::create_user(&state.db, device.as_deref(), state.now()).await?;
     Ok(Json(Session { token }))
+}
+
+#[derive(Deserialize, ToSchema)]
+struct Restore {
+    /// A recovery code (`XXXX-XXXX-XXXX-XXXX-XXXX`) or a link code (`XXXX-XXXX`). Case,
+    /// spaces and dashes don't matter.
+    code: String,
+    /// As in `POST /api/session`.
+    #[serde(default)]
+    device: Option<String>,
+}
+
+/// Signs this device in to the account a recovery code or link code belongs to.
+///
+/// Sent with the device's current token, that session ends, and when it belonged to
+/// another account, that account's check-ins, added places and the rest move into the
+/// restored account, which then replaces it. A link code works once.
+#[utoipa::path(
+    post, path = "/api/session/restore", tag = "account", request_body = Restore,
+    security((), ("token" = [])),
+    responses(
+        (status = 200, body = Session),
+        (status = 404, description = "`not_found`: an unknown, used or expired code", body = ErrorBody),
+        (status = "default", description = "An error", body = ErrorBody),
+    ),
+)]
+async fn restore_session(
+    State(state): State<AppState>,
+    MaybeSession(current): MaybeSession,
+    JsonBody(body): JsonBody<Restore>,
+) -> ApiResult<Session> {
+    let token = account::redeem(
+        &state.db,
+        &body.code,
+        current.as_ref(),
+        body.device.as_deref(),
+        state.now(),
+    )
+    .await?
+    .ok_or(ApiError::NotFound("code"))?;
+    Ok(Json(Session { token }))
+}
+
+/// The account: whether it has a recovery code, and the devices signed in to it.
+#[utoipa::path(
+    get, path = "/api/account", tag = "account", security(("token" = [])),
+    responses((status = 200, body = account::Account), (status = "default", description = "An error", body = ErrorBody)),
+)]
+async fn get_account(
+    State(state): State<AppState>,
+    CurrentSession(session): CurrentSession,
+) -> ApiResult<account::Account> {
+    Ok(Json(account::account(&state.db, &session).await?))
+}
+
+/// Deletes the account and everything in it: check-ins, added places, closed reports,
+/// reminders, and the sessions of every device. It can't be undone.
+#[utoipa::path(
+    delete, path = "/api/account", tag = "account", security(("token" = [])),
+    responses((status = 204, description = "Deleted"), (status = "default", description = "An error", body = ErrorBody)),
+)]
+async fn delete_account(
+    State(state): State<AppState>,
+    User(user): User,
+) -> Result<StatusCode, ApiError> {
+    account::delete(&state.db, &user).await?;
+    Ok(StatusCode::NO_CONTENT)
+}
+
+#[derive(Serialize, ToSchema)]
+struct RecoveryCode {
+    /// `XXXX-XXXX-XXXX-XXXX-XXXX`. Shown this once: the server keeps only a hash.
+    code: String,
+}
+
+/// Makes a new recovery code, which restores the account on any device through
+/// `POST /api/session/restore`. The previous code stops working.
+#[utoipa::path(
+    post, path = "/api/account/recovery-code", tag = "account", security(("token" = [])),
+    responses((status = 200, body = RecoveryCode), (status = "default", description = "An error", body = ErrorBody)),
+)]
+async fn new_recovery_code(
+    State(state): State<AppState>,
+    User(user): User,
+) -> ApiResult<RecoveryCode> {
+    Ok(Json(RecoveryCode {
+        code: account::new_recovery_code(&state.db, &user, state.now()).await?,
+    }))
+}
+
+#[derive(Serialize, ToSchema)]
+struct LinkCode {
+    /// `XXXX-XXXX`, to enter on the other device. It works once.
+    code: String,
+    expires_at: i64,
+}
+
+/// Makes a code that signs another device in to this account, through
+/// `POST /api/session/restore`, within 10 minutes.
+#[utoipa::path(
+    post, path = "/api/account/link-code", tag = "account", security(("token" = [])),
+    responses(
+        (status = 200, body = LinkCode),
+        (status = 429, description = "`too_many_requests`: more than 10 codes in an hour", body = ErrorBody),
+        (status = "default", description = "An error", body = ErrorBody),
+    ),
+)]
+async fn new_link_code(State(state): State<AppState>, User(user): User) -> ApiResult<LinkCode> {
+    let now = state.now();
+    if !state.limits.allow(&user, "link_code", 10, 3600, now) {
+        return Err(ApiError::TooManyRequests(
+            "too many link codes, try again later",
+        ));
+    }
+    let (code, expires_at) = account::new_link_code(&state.db, &user, now).await?;
+    Ok(Json(LinkCode { code, expires_at }))
+}
+
+/// Signs a device out of the account. Signing out the current device ends this session.
+#[utoipa::path(
+    delete, path = "/api/account/devices/{device_id}", tag = "account",
+    params(("device_id" = String, Path, description = "A device id from `GET /api/account`.")),
+    security(("token" = [])),
+    responses((status = 204, description = "Signed out"), (status = "default", description = "An error", body = ErrorBody)),
+)]
+async fn remove_device(
+    State(state): State<AppState>,
+    User(user): User,
+    Path(device_id): Path<String>,
+) -> Result<StatusCode, ApiError> {
+    if !account::remove_device(&state.db, &user, &device_id).await? {
+        return Err(ApiError::NotFound("device"));
+    }
+    Ok(StatusCode::NO_CONTENT)
 }
 
 #[derive(Serialize, ToSchema)]

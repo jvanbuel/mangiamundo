@@ -153,7 +153,7 @@ fun AppScreen(vm: AppViewModel = viewModel()) {
 
     Scaffold(
         // The place sheet covers this host, so it shows messages itself while open.
-        snackbarHost = { if (vm.detail == null && !addOpen) SnackbarHost(snackbar) },
+        snackbarHost = { if (vm.detail == null && !addOpen && !settingsOpen) SnackbarHost(snackbar) },
         containerColor = colors.panel,
         contentWindowInsets = WindowInsets(0, 0, 0, 0),
     ) { padding ->
@@ -317,7 +317,12 @@ fun AppScreen(vm: AppViewModel = viewModel()) {
 
     if (settingsOpen) {
         ModalBottomSheet(onDismissRequest = { settingsOpen = false }, containerColor = colors.panel) {
-            Box(Modifier.padding(start = 16.dp, end = 16.dp, bottom = 24.dp)) { SettingsPanel(vm.server) }
+            Box {
+                Box(Modifier.verticalScroll(rememberScrollState()).padding(start = 16.dp, end = 16.dp, bottom = 24.dp)) {
+                    SettingsPanel(vm.server) { AccountSection(vm) }
+                }
+                SnackbarHost(snackbar, Modifier.align(Alignment.TopCenter))
+            }
         }
     }
 }

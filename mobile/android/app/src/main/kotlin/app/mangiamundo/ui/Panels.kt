@@ -311,11 +311,12 @@ fun Note(text: String) {
 
 /** Rarely needed things, kept off the main screen. */
 @Composable
-fun SettingsPanel(server: String?) {
+fun SettingsPanel(server: String?, account: @Composable () -> Unit = {}) {
     val colors = LocalAppColors.current
     val context = LocalContext.current
     Column {
         Text("Settings", style = MaterialTheme.typography.titleLarge, color = colors.text)
+        account()
         Text(
             "Map data © OpenStreetMap contributors",
             color = colors.accent,

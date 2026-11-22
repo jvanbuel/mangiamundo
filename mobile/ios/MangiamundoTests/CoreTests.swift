@@ -110,6 +110,12 @@ final class ContractTests: XCTestCase {
         XCTAssertEqual(additions[0].status, .pending)
         XCTAssertFalse(additions[0].isNews)
         XCTAssertEqual(additions[0].id, "user-0123456789abcdef0123456789abcdef")
+        let account = try decode(Account.self, "account")
+        XCTAssertEqual(account.devices.count, 2)
+        XCTAssertEqual(account.devices.first { !$0.current }?.name, "iPhone")
+        XCTAssertNil(account.devices.first { $0.current }?.name)
+        XCTAssertNotNil(account.recoveryCodeCreatedAt)
+        XCTAssertEqual(try decode(LinkCode.self, "link-code").code, "ABCD-EFGH")
     }
 
     func testDecodesRefreshResults() throws {

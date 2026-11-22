@@ -15,6 +15,32 @@ struct Health: Decodable {
     let commit: String?
 }
 
+/// The account's recovery code status and the devices signed in to it.
+struct Account: Decodable {
+    let createdAt: Int
+    /// When the current recovery code was made; nil when there is none yet.
+    let recoveryCodeCreatedAt: Int?
+    /// Most recently used first.
+    let devices: [Device]
+}
+
+/// A device signed in to the account.
+struct Device: Decodable, Identifiable {
+    let id: String
+    /// What the app called itself; nil for devices from before devices had names.
+    let name: String?
+    let createdAt: Int
+    let lastUsedAt: Int
+    /// The device this app runs on.
+    let current: Bool
+}
+
+/// A code that signs another device in to the account, once, until `expiresAt` (Unix seconds).
+struct LinkCode: Decodable, Equatable {
+    let code: String
+    let expiresAt: Int
+}
+
 struct Continent: Decodable {
     let code: String
     let name: String

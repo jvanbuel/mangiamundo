@@ -109,6 +109,12 @@ class CoreTest {
         assertEquals(AdditionStatus.PENDING, additions[0].status)
         assertFalse(additions[0].news)
         assertEquals("user-0123456789abcdef0123456789abcdef", additions[0].id)
+        val account = json.decodeFromString<Account>(fixture("account"))
+        assertEquals(2, account.devices.size)
+        assertEquals("iPhone", account.devices.first { !it.current }.name)
+        assertNull(account.devices.first { it.current }.name)
+        assertNotNull(account.recoveryCodeCreatedAt)
+        assertEquals("ABCD-EFGH", json.decodeFromString<LinkCode>(fixture("link-code")).code)
     }
 
     @Test

@@ -87,7 +87,8 @@ struct ContentView: View {
         .sheet(isPresented: $settingsOpen) {
             SettingsSheet(googleInstalled: googleInstalled)
                 .padding(20)
-                .presentationDetents([.medium])
+                .overlay(alignment: .top) { ToastStack(toasts: model.toasts) }
+                .presentationDetents([.medium, .large])
                 .presentationBackground(Theme.panel)
         }
     }
@@ -201,9 +202,17 @@ struct SettingsSheet: View {
     let googleInstalled: Bool
 
     var body: some View {
+        ScrollView {
+            content
+        }
+        .scrollBounceBehavior(.basedOnSize)
+    }
+
+    private var content: some View {
         VStack(alignment: .leading, spacing: 0) {
             Text("Settings").font(Theme.font(.title3, .black))
             if googleInstalled { DirectionsSetting() }
+            AccountSection()
             Button("Map data © OpenStreetMap contributors") {
                 if let copyright = URL(string: "https://www.openstreetmap.org/copyright") { openURL(copyright) }
             }
@@ -212,7 +221,6 @@ struct SettingsSheet: View {
             .foregroundStyle(Theme.accent)
             .padding(.top, 16)
             BuildLine(server: model.server)
-            Spacer()
         }
         .frame(maxWidth: .infinity, alignment: .leading)
     }

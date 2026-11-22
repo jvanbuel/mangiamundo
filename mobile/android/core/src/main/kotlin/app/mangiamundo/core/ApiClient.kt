@@ -17,7 +17,8 @@ interface TokenStore {
     var token: String?
 }
 
-class ApiClient(private val baseUrl: String, private val tokens: TokenStore) {
+/** `deviceName` is how this device shows up in the account's device list, such as "Pixel 8". */
+class ApiClient(private val baseUrl: String, private val tokens: TokenStore, private val deviceName: String? = null) {
     @PublishedApi
     internal val json = Json {
         ignoreUnknownKeys = true
@@ -104,6 +105,44 @@ class ApiClient(private val baseUrl: String, private val tokens: TokenStore) {
     suspend fun locateArea(lat: Double, lng: Double): Located =
         json.decodeFromString(request("GET", "/api/areas/locate?lat=$lat&lng=$lng"))
 
+    /** The account's recovery code status and the devices signed in to it. */
+    suspend fun account(): Account = json.decodeFromString(authed("GET", "/api/account"))
+
+    /** A new recovery code, shown once. The previous one stops working. */
+    suspend fun newRecoveryCode(): String =
+        json.decodeFromString<RecoveryCode>(authed("POST", "/api/account/recovery-code")).code
+
+    /** A code that signs another device in to this account, once, within 10 minutes. */
+    suspend fun newLinkCode(): LinkCode = json.decodeFromString(authed("POST", "/api/account/link-code"))
+
+    /**
+     * Signs this device in to the account of a recovery or link code. What this device did
+     * before moves into that account. An unknown, used or expired code is a 404.
+     */
+    suspend fun restore(code: String) = tokenLock.withLock {
+        val body = json.encodeToString(RestoreBody.serializer(), RestoreBody(code, deviceName))
+        // The current token goes first so this device's progress merges; a rejected one is dropped.
+        val text = try {
+            request("POST", "/api/session/restore", body, tokens.token)
+        } catch (e: ApiException) {
+            if (e.status != 401 || tokens.token == null) throw e
+            tokens.token = null
+            request("POST", "/api/session/restore", body)
+        }
+        tokens.token = json.decodeFromString<Session>(text).token
+    }
+
+    /** Signs another device out of this account. */
+    suspend fun removeDevice(id: String) {
+        authed("DELETE", "/api/account/devices/${encode(id)}")
+    }
+
+    /** Deletes the account and everything in it. This device starts over with a new one. */
+    suspend fun deleteAccount() {
+        authed("DELETE", "/api/account")
+        tokenLock.withLock { tokens.token = null }
+    }
+
     private fun area(id: String) = "area=${encode(id)}"
 
     /** The device's time zone, so event days begin and end at local midnight. */
@@ -112,19 +151,24 @@ class ApiClient(private val baseUrl: String, private val tokens: TokenStore) {
     private fun encode(value: String) = URLEncoder.encode(value, "UTF-8").replace("+", "%20")
 
     private suspend fun token(): String = tokenLock.withLock {
-        tokens.token ?: json.decodeFromString<Session>(request("POST", "/api/session")).token
+        tokens.token ?: json.decodeFromString<Session>(
+            request("POST", "/api/session", json.encodeToString(NewSessionBody.serializer(), NewSessionBody(deviceName))),
+        ).token
             .also { tokens.token = it }
     }
 
-    private suspend fun authed(method: String, path: String, body: String? = null): String =
-        try {
-            request(method, path, body, token())
+    private suspend fun authed(method: String, path: String, body: String? = null): String {
+        val sent = token()
+        return try {
+            request(method, path, body, sent)
         } catch (e: ApiException) {
             // The server no longer knows this token (its database was reset): start over once.
+            // A token stored meanwhile, by a restore, is newer and stays.
             if (e.status != 401) throw e
-            tokens.token = null
+            tokenLock.withLock { if (tokens.token == sent) tokens.token = null }
             request(method, path, body, token())
         }
+    }
 
     private suspend fun request(
         method: String,

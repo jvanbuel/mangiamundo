@@ -100,7 +100,13 @@ HTTPS (or localhost), and iPhones only for apps added to the home screen.
 - A check-in made within 250 m of the place is marked as verified.
 
 Accounts are anonymous: each device asks `POST /api/session` for a token once and
-sends it as `Authorization: Bearer <token>`.
+sends it as `Authorization: Bearer <token>`. Each device has its own session, listed (and
+signed out) under `GET /api/account`. To keep progress after clearing the browser or
+switching phones, an account can make a **recovery code** (20 characters, only its hash is
+stored, a new one replaces the old) or a **link code** (8 characters, one use, 10 minutes)
+for another device. `POST /api/session/restore` takes either; sent with the device's
+current token, whatever that account holds is merged into the restored one.
+`DELETE /api/account` deletes the account and everything in it.
 
 ## API
 

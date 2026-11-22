@@ -189,26 +189,15 @@ async fn upsert_place(
     Ok(())
 }
 
+/// A new anonymous user, with one session. Returns its token.
 pub async fn create_user(db: &SqlitePool) -> sqlx::Result<String> {
-    let token = format!(
-        "{}{}",
-        uuid::Uuid::new_v4().simple(),
-        uuid::Uuid::new_v4().simple()
-    );
-    sqlx::query("INSERT INTO users (id, token, created_at) VALUES (?, ?, ?)")
-        .bind(uuid::Uuid::new_v4().to_string())
-        .bind(&token)
-        .bind(now())
-        .execute(db)
-        .await?;
-    Ok(token)
+    crate::account::create_user(db, None, now()).await
 }
 
 pub async fn user_for_token(db: &SqlitePool, token: &str) -> sqlx::Result<Option<String>> {
-    sqlx::query_scalar("SELECT id FROM users WHERE token = ?")
-        .bind(token)
-        .fetch_optional(db)
-        .await
+    Ok(crate::account::session_for_token(db, token, now())
+        .await?
+        .map(|s| s.user))
 }
 
 /// Hides other users' added places, places the user reported closed, and places two or

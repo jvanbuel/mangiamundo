@@ -259,6 +259,40 @@ data class VisitResult(
 @Serializable
 internal data class Session(val token: String)
 
+@Serializable
+internal data class NewSessionBody(val device: String? = null)
+
+@Serializable
+internal data class RestoreBody(val code: String, val device: String? = null)
+
+@Serializable
+internal data class RecoveryCode(val code: String)
+
+/** A code that signs another device in to the account, once, until `expiresAt` (Unix seconds). */
+@Serializable
+data class LinkCode(val code: String, @SerialName("expires_at") val expiresAt: Long)
+
+/** A device signed in to the account. */
+@Serializable
+data class Device(
+    val id: String,
+    /** What the app called itself; null for devices from before devices had names. */
+    val name: String? = null,
+    @SerialName("created_at") val createdAt: Long,
+    @SerialName("last_used_at") val lastUsedAt: Long,
+    /** The device this app runs on. */
+    val current: Boolean = false,
+)
+
+@Serializable
+data class Account(
+    @SerialName("created_at") val createdAt: Long,
+    /** When the current recovery code was made; null when there is none yet. */
+    @SerialName("recovery_code_created_at") val recoveryCodeCreatedAt: Long? = null,
+    /** Most recently used first. */
+    val devices: List<Device> = emptyList(),
+)
+
 /** How far the server is with loading an area, for the progress wheel. */
 @Serializable
 data class AreaProgress(

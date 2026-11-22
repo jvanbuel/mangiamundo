@@ -484,6 +484,19 @@ function watchProgress(areaId: string, id: number): () => void {
 export async function select(code: string | null) {
 	// Picking a country on the map while a place is open shows that country's list.
 	if (app.placeId && code) closePlace();
+	await loadPlaces(code);
+}
+
+/** After this device changes account: the open list and details show the new account's visits. */
+export async function accountChanged() {
+	await Promise.all([refresh(), loadPlaces(app.selected), app.placeId && loadPlace(app.placeId)]);
+}
+
+/** Counts list loads, so only the latest one shows its result. */
+let lists = 0;
+
+async function loadPlaces(code: string | null) {
+	const list = ++lists;
 	app.selected = code;
 	app.places = [];
 	const location = app.location;
@@ -491,11 +504,11 @@ export async function select(code: string | null) {
 	app.placesLoading = true;
 	try {
 		const result = await api.places(location.area.id, code, here());
-		if (app.selected === code) app.places = result;
+		if (list === lists) app.places = result;
 	} catch (error) {
-		toast(null, 'Could not load places', message(error));
+		if (list === lists) toast(null, 'Could not load places', message(error));
 	} finally {
-		if (app.selected === code) app.placesLoading = false;
+		if (list === lists) app.placesLoading = false;
 	}
 }
 
