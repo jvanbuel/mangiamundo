@@ -144,7 +144,7 @@ pub async fn account(db: &SqlitePool, session: &Session) -> sqlx::Result<Account
         .await?;
     let devices = sqlx::query(
         "SELECT id, device, created_at, last_used_at FROM sessions WHERE user_id = ?
-         ORDER BY last_used_at DESC, created_at DESC",
+         ORDER BY last_used_at DESC, created_at DESC, rowid DESC",
     )
     .bind(&session.user)
     .fetch_all(db)

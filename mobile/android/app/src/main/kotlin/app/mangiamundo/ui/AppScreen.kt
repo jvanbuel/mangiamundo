@@ -317,7 +317,9 @@ fun AppScreen(vm: AppViewModel = viewModel()) {
 
     if (settingsOpen) {
         ModalBottomSheet(onDismissRequest = { settingsOpen = false }, containerColor = colors.panel) {
-            Box(Modifier.padding(start = 16.dp, end = 16.dp, bottom = 24.dp)) { SettingsPanel(vm.server) }
+            Box(Modifier.verticalScroll(rememberScrollState()).padding(start = 16.dp, end = 16.dp, bottom = 24.dp)) {
+                SettingsPanel(vm.server) { AccountSection(vm) }
+            }
         }
     }
 }

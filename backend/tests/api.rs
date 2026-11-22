@@ -805,6 +805,22 @@ async fn writes_contract_fixtures() {
     additions[0]["id"] = added["id"].clone();
     write("additions", &additions);
 
+    // Two devices, one with a name, and a recovery code. Ids and times are random or real.
+    call(&app, "POST", "/api/account/recovery-code", Some(&token), None).await;
+    let (_, link) = call(&app, "POST", "/api/account/link-code", Some(&token), None).await;
+    let body = format!(r#"{{"code":"{}","device":"iPhone"}}"#, link["code"].as_str().unwrap());
+    assert_eq!(call(&app, "POST", "/api/session/restore", None, Some(&body)).await.0, StatusCode::OK);
+    let mut account = get("/api/account".into()).await;
+    account["created_at"] = START.into();
+    account["recovery_code_created_at"] = (START + 60).into();
+    for (i, device) in account["devices"].as_array_mut().unwrap().iter_mut().enumerate() {
+        device["id"] = format!("{i}0123456789abcdef0123456789abcde").into();
+        device["created_at"] = START.into();
+        device["last_used_at"] = (START + 120).into();
+    }
+    write("account", &account);
+    write("link-code", &serde_json::json!({ "code": "ABCD-EFGH", "expires_at": START + 600 }));
+
     // What a newer server might send: enum values this app version doesn't know.
     let mut newer = discover.clone();
     newer["badges"][0]["kind"] = "something-new".into();
