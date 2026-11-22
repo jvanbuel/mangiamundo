@@ -151,6 +151,11 @@
 					Tell us where you are and we will light up every country whose kitchen you can visit nearby.
 				</p>
 				<LocationPicker />
+				<p class="muted about">
+					Check in at restaurants to taste each country's food and earn levels and badges. No account
+					needed: your progress stays on this device. Signing in with Google, Apple or email is optional
+					and only keeps your progress on all your devices. <a href="/privacy/">Privacy policy</a>
+				</p>
 			</div>
 		{:else if app.error}
 			<div class="card">
@@ -247,6 +252,11 @@
 		display: flex;
 		flex-direction: column;
 		gap: 14px;
+	}
+
+	.about {
+		margin: 12px 0 0;
+		font-size: var(--text-xs);
 	}
 
 	/* Always at the bottom of the panel, however short its content. */
