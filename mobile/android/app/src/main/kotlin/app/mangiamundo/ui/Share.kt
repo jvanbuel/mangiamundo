@@ -10,10 +10,11 @@ import java.io.File
 fun shareLink(context: Context, link: ShareLink, card: ByteArray?) {
     val send = Intent(Intent.ACTION_SEND).putExtra(Intent.EXTRA_TEXT, "${link.text} ${link.url}")
     if (card != null) {
-        // A new file each time, so an app given an earlier card can't read this one. The
-        // earlier ones go: their recipients have had them.
+        // A new file each time, so an app given an earlier card can't read this one. Cards
+        // older than an hour go; a share still being written can keep reading its own.
         val dir = File(context.cacheDir, "share").apply { mkdirs() }
-        dir.listFiles()?.forEach { it.delete() }
+        val hourAgo = System.currentTimeMillis() - 3_600_000
+        dir.listFiles()?.filter { it.lastModified() < hourAgo }?.forEach { it.delete() }
         val file = File(dir, "mangiamundo-${System.currentTimeMillis()}.png")
         file.writeBytes(card)
         send.setType("image/png")

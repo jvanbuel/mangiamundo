@@ -16,12 +16,18 @@
 	const message = (e: unknown) => (e instanceof Error ? e.message : 'Something went wrong.');
 	const linkLeft = $derived(link ? Math.max(0, Math.ceil((link.expires_at - now) / 60)) : 0);
 
+	/** Counts loads, so only the latest one's answer is shown. */
+	let loads = 0;
+
 	async function load() {
+		const mine = ++loads;
 		try {
-			account = await api.account();
+			const loaded = await api.account();
+			if (mine !== loads) return;
+			account = loaded;
 			error = null;
 		} catch (e) {
-			error = message(e);
+			if (mine === loads) error = message(e);
 		}
 	}
 

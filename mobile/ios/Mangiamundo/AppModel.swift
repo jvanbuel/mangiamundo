@@ -701,9 +701,8 @@ final class AppModel {
                 if let data = await api.card(link), let image = UIImage(data: data) { items.append(image) }
                 items.append(link.text)
                 if let url = URL(string: link.url) { items.append(url) }
+                // The settings load the account, public link included, when they open.
                 presentShareSheet(items)
-                // The public page may be new: the settings show it.
-                if let refreshed = try? await api.account() { account = refreshed }
             } catch {
                 toast("Could not share: \(error.localizedDescription)")
             }

@@ -684,9 +684,8 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch {
             try {
                 val link = make()
+                // The settings load the account, public link included, when they open.
                 shareLink(getApplication(), link, api.card(link))
-                // The public page may be new: the settings show it.
-                account = runCatching { api.account() }.getOrDefault(account)
             } catch (e: Exception) {
                 messageChannel.trySend("Could not share: ${e.message}")
             }

@@ -23,10 +23,14 @@
 		}
 		busy = true;
 		try {
-			const prepared = await prepare(await link());
+			const made = await link();
+			// After making it (which may itself change the public link), before the waits in
+			// which it could be turned off.
+			const at = app.publicLink;
+			const prepared = await prepare(made);
 			if (!(await share(prepared))) {
 				ready = prepared;
-				readyAt = app.publicLink;
+				readyAt = at;
 			}
 		} catch (e) {
 			toast(null, 'Could not share', (e as Error).message);
