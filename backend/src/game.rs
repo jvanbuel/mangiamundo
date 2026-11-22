@@ -19,6 +19,8 @@ pub struct PlaceRow {
 #[derive(Debug, Clone, Copy, Default)]
 pub struct Lifetime {
     pub visits: u32,
+    /// Places with at least one check-in made on the spot.
+    pub verified: u32,
     pub countries: u32,
     /// Confirmed restaurants the user added, and how many of them brought a new country,
     /// or a new continent, to their area. A new continent is a new country too.
@@ -66,6 +68,38 @@ impl Bonus {
     }
 }
 
+/// How far the user got with a country's food in the area. Clients show `discovered` as
+/// gold and `completed` as diamond.
+#[derive(Debug, Clone, Copy, Serialize, PartialEq, Eq, PartialOrd, Ord, utoipa::ToSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum Status {
+    Available,
+    /// Gold: at least one place visited.
+    Discovered,
+    /// At least [`PLATINUM_PLACES`] places visited.
+    Platinum,
+    /// Diamond: [`DIAMOND_PLACES`] places visited, or every place when there are fewer.
+    Completed,
+}
+
+pub const PLATINUM_PLACES: u32 = 5;
+pub const DIAMOND_PLACES: u32 = 10;
+
+impl Status {
+    /// `visited` only counts places in the area, so it never exceeds `places`.
+    pub fn of(places: u32, visited: u32) -> Self {
+        if visited == 0 {
+            Status::Available
+        } else if visited >= places.min(DIAMOND_PLACES) {
+            Status::Completed
+        } else if visited >= PLATINUM_PLACES {
+            Status::Platinum
+        } else {
+            Status::Discovered
+        }
+    }
+}
+
 #[derive(Debug, Serialize, PartialEq, utoipa::ToSchema)]
 pub struct CountryProgress {
     pub code: String,
@@ -73,16 +107,9 @@ pub struct CountryProgress {
     /// Places of this country in the area.
     pub places: u32,
     pub visited: u32,
-}
-
-impl CountryProgress {
-    pub fn discovered(&self) -> bool {
-        self.visited > 0
-    }
-    /// `>=` like the clients. `visited` only counts places in the area, so it never exceeds `places`.
-    pub fn completed(&self) -> bool {
-        self.visited >= self.places
-    }
+    /// Places to visit for diamond: [`DIAMOND_PLACES`], or every place when there are fewer.
+    pub goal: u32,
+    pub status: Status,
 }
 
 #[derive(Debug, Serialize, PartialEq, utoipa::ToSchema)]
@@ -93,7 +120,7 @@ pub struct GroupProgress {
     pub available: u32,
     /// Available countries with at least one visited place.
     pub discovered: u32,
-    /// Available countries where every place was visited.
+    /// Available countries at diamond.
     pub completed: u32,
 }
 
@@ -147,6 +174,8 @@ pub struct Summary {
 }
 
 pub const XP_PER_VISIT: u32 = 10;
+/// Extra, once per place, for checking in on the spot.
+pub const XP_VERIFIED: u32 = 15;
 pub const XP_PER_COUNTRY: u32 = 50;
 /// For a restaurant the user added, once OpenStreetMap has it.
 pub const XP_PER_ADDITION: u32 = 30;
@@ -157,6 +186,7 @@ pub const XP_NEW_CONTINENT: u32 = 250;
 
 pub fn profile(lifetime: Lifetime) -> Profile {
     let xp = lifetime.visits * XP_PER_VISIT
+        + lifetime.verified * XP_VERIFIED
         + lifetime.countries * XP_PER_COUNTRY
         + lifetime.added * XP_PER_ADDITION
         + lifetime.country_bonuses * XP_NEW_COUNTRY
@@ -215,6 +245,8 @@ pub fn summarize(rows: &[PlaceRow], lifetime: Lifetime) -> Summary {
                 continent: catalog::country(code)?.continent.clone(),
                 places,
                 visited,
+                goal: places.min(DIAMOND_PLACES),
+                status: Status::of(places, visited),
             })
         })
         .collect();
@@ -223,8 +255,11 @@ pub fn summarize(rows: &[PlaceRow], lifetime: Lifetime) -> Summary {
         code: code.to_string(),
         name: name.to_string(),
         available: members.len() as u32,
-        discovered: members.iter().filter(|c| c.discovered()).count() as u32,
-        completed: members.iter().filter(|c| c.completed()).count() as u32,
+        discovered: members.iter().filter(|c| c.visited > 0).count() as u32,
+        completed: members
+            .iter()
+            .filter(|c| c.status == Status::Completed)
+            .count() as u32,
     };
 
     let continents: Vec<GroupProgress> = CONTINENTS
@@ -273,16 +308,18 @@ pub fn summarize(rows: &[PlaceRow], lifetime: Lifetime) -> Summary {
         badge(
             "complete-1",
             Completed,
-            "1 country complete",
-            "Visit every place of a country here.",
+            "1 diamond country",
+            format!(
+                "Visit {DIAMOND_PLACES} places of a country here, or all of them if it has fewer."
+            ),
             world.completed,
             1,
         ),
         badge(
             "complete-5",
             Completed,
-            "5 countries complete",
-            "Visit every place of 5 countries here.",
+            "5 diamond countries",
+            "Reach diamond in 5 countries here.",
             world.completed,
             5,
         ),
@@ -380,10 +417,10 @@ mod tests {
             },
         );
 
-        let italy = s.countries.iter().find(|c| c.code == "IT").unwrap();
-        assert!(italy.completed() && italy.discovered());
-        let france = s.countries.iter().find(|c| c.code == "FR").unwrap();
-        assert!(france.discovered() && !france.completed());
+        let status = |code: &str| s.countries.iter().find(|c| c.code == code).unwrap().status;
+        assert_eq!(status("IT"), Status::Completed);
+        assert_eq!(status("FR"), Status::Discovered);
+        assert_eq!(status("JP"), Status::Available);
 
         let europe = s.continents.iter().find(|c| c.code == "EU").unwrap();
         assert_eq!(
@@ -419,6 +456,32 @@ mod tests {
         assert_eq!((s.places, s.places_visited), (1, 1));
         assert_eq!(s.world.discovered, 2);
         assert!(earned(&s, "world") && earned(&s, "world-complete"));
+    }
+
+    #[test]
+    fn countries_go_gold_platinum_diamond() {
+        use Status::*;
+        assert_eq!(Status::of(30, 0), Available);
+        assert_eq!(Status::of(30, 1), Discovered);
+        assert_eq!(Status::of(30, 4), Discovered);
+        assert_eq!(Status::of(30, 5), Platinum);
+        assert_eq!(Status::of(30, 9), Platinum);
+        assert_eq!(Status::of(30, 10), Completed);
+        // Small countries reach diamond by visiting every place, skipping platinum.
+        assert_eq!(Status::of(3, 2), Discovered);
+        assert_eq!(Status::of(3, 3), Completed);
+        assert_eq!(Status::of(7, 6), Platinum);
+        assert_eq!(Status::of(7, 7), Completed);
+    }
+
+    #[test]
+    fn verified_check_ins_earn_extra_xp() {
+        let p = profile(Lifetime {
+            visits: 2,
+            verified: 1,
+            ..Default::default()
+        });
+        assert_eq!(p.xp, 10 + 25);
     }
 
     #[test]

@@ -28,6 +28,10 @@
 	--discovered-edge: #8a6200;
 	--discovered-text: #7a5600;
 	--on-discovered: #3d2a00;
+	/* Platinum sits between gold and diamond: a cool metallic grey. */
+	--platinum: #c3c8d0;
+	--platinum-edge: #5f6773;
+	--platinum-metal: linear-gradient(135deg, #f4f6f8 0%, #c3c8d0 45%, #eef0f3 60%, #aab1bb 100%);
 	--completed: #e3f5fe;
 	--completed-edge: #2f8fc4;
 	--completed-facet: #8fcdef;
@@ -80,6 +84,9 @@
 		--discovered-edge: #f2c14e;
 		--discovered-text: #f2c14e;
 		--on-discovered: #2a1a00;
+		--platinum: #c9ced6;
+		--platinum-edge: #eef1f5;
+		--platinum-metal: linear-gradient(135deg, #f4f6f8 0%, #c3c8d0 45%, #eef0f3 60%, #aab1bb 100%);
 		--completed: #e3f5fe;
 		--completed-edge: #8fd6ff;
 		--completed-facet: #8fcdef;
@@ -118,6 +125,9 @@
 	--discovered-edge: #f2c14e;
 	--discovered-text: #f2c14e;
 	--on-discovered: #2a1a00;
+	--platinum: #c9ced6;
+	--platinum-edge: #eef1f5;
+	--platinum-metal: linear-gradient(135deg, #f4f6f8 0%, #c3c8d0 45%, #eef0f3 60%, #aab1bb 100%);
 	--completed: #e3f5fe;
 	--completed-edge: #8fd6ff;
 	--completed-facet: #8fcdef;

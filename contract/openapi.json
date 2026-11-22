@@ -481,11 +481,20 @@
           "continent": {
             "type": "string"
           },
+          "goal": {
+            "description": "Places to visit for diamond: [`DIAMOND_PLACES`], or every place when there are fewer.",
+            "format": "int32",
+            "minimum": 0,
+            "type": "integer"
+          },
           "places": {
             "description": "Places of this country in the area.",
             "format": "int32",
             "minimum": 0,
             "type": "integer"
+          },
+          "status": {
+            "$ref": "#/components/schemas/Status"
           },
           "visited": {
             "format": "int32",
@@ -497,7 +506,9 @@
           "code",
           "continent",
           "places",
-          "visited"
+          "visited",
+          "goal",
+          "status"
         ],
         "type": "object"
       },
@@ -720,7 +731,7 @@
             "type": "string"
           },
           "completed": {
-            "description": "Available countries where every place was visited.",
+            "description": "Available countries at diamond.",
             "format": "int32",
             "minimum": 0,
             "type": "integer"
@@ -1248,6 +1259,16 @@
           "token"
         ],
         "type": "object"
+      },
+      "Status": {
+        "description": "How far the user got with a country's food in the area. Clients show `discovered` as\ngold and `completed` as diamond.",
+        "enum": [
+          "available",
+          "discovered",
+          "platinum",
+          "completed"
+        ],
+        "type": "string"
       },
       "SubscribeBody": {
         "description": "A browser's PushSubscription (as from `subscription.toJSON()`), plus the user's area.",

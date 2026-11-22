@@ -26,6 +26,19 @@ enum Theme {
     static let discoveredEdge = Color(light: 0x8A6200, dark: 0xF2C14E)
     static let discoveredText = Color(light: 0x7A5600, dark: 0xF2C14E)
     static let onDiscovered = Color(light: 0x3D2A00, dark: 0x2A1A00)
+    static let platinum = Color(light: 0xC3C8D0, dark: 0xC9CED6)
+    static let platinumEdge = Color(light: 0x5F6773, dark: 0xEEF1F5)
+    /// Platinum as a surface: a cool metallic sheen.
+    static let platinumMetal = LinearGradient(
+        stops: [
+            .init(color: Color(hex: 0xF4F6F8), location: 0),
+            .init(color: Color(hex: 0xC3C8D0), location: 0.45),
+            .init(color: Color(hex: 0xEEF0F3), location: 0.6),
+            .init(color: Color(hex: 0xAAB1BB), location: 1),
+        ],
+        startPoint: .topLeading,
+        endPoint: .bottomTrailing
+    )
     /// The diamond's base fill on the map.
     static let completed = Color(light: 0xE3F5FE, dark: 0xE3F5FE)
     static let completedEdge = Color(light: 0x2F8FC4, dark: 0x8FD6FF)

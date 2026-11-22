@@ -46,22 +46,22 @@
       "title": "25 countries"
     },
     {
-      "description": "Visit every place of a country here.",
+      "description": "Visit 10 places of a country here, or all of them if it has fewer.",
       "earned": false,
       "id": "complete-1",
       "kind": "completed",
       "progress": 0,
       "target": 1,
-      "title": "1 country complete"
+      "title": "1 diamond country"
     },
     {
-      "description": "Visit every place of 5 countries here.",
+      "description": "Reach diamond in 5 countries here.",
       "earned": false,
       "id": "complete-5",
       "kind": "completed",
       "progress": 0,
       "target": 5,
-      "title": "5 countries complete"
+      "title": "5 diamond countries"
     },
     {
       "description": "Add a restaurant that brings a new country to your city.",
@@ -184,235 +184,313 @@
     {
       "code": "AE",
       "continent": "AS",
+      "goal": 2,
       "places": 2,
+      "status": "available",
       "visited": 0
     },
     {
       "code": "AZ",
       "continent": "AS",
+      "goal": 3,
       "places": 3,
+      "status": "discovered",
       "visited": 2
     },
     {
       "code": "BA",
       "continent": "EU",
+      "goal": 3,
       "places": 3,
+      "status": "available",
       "visited": 0
     },
     {
       "code": "BE",
       "continent": "EU",
+      "goal": 1,
       "places": 1,
+      "status": "available",
       "visited": 0
     },
     {
       "code": "BR",
       "continent": "SA",
+      "goal": 2,
       "places": 2,
+      "status": "available",
       "visited": 0
     },
     {
       "code": "CH",
       "continent": "EU",
+      "goal": 4,
       "places": 4,
+      "status": "available",
       "visited": 0
     },
     {
       "code": "CR",
       "continent": "NA",
+      "goal": 3,
       "places": 3,
+      "status": "available",
       "visited": 0
     },
     {
       "code": "DO",
       "continent": "NA",
+      "goal": 2,
       "places": 2,
+      "status": "available",
       "visited": 0
     },
     {
       "code": "DZ",
       "continent": "AF",
+      "goal": 4,
       "places": 4,
+      "status": "available",
       "visited": 0
     },
     {
       "code": "ER",
       "continent": "AF",
+      "goal": 2,
       "places": 2,
+      "status": "available",
       "visited": 0
     },
     {
       "code": "FR",
       "continent": "EU",
+      "goal": 2,
       "places": 2,
+      "status": "available",
       "visited": 0
     },
     {
       "code": "GB",
       "continent": "EU",
+      "goal": 2,
       "places": 2,
+      "status": "available",
       "visited": 0
     },
     {
       "code": "GH",
       "continent": "AF",
+      "goal": 2,
       "places": 2,
+      "status": "available",
       "visited": 0
     },
     {
       "code": "HR",
       "continent": "EU",
+      "goal": 1,
       "places": 1,
+      "status": "available",
       "visited": 0
     },
     {
       "code": "JM",
       "continent": "NA",
+      "goal": 1,
       "places": 1,
+      "status": "available",
       "visited": 0
     },
     {
       "code": "KG",
       "continent": "AS",
+      "goal": 2,
       "places": 2,
+      "status": "available",
       "visited": 0
     },
     {
       "code": "KR",
       "continent": "AS",
+      "goal": 4,
       "places": 4,
+      "status": "available",
       "visited": 0
     },
     {
       "code": "KZ",
       "continent": "AS",
+      "goal": 1,
       "places": 1,
+      "status": "available",
       "visited": 0
     },
     {
       "code": "LT",
       "continent": "EU",
+      "goal": 2,
       "places": 2,
+      "status": "available",
       "visited": 0
     },
     {
       "code": "LU",
       "continent": "EU",
+      "goal": 4,
       "places": 4,
+      "status": "available",
       "visited": 0
     },
     {
       "code": "LV",
       "continent": "EU",
+      "goal": 2,
       "places": 2,
+      "status": "available",
       "visited": 0
     },
     {
       "code": "ME",
       "continent": "EU",
+      "goal": 4,
       "places": 4,
+      "status": "available",
       "visited": 0
     },
     {
       "code": "MM",
       "continent": "AS",
+      "goal": 3,
       "places": 3,
+      "status": "available",
       "visited": 0
     },
     {
       "code": "MU",
       "continent": "AF",
+      "goal": 2,
       "places": 2,
+      "status": "available",
       "visited": 0
     },
     {
       "code": "NP",
       "continent": "AS",
+      "goal": 4,
       "places": 4,
+      "status": "available",
       "visited": 0
     },
     {
       "code": "PH",
       "continent": "AS",
+      "goal": 4,
       "places": 4,
+      "status": "available",
       "visited": 0
     },
     {
       "code": "PL",
       "continent": "EU",
+      "goal": 1,
       "places": 1,
+      "status": "available",
       "visited": 0
     },
     {
       "code": "PR",
       "continent": "NA",
+      "goal": 2,
       "places": 2,
+      "status": "available",
       "visited": 0
     },
     {
       "code": "PY",
       "continent": "SA",
+      "goal": 1,
       "places": 1,
+      "status": "available",
       "visited": 0
     },
     {
       "code": "RW",
       "continent": "AF",
+      "goal": 1,
       "places": 1,
+      "status": "available",
       "visited": 0
     },
     {
       "code": "SG",
       "continent": "AS",
+      "goal": 3,
       "places": 3,
+      "status": "available",
       "visited": 0
     },
     {
       "code": "TH",
       "continent": "AS",
+      "goal": 2,
       "places": 2,
+      "status": "available",
       "visited": 0
     },
     {
       "code": "TM",
       "continent": "AS",
+      "goal": 2,
       "places": 2,
+      "status": "available",
       "visited": 0
     },
     {
       "code": "TN",
       "continent": "AF",
+      "goal": 3,
       "places": 3,
+      "status": "available",
       "visited": 0
     },
     {
       "code": "TR",
       "continent": "AS",
+      "goal": 1,
       "places": 1,
+      "status": "available",
       "visited": 0
     },
     {
       "code": "TT",
       "continent": "NA",
+      "goal": 3,
       "places": 3,
+      "status": "available",
       "visited": 0
     },
     {
       "code": "TZ",
       "continent": "AF",
+      "goal": 1,
       "places": 1,
+      "status": "available",
       "visited": 0
     },
     {
       "code": "UA",
       "continent": "EU",
+      "goal": 1,
       "places": 1,
+      "status": "available",
       "visited": 0
     },
     {
       "code": "UZ",
       "continent": "AS",
+      "goal": 1,
       "places": 1,
+      "status": "available",
       "visited": 0
     }
   ],
@@ -459,7 +537,7 @@
     "level_xp": 0,
     "next_level_xp": 100,
     "visits": 2,
-    "xp": 70
+    "xp": 85
   },
   "world": {
     "available": 39,
