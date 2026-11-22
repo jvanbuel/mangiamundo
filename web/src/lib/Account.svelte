@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import * as api from './api';
-	import { accountChanged, toast } from './state.svelte.ts';
+	import { accountChanged, app, toast } from './state.svelte.ts';
 	import type { Account } from './types';
 
 	let account = $state<Account | null>(null);
@@ -25,8 +25,13 @@
 		}
 	}
 
-	onMount(() => {
+	// On opening, and again when sharing elsewhere on the page makes or moves the link.
+	$effect(() => {
+		void app.publicLink;
 		void load();
+	});
+
+	onMount(() => {
 		const timer = setInterval(() => {
 			now = Date.now() / 1000;
 			if (link && link.expires_at <= now) link = null;
@@ -101,7 +106,7 @@
 	const unshare = () =>
 		act(async () => {
 			await api.unshareProgress();
-			await load();
+			app.publicLink++;
 		});
 
 	const ago = (at: number) => {

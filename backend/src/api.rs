@@ -1582,7 +1582,8 @@ fn page_or_gone(result: Result<Response, ApiError>) -> Response {
 
 fn png(bytes: Vec<u8>) -> Response {
     (
-        [(header::CONTENT_TYPE, "image/png"), (header::CACHE_CONTROL, "public, max-age=300")],
+        // Not kept by caches: a card must stop showing once its share is turned off.
+        [(header::CONTENT_TYPE, "image/png"), (header::CACHE_CONTROL, "no-store")],
         bytes,
     )
         .into_response()

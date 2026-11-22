@@ -75,7 +75,16 @@ class ApiClient(private val baseUrl: String, private val tokens: TokenStore, pri
 
     /** The share card; null when it can't be loaded, so the link is shared alone. */
     suspend fun card(link: ShareLink): ByteArray? = withContext(Dispatchers.IO) {
-        runCatching { URL(link.imageUrl).readBytes() }.getOrNull()
+        runCatching {
+            val connection = URL(link.imageUrl).openConnection() as HttpURLConnection
+            connection.connectTimeout = 10_000
+            connection.readTimeout = 15_000
+            try {
+                if (connection.responseCode == 200) connection.inputStream.use { it.readBytes() } else null
+            } finally {
+                connection.disconnect()
+            }
+        }.getOrNull()
     }
 
     /** "This place has closed": hides it for this user, and for everyone after a second report. */

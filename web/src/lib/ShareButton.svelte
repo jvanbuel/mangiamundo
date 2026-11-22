@@ -1,7 +1,7 @@
 <script lang="ts">
 	import Share from '@lucide/svelte/icons/share-2';
 	import { prepare, share, type Prepared } from './share';
-	import { toast } from './state.svelte';
+	import { app, toast } from './state.svelte';
 	import type { ShareLink } from './types';
 
 	let { label, link }: { label: string; link: () => Promise<ShareLink> } = $props();
@@ -9,8 +9,12 @@
 	let busy = $state(false);
 	/** Kept when the browser wanted a fresh tap; the next tap shares it at once. */
 	let ready = $state<Prepared | null>(null);
+	/** The public link as it was when `ready` was made. */
+	let readyAt = 0;
 
 	async function go() {
+		// A link turned off (or made again) since then may be dead: make a fresh one.
+		if (ready && readyAt !== app.publicLink) ready = null;
 		if (ready) {
 			const prepared = ready;
 			ready = null;
@@ -20,7 +24,10 @@
 		busy = true;
 		try {
 			const prepared = await prepare(await link());
-			if (!(await share(prepared))) ready = prepared;
+			if (!(await share(prepared))) {
+				ready = prepared;
+				readyAt = app.publicLink;
+			}
 		} catch (e) {
 			toast(null, 'Could not share', (e as Error).message);
 		} finally {

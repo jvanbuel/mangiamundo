@@ -10,7 +10,11 @@ import java.io.File
 fun shareLink(context: Context, link: ShareLink, card: ByteArray?) {
     val send = Intent(Intent.ACTION_SEND).putExtra(Intent.EXTRA_TEXT, "${link.text} ${link.url}")
     if (card != null) {
-        val file = File(context.cacheDir, "share/mangiamundo.png").apply { parentFile?.mkdirs() }
+        // A new file each time, so an app given an earlier card can't read this one. The
+        // earlier ones go: their recipients have had them.
+        val dir = File(context.cacheDir, "share").apply { mkdirs() }
+        dir.listFiles()?.forEach { it.delete() }
+        val file = File(dir, "mangiamundo-${System.currentTimeMillis()}.png")
         file.writeBytes(card)
         send.setType("image/png")
             .putExtra(Intent.EXTRA_STREAM, FileProvider.getUriForFile(context, "${context.packageName}.share", file))

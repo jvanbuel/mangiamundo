@@ -37,7 +37,7 @@ struct AccountSection: View {
                         .buttonStyle(ChunkyButtonStyle(face: Theme.panelRaised, content: Theme.text, small: true))
                     Button("Turn off") { model.unshareProgress() }
                         .buttonStyle(ChunkyButtonStyle(face: Theme.panelRaised, content: Theme.text, small: true))
-                        .disabled(model.accountBusy)
+                        .disabled(model.accountBusy || model.sharing)
                 }
             }
 

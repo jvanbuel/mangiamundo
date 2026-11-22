@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { shareProgress } from './api';
+	import { app } from './state.svelte';
 	import ShareButton from './ShareButton.svelte';
 	import type { Discover } from './types';
 
@@ -41,7 +42,14 @@
 	</dl>
 
 	<div class="share">
-		<ShareButton label="Share my map" link={() => shareProgress(areaId)} />
+		<ShareButton
+			label="Share my map"
+			link={async () => {
+				const link = await shareProgress(areaId);
+				app.publicLink++;
+				return link;
+			}}
+		/>
 		<span class="muted">Makes a public link to your map, level and badges.</span>
 	</div>
 	{/if}

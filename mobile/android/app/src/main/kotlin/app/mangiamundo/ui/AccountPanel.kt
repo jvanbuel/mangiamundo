@@ -115,7 +115,7 @@ fun AccountSection(vm: AppViewModel) {
             )
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 ChunkyButton("Open", onClick = { uriHandler.openUri(url) }, face = colors.panelRaised, content = colors.text)
-                ChunkyButton("Turn off", onClick = vm::unshareProgress, enabled = !vm.accountBusy, face = colors.panelRaised, content = colors.text)
+                ChunkyButton("Turn off", onClick = vm::unshareProgress, enabled = !vm.accountBusy && !vm.sharing, face = colors.panelRaised, content = colors.text)
             }
         }
 

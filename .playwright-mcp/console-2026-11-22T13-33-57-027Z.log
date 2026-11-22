@@ -1,7 +1,0 @@
-[    2667ms] [WARNING] %c[sveltekit] history_api_conflict
-%cAvoid using `history.pushState(...)` and `history.replaceState(...)` as these will conflict with SvelteKit's router. Use `goto(...)` from `$app/navigation` instead.
-https://svelte.dev/e/kit/history_api_conflict font-weight: bold font-weight: normal @ http://localhost:5173/@vite/client:364
-[   25740ms] [LOG] [vite] server connection lost. Polling for restart... @ http://localhost:5173/@vite/client:1078
-[  153667ms] [WARNING] %c[sveltekit] history_api_conflict
-%cAvoid using `history.pushState(...)` and `history.replaceState(...)` as these will conflict with SvelteKit's router. Use `goto(...)` from `$app/navigation` instead.
-https://svelte.dev/e/kit/history_api_conflict font-weight: bold font-weight: normal @ http://localhost:5173/@vite/client:364

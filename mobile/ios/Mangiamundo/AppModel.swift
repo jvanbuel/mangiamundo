@@ -703,7 +703,7 @@ final class AppModel {
                 if let url = URL(string: link.url) { items.append(url) }
                 presentShareSheet(items)
                 // The public page may be new: the settings show it.
-                account = try? await api.account()
+                if let refreshed = try? await api.account() { account = refreshed }
             } catch {
                 toast("Could not share: \(error.localizedDescription)")
             }
