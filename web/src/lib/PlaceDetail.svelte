@@ -17,8 +17,9 @@
 		const words = raw.replaceAll('_', ' ').split(';').map((c) => c.trim()).join(', ');
 		return words.charAt(0).toUpperCase() + words.slice(1);
 	};
-	/** Open around the clock every day: one line says it better than seven. */
-	const allDay = $derived(place?.hours?.week?.every((d) => d.open.length === 1 && d.open[0] === '24 hours') ?? false);
+	/** Always open, with no exceptions: one line says it better than seven. A week that is open
+	 * around the clock may still have a closed holiday coming, so go by the rule itself. */
+	const allDay = $derived(place?.hours?.raw.trim() === '24/7');
 	/** Where Back goes: the country the place was opened from, if any. */
 	const from = $derived(app.selected ? country(app.selected)?.name : null);
 	const day = (at: number) =>

@@ -204,7 +204,9 @@ a {
 /* Reduced motion: nothing moves or grows, but fades and colour changes stay, so
    changes are still noticed. */
 @media (prefers-reduced-motion: reduce) {
-	* {
+	*,
+	*::before,
+	*::after {
 		transition-property: opacity, color, background-color, border-color !important;
 		animation: none !important;
 	}

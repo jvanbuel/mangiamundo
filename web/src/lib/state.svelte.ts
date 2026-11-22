@@ -90,6 +90,8 @@ export const app = $state({
 /** The last real GPS position, used to verify check-ins even when browsing another city. */
 let gpsFix: { lat: number; lng: number; at: number } | null = null;
 let requestId = 0;
+/** A ?country= link that arrived before there was anything to discover: opened on the first load. */
+let pendingCountry: string | null = null;
 let toastId = 0;
 
 export function country(code: string): Country | undefined {
@@ -202,7 +204,8 @@ async function followLink() {
 	if (!params.size) return;
 	if (params.get('tab') === 'badges') app.tab = 'badges';
 	const code = params.get('country')?.toUpperCase();
-	if (code && app.discover?.countries.some((c) => c.code === code)) await select(code);
+	if (code && !app.discover) pendingCountry = code;
+	else if (code && app.discover?.countries.some((c) => c.code === code)) await select(code);
 	const id = params.get('place');
 	history.replaceState(null, '', id ? `?place=${encodeURIComponent(id)}` : location.pathname);
 	if (id) await loadPlace(id);
@@ -436,7 +439,12 @@ export async function refresh() {
 	const stopProgress = watchProgress(location.area.id, id);
 	try {
 		const result = await api.discover(location.area.id);
-		if (id === requestId) app.discover = result;
+		if (id === requestId) {
+			app.discover = result;
+			const code = pendingCountry;
+			pendingCountry = null;
+			if (code && result.countries.some((c) => c.code === code)) void select(code);
+		}
 		void announceConfirmedAdditions();
 	} catch (error) {
 		if (id === requestId) {
