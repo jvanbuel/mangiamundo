@@ -90,8 +90,9 @@
 
 		{#if app.location}<ul class="legend" aria-label="Legend">
 			<li><span class="swatch available"></span>To discover</li>
-			<li><span class="swatch discovered"></span>Tasted</li>
-			<li><span class="swatch completed"></span>Completed</li>
+			<li><span class="swatch discovered"></span>Gold</li>
+			<li><span class="swatch platinum"></span>Platinum</li>
+			<li><span class="swatch completed"></span>Diamond</li>
 			<li><span class="swatch none"></span>None nearby</li>
 		</ul>{/if}
 	</div>
@@ -442,6 +443,11 @@
 	.swatch.discovered {
 		border-color: var(--discovered);
 		background: linear-gradient(to top, var(--discovered) 50%, transparent 50%);
+	}
+
+	.swatch.platinum {
+		border-color: var(--platinum-edge);
+		background: var(--platinum-metal);
 	}
 
 	.swatch.completed {

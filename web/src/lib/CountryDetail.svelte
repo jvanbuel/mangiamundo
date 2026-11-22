@@ -2,12 +2,12 @@
 	import ArrowLeft from '@lucide/svelte/icons/arrow-left';
 	import CheckIn from './CheckIn.svelte';
 	import { app, country, openPlace } from './state.svelte';
-	import { distance, statusOf, type CountryProgress, type Place } from './types';
+	import { distance, STATUS_LABELS, type CountryProgress, type Place } from './types';
 
 	let { progress, onback }: { progress: CountryProgress; onback: () => void } = $props();
 
 	const info = $derived(country(progress.code));
-	const status = $derived(statusOf(progress));
+	const status = $derived(progress.status);
 
 	// The API sorts open places first, then closed, then unknown hours.
 	const groupName = (open: boolean | null) =>
@@ -37,15 +37,12 @@
 	<div>
 		<h2>{info?.name ?? progress.code}</h2>
 		<p class="muted">
-			{#if status === 'completed'}
-				Complete: all {progress.places} visited
-			{:else}
-				{progress.visited} of {progress.places} {progress.places === 1 ? 'place' : 'places'} visited
-			{/if}
+			{#if status !== 'available'}{STATUS_LABELS[status]} · {/if}{progress.visited} of {progress.places} {progress.places === 1 ? 'place' : 'places'} visited
+			{#if status !== 'completed'}· {progress.goal - progress.visited} more for diamond{/if}
 		</p>
 	</div>
 </header>
-<div class="bar"><span class={status} style:width="{(progress.visited / progress.places) * 100}%"></span></div>
+<div class="bar"><span class={status} style:width="{Math.min(progress.visited / progress.goal, 1) * 100}%"></span></div>
 
 {#if app.placesLoading}
 	<p class="muted">Loading places…</p>
@@ -110,6 +107,10 @@
 
 	.bar span.discovered {
 		background: var(--discovered);
+	}
+
+	.bar span.platinum {
+		background: var(--platinum-metal);
 	}
 
 	/* A full bar in icy blue with a bright band, so it reads at 6px tall. */

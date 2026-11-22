@@ -194,18 +194,20 @@ private fun Bar(fraction: Float, modifier: Modifier = Modifier, brush: Brush) {
 
 private fun fraction(part: Int, whole: Int) = if (whole == 0) 0f else part.toFloat() / whole
 
-/** A country's state by shape as well as colour: a blue ring, a half-filled gold one, a diamond. */
+/** A country's state by shape as well as colour: a blue ring, half-filled gold, full platinum, a diamond. */
 @Composable
 fun StatusMark(status: Status, size: Dp = 14.dp) {
     val colors = LocalAppColors.current
     val ring = when (status) {
         Status.AVAILABLE -> colors.available
         Status.DISCOVERED -> colors.discovered
+        Status.PLATINUM -> colors.platinumEdge
         Status.COMPLETED -> colors.completedEdge
     }
     val fill = when (status) {
         Status.AVAILABLE -> SolidColor(Color.Transparent)
         Status.DISCOVERED -> Brush.verticalGradient(0.5f to Color.Transparent, 0.5f to colors.discovered)
+        Status.PLATINUM -> colors.platinumMetal
         Status.COMPLETED -> colors.diamond
     }
     Box(Modifier.size(size).clip(CircleShape).background(fill).border(2.dp, ring, CircleShape), contentAlignment = Alignment.Center) {
@@ -214,6 +216,15 @@ fun StatusMark(status: Status, size: Dp = 14.dp) {
         }
     }
 }
+
+/** What players call each status. */
+val Status.label: String
+    get() = when (this) {
+        Status.AVAILABLE -> "To discover"
+        Status.DISCOVERED -> "Gold"
+        Status.PLATINUM -> "Platinum"
+        Status.COMPLETED -> "Diamond"
+    }
 
 @Composable
 fun Legend(modifier: Modifier = Modifier) {
@@ -226,11 +237,8 @@ fun Legend(modifier: Modifier = Modifier) {
             .padding(horizontal = 10.dp, vertical = 6.dp),
         horizontalArrangement = Arrangement.spacedBy(10.dp),
     ) {
-        for ((status, label) in listOf(
-            Status.AVAILABLE to "To discover",
-            Status.DISCOVERED to "Tasted",
-            Status.COMPLETED to "Completed",
-        )) {
+        for (status in Status.entries) {
+            val label = status.label
             Row(verticalAlignment = Alignment.CenterVertically) {
                 StatusMark(status, size = 11.dp)
                 Text(" $label", color = colors.muted, fontSize = 11.sp)
@@ -508,7 +516,7 @@ fun Passport(discover: Discover) {
                     Text("${discover.placesVisited} of ${discover.places}", style = MaterialTheme.typography.titleSmall, color = colors.text)
                 }
                 Column(Modifier.weight(1f)) {
-                    Text("Countries completed", style = MaterialTheme.typography.bodySmall, color = colors.muted)
+                    Text("Diamond countries", style = MaterialTheme.typography.bodySmall, color = colors.muted)
                     Text("${discover.world.completed}", style = MaterialTheme.typography.titleSmall, color = colors.text)
                 }
             }
@@ -557,10 +565,10 @@ fun CountryHeader(progress: CountryProgress, info: Country?, onBack: () -> Unit)
             Column(Modifier.padding(start = 14.dp)) {
                 Text(info?.name ?: progress.code, style = MaterialTheme.typography.headlineSmall, color = colors.text)
                 Text(
-                    if (progress.status == Status.COMPLETED) {
-                        "Completed · all ${progress.places} visited"
-                    } else {
-                        "${progress.visited} of ${progress.places} ${if (progress.places == 1) "place" else "places"} visited"
+                    buildString {
+                        if (progress.status != Status.AVAILABLE) append("${progress.status.label} · ")
+                        append("${progress.visited} of ${progress.places} ${if (progress.places == 1) "place" else "places"} visited")
+                        if (progress.status != Status.COMPLETED) append(" · ${progress.goal - progress.visited} more for diamond")
                     },
                     fontSize = 13.sp,
                     color = colors.muted,
@@ -568,11 +576,12 @@ fun CountryHeader(progress: CountryProgress, info: Country?, onBack: () -> Unit)
             }
         }
         Bar(
-            fraction(progress.visited, progress.places),
+            fraction(progress.visited, progress.goal).coerceAtMost(1f),
             Modifier.fillMaxWidth().padding(top = 10.dp),
             brush = when (progress.status) {
                 Status.AVAILABLE -> SolidColor(colors.accent)
                 Status.DISCOVERED -> SolidColor(colors.discovered)
+                Status.PLATINUM -> colors.platinumMetal
                 Status.COMPLETED -> colors.diamondBar
             },
         )

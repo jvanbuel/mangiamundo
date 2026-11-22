@@ -3,7 +3,7 @@
 	import { prefersReducedMotion } from 'svelte/motion';
 	import type { Map as MapLibreMap, MapGeoJSONFeature } from 'maplibre-gl';
 	import type { Feature, FeatureCollection, Geometry } from 'geojson';
-	import { statusOf, type Country, type CountryProgress, type Location } from './types';
+	import { type Country, type CountryProgress, type Location } from './types';
 
 	interface Props {
 		countries: Country[];
@@ -185,6 +185,7 @@
 					'match', featureState('status', 'none'),
 					'available', color('--available'),
 					'discovered', color('--discovered'),
+					'platinum', color('--platinum'),
 					'completed', color('--completed'),
 					color('--land')
 				]
@@ -194,6 +195,7 @@
 					'case', flag('selected'), color('--text'),
 					['==', featureState('status', 'none'), 'available'], color('--available-edge'),
 					['==', featureState('status', 'none'), 'discovered'], color('--discovered-edge'),
+					['==', featureState('status', 'none'), 'platinum'], color('--platinum-edge'),
 					['==', featureState('status', 'none'), 'completed'], color('--completed-edge'),
 					color('--map-border')
 				]
@@ -280,7 +282,7 @@
 								'line-width': [
 									'case', flag('selected'), 2.5,
 									['==', featureState('status', 'none'), 'completed'], 2,
-									['match', featureState('status', 'none'), ['available', 'discovered'], true, false], 1,
+									['match', featureState('status', 'none'), ['available', 'discovered', 'platinum'], true, false], 1,
 									0.6
 								] as any
 							}
@@ -373,7 +375,7 @@
 		for (const id of coloured) map.removeFeatureState({ source: SOURCE, id }, 'status');
 		coloured = progress.map((entry) => entry.code);
 		for (const entry of progress) {
-			map.setFeatureState({ source: SOURCE, id: entry.code }, { status: statusOf(entry) });
+			map.setFeatureState({ source: SOURCE, id: entry.code }, { status: entry.status });
 		}
 	});
 
@@ -400,7 +402,7 @@
 	// Completed countries get the diamond: facets over their fill, and sparkles.
 	$effect(() => {
 		if (!map) return;
-		const done = progress.filter((entry) => statusOf(entry) === 'completed').flatMap((entry) => shapes.get(entry.code) ?? []);
+		const done = progress.filter((entry) => entry.status === 'completed').flatMap((entry) => shapes.get(entry.code) ?? []);
 		(map.getSource('diamonds') as any)?.setData({ type: 'FeatureCollection', features: done });
 		(map.getSource('sparkles') as any)?.setData({
 			type: 'FeatureCollection',

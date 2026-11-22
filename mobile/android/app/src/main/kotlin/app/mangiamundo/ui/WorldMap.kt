@@ -93,7 +93,7 @@ fun WorldMap(
     )
 
     // One path per fill colour plus one for all borders, reused across frames.
-    val fills = remember { List(4) { Path().apply { fillType = PathFillType.EvenOdd } } }
+    val fills = remember { List(5) { Path().apply { fillType = PathFillType.EvenOdd } } }
     val star = remember { Path() }
     val globe = remember { Path() }
     // Where each completed country's sparkles go, and how much they shrink to fit it.
@@ -156,6 +156,7 @@ fun WorldMap(
                 Status.AVAILABLE -> fills[1]
                 Status.DISCOVERED -> fills[2]
                 Status.COMPLETED -> fills[3]
+                Status.PLATINUM -> fills[4]
             }
             // A completed country's sparkles go in the middle of its largest visible ring.
             var largestCount = 0
@@ -217,6 +218,7 @@ fun WorldMap(
         drawPath(fills[1], colors.available)
         drawPath(fills[2], colors.discovered)
         drawPath(fills[3], colors.completed)
+        drawPath(fills[4], colors.platinum)
 
         // Each diamond shines: lit from the top left, deeper towards the bottom right, and now
         // and then a glint sweeps across it, a white heart with rainbow fringes, like light
@@ -263,6 +265,7 @@ fun WorldMap(
             drawPath(fills[1], colors.availableEdge, style = Stroke(1.dp.toPx()))
             drawPath(fills[2], colors.discoveredEdge, style = Stroke(1.dp.toPx()))
             drawPath(fills[3], colors.completedEdge, style = Stroke(1.5.dp.toPx()))
+            drawPath(fills[4], colors.platinumEdge, style = Stroke(1.dp.toPx()))
             drawPath(outline, colors.text, style = Stroke(2.dp.toPx()))
         }
         if (flat) {

@@ -123,7 +123,7 @@ struct WorldMapView: View {
         }
 
         // One path per fill colour plus one for all borders.
-        var land = Path(), available = Path(), discovered = Path(), completed = Path()
+        var land = Path(), available = Path(), discovered = Path(), platinum = Path(), completed = Path()
         var borders = Path(), outline = Path()
         // Where each completed country's sparkles go: the middle of its largest visible ring,
         // scaled to that ring's size on screen so they stay within the country.
@@ -167,6 +167,7 @@ struct WorldMapView: View {
                     case nil: land.addPath(ring)
                     case .available: available.addPath(ring)
                     case .discovered: discovered.addPath(ring)
+                    case .platinum: platinum.addPath(ring)
                     case .completed: completed.addPath(ring); gem.addPath(ring)
                     }
                     borders.addPath(ring)
@@ -184,6 +185,7 @@ struct WorldMapView: View {
         context.fill(land, with: .color(Theme.land), style: evenOdd)
         context.fill(available, with: .color(Theme.available), style: evenOdd)
         context.fill(discovered, with: .color(Theme.discovered), style: evenOdd)
+        context.fill(platinum, with: .color(Theme.platinum), style: evenOdd)
         context.fill(completed, with: .color(Theme.completed), style: evenOdd)
 
         // Each diamond shines: lit from the top left, deeper towards the bottom right, and
@@ -239,6 +241,7 @@ struct WorldMapView: View {
             layer.stroke(borders, with: .color(Theme.mapBorder), lineWidth: 0.6)
             layer.stroke(available, with: .color(Theme.availableEdge), lineWidth: 1)
             layer.stroke(discovered, with: .color(Theme.discoveredEdge), lineWidth: 1)
+            layer.stroke(platinum, with: .color(Theme.platinumEdge), lineWidth: 1)
             layer.stroke(completed, with: .color(Theme.completedEdge), lineWidth: 2)
             layer.stroke(outline, with: .color(Theme.text), lineWidth: 2.5)
         }

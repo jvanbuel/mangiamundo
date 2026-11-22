@@ -161,12 +161,14 @@ class CoreTest {
         val discover = json.decodeFromString<Discover>(fixture("discover-newer"))
         assertEquals(BadgeKind.UNKNOWN, discover.badges[0].kind)
         assertEquals(EventStatus.UNKNOWN, discover.events[0].status)
+        assertEquals(Status.DISCOVERED, discover.countries[0].status)
     }
 
     @Test
-    fun completionStatus() {
-        assertEquals(Status.COMPLETED, CountryProgress("ET", "AF", 2, 2).status)
-        assertEquals(Status.DISCOVERED, CountryProgress("ET", "AF", 2, 1).status)
+    fun decodesCountryStatus() {
+        val discover = json.decodeFromString<Discover>(fixture("discover"))
+        assertTrue(discover.countries.any { it.status == Status.AVAILABLE })
+        assertTrue(discover.countries.any { it.status == Status.DISCOVERED })
     }
 
     @Test
