@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use mangiamundo::config::{Config, ProviderKind};
 use mangiamundo::providers::{self, osm};
-use mangiamundo::{api, calendar, push, store, AppState};
+use mangiamundo::{api, auth, calendar, push, store, AppState};
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
@@ -39,6 +39,17 @@ async fn main() -> anyhow::Result<()> {
         push_key: Some(pusher.public_key.clone()),
         osm_notes_url: config.osm_notes_url.clone(),
         osm_notes_token: config.osm_notes_token.clone(),
+        auth: Arc::new(auth::Auth::new(auth::AuthConfig {
+            apple_client_ids: std::iter::once(config.apple_bundle_id.clone())
+                .chain(config.apple_services_id.clone())
+                .collect(),
+            apple_web_client_id: config.apple_services_id.clone(),
+            google_client_ids: config.google_web_client_id.iter().chain(&config.google_ios_client_id).cloned().collect(),
+            google_web_client_id: config.google_web_client_id.clone(),
+            resend_key: config.resend_api_key.clone(),
+            mail_from: config.mail_from.clone(),
+            ..Default::default()
+        })),
     };
     calendar::validate().map_err(anyhow::Error::msg)?;
     tracing::info!(provider = state.places.name(), "places provider ready");

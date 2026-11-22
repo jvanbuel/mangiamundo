@@ -1,4 +1,4 @@
-import type { Account, AddPlace, AddedPlace, Addition, NearbyResult, RefreshResult, Area, AreaProgress, Catalog, Celebration, Discover, Health, Located, Place, ShareLink, Suggestion, VisitResult } from './types';
+import type { Account, AuthProviders, AddPlace, AddedPlace, Addition, NearbyResult, RefreshResult, Area, AreaProgress, Catalog, Celebration, Discover, Health, Located, Place, ShareLink, Suggestion, VisitResult } from './types';
 
 const BASE = import.meta.env.VITE_API_BASE ?? '';
 const TOKEN_KEY = 'mangiamundo.token';
@@ -199,9 +199,33 @@ export const newLinkCode = () => authed<{ code: string; expires_at: number }>('P
  * Signs this device in to the account of a recovery or link code. What this device did
  * before moves into that account.
  */
-export async function restore(code: string): Promise<void> {
-	const body = { code, device: deviceName() };
-	const path = '/api/session/restore';
+/** Signs this device in to the account of a recovery or link code. */
+export const restore = (code: string) => switchAccount('/api/session/restore', { code });
+
+/** Which sign-in methods the server has set up. */
+export const authProviders = () => raw<AuthProviders>('GET', '/api/auth/providers', null);
+
+/** Emails a 6-digit sign-in code. */
+export const sendEmailCode = (email: string) => raw<void>('POST', '/api/auth/email/code', null, { email });
+
+export const signInWithEmail = (email: string, code: string) => switchAccount('/api/auth/email', { email, code });
+
+/** Signs in with an ID token from Google's or Apple's sign-in. */
+export const signInWith = (provider: 'google' | 'apple', idToken: string) => switchAccount(`/api/auth/${provider}`, { id_token: idToken });
+
+/** Signs this device out of its account; it starts afresh with a new, empty one. */
+export async function signOut(): Promise<void> {
+	const me = (await account()).devices.find((d) => d.current);
+	if (me) await removeDevice(me.id);
+	localStorage.removeItem(TOKEN_KEY);
+}
+
+/**
+ * Sends the device's token along to an endpoint that answers with another account's
+ * session (what this device held merges into it), and keeps that session.
+ */
+async function switchAccount(path: string, fields: Record<string, string>): Promise<void> {
+	const body = { ...fields, device: deviceName() };
 	let session: { token: string };
 	try {
 		session = await raw<{ token: string }>('POST', path, localStorage.getItem(TOKEN_KEY), body);

@@ -269,9 +269,6 @@ internal data class Session(val token: String)
 internal data class NewSessionBody(val device: String? = null)
 
 @Serializable
-internal data class RestoreBody(val code: String, val device: String? = null)
-
-@Serializable
 internal data class RecoveryCode(val code: String)
 
 /** A code that signs another device in to the account, once, until `expiresAt` (Unix seconds). */
@@ -299,6 +296,16 @@ data class Account(
     val devices: List<Device> = emptyList(),
     /** The public page of the user's progress, like `/p/abcd2345ef`; null when it's off. */
     @SerialName("public_profile") val publicProfile: String? = null,
+    /** The ways to sign in, oldest first; empty for an account that lives on its devices. */
+    val identities: List<Identity> = emptyList(),
+)
+
+/** A way to sign in: Sign in with Apple, Google or an email address. */
+@Serializable
+data class Identity(
+    /** "apple", "google" or "email". */
+    val provider: String,
+    val email: String? = null,
 )
 
 /** A public link to share, with its card image and a sentence to go with it. */

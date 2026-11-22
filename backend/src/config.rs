@@ -31,6 +31,15 @@ pub struct Config {
     /// OAuth 2 token (`write_notes` scope) of the Mangiamundo OSM account, so notes come
     /// from it and mappers can reply. Anonymous notes when unset.
     pub osm_notes_token: Option<String>,
+    /// Sign in with Apple: the app's bundle id and the web's Services ID.
+    pub apple_bundle_id: String,
+    pub apple_services_id: Option<String>,
+    /// Google sign-in: the web client id (Android uses it too) and the iOS one.
+    pub google_web_client_id: Option<String>,
+    pub google_ios_client_id: Option<String>,
+    /// Sends sign-in codes; without it they are only logged.
+    pub resend_api_key: Option<String>,
+    pub mail_from: String,
 }
 
 /// The main public instance is often overloaded, so community mirrors back it up.
@@ -75,6 +84,12 @@ impl Config {
                 .unwrap_or_else(|| "mailto:hello@mangiamundo.app".into()),
             osm_notes_url: var("OSM_NOTES_URL"),
             osm_notes_token: var("OSM_NOTES_TOKEN"),
+            apple_bundle_id: var("APPLE_BUNDLE_ID").unwrap_or_else(|| "app.mangiamundo".into()),
+            apple_services_id: var("APPLE_SERVICES_ID"),
+            google_web_client_id: var("GOOGLE_WEB_CLIENT_ID"),
+            google_ios_client_id: var("GOOGLE_IOS_CLIENT_ID"),
+            resend_api_key: var("RESEND_API_KEY"),
+            mail_from: var("MAIL_FROM").unwrap_or_else(|| "Mangiamundo <hello@mangiamundo.com>".into()),
             push_interval_secs: var("PUSH_INTERVAL_SECS")
                 .map(|v| v.parse())
                 .transpose()?

@@ -29,6 +29,7 @@ utoipa = { version = "6", features = ["chrono"] }
 utoipa-axum = "0.3"
 sha2 = "0.10"
 resvg = { version = "0.50.0", default-features = false, features = ["text"] }
+jsonwebtoken = "9"
 
 [dev-dependencies]
 tower = { version = "0.5", features = ["util"] }
