@@ -235,13 +235,13 @@ async fn visiting_every_place_completes_a_country() {
     assert!(places.windows(2).all(|w| key(&w[0]) <= key(&w[1])));
     assert!(places.iter().all(|p| p["visits"] == Value::Array(vec![])));
 
-    // First check-in, made on the spot: verified, 10 XP for the visit + 50 for the country.
+    // First check-in, made on the spot: 10 XP for the visit, 15 for being there, 50 for the country.
     let first = &places[0];
     let here = at(first);
     let (status, visit) = call(&app, "POST", &visits_uri(first), Some(&token), Some(&here)).await;
     assert_eq!(status, StatusCode::OK);
     assert_eq!(visit["visit"]["verified"], true);
-    assert_eq!(visit["profile"]["xp"], 60);
+    assert_eq!(visit["profile"]["xp"], 75);
 
     for place in &places[1..] {
         let uri = visits_uri(place);
@@ -262,6 +262,7 @@ async fn visiting_every_place_completes_a_country() {
     .await;
     let entry = &after["countries"][0];
     assert_eq!(entry["visited"], entry["places"]);
+    assert_eq!(entry["status"], "completed");
     assert_eq!(after["world"]["discovered"], 1);
     assert_eq!(after["world"]["completed"], 1);
     assert_eq!(
@@ -332,7 +333,7 @@ async fn visits_are_a_history_with_one_visit_per_day() {
     assert_eq!(status, StatusCode::OK);
     assert_eq!(first["visit"]["at"], START);
     assert_eq!(first["visit"]["verified"], true);
-    assert_eq!(first["profile"]["xp"], 60);
+    assert_eq!(first["profile"]["xp"], 75);
     let (_, same_day) = call(&app, "POST", &uri, Some(&token), None).await;
     assert_eq!(same_day["visit"], first["visit"]);
 
@@ -1475,6 +1476,7 @@ async fn writes_contract_fixtures() {
     // What a newer server might send: enum values this app version doesn't know.
     let mut newer = discover.clone();
     newer["badges"][0]["kind"] = "something-new".into();
+    newer["countries"][0]["status"] = "ruby".into();
     newer["events"][0]["status"] = "paused".into();
     newer["unknown_field"] = true.into();
     write("discover-newer", &newer);

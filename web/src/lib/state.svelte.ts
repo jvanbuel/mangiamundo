@@ -3,7 +3,6 @@ import * as api from './api';
 import * as push from './push';
 import { hideSplash } from './splash';
 import {
-	statusOf,
 	type AddPlace,
 	type AddedPlace,
 	type Bonus,
@@ -506,10 +505,14 @@ function celebrate(before: Discover, after: Discover, place: Place) {
 		const now = after.countries.find((c) => c.code === code);
 		const info = country(code);
 		if (!was || !now || !info) continue;
-		if (statusOf(now) === 'completed' && statusOf(was) !== 'completed') {
-			toast({ text: info.flag }, `${info.name} complete`, `You visited every place in ${app.location?.area.name ?? 'this area'}.`);
-		} else if (was.visited === 0) {
-			toast({ text: info.flag }, `${info.name} tasted`, `${now.places - now.visited} more to complete it.`);
+		if (now.status === was.status) continue;
+		const more = `${now.goal - now.visited} more for diamond.`;
+		if (now.status === 'completed') {
+			toast({ text: info.flag }, `${info.name}: diamond`, `You visited ${now.visited} of its places in ${app.location?.area.name ?? 'this area'}.`);
+		} else if (now.status === 'platinum') {
+			toast({ text: info.flag }, `${info.name}: platinum`, more);
+		} else if (now.status === 'discovered') {
+			toast({ text: info.flag }, `${info.name}: gold`, more);
 		}
 	}
 	for (const badge of after.badges) {

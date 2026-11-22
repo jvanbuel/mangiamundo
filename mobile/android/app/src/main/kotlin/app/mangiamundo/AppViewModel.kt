@@ -21,6 +21,7 @@ import app.mangiamundo.core.pendingText
 import app.mangiamundo.core.ProjectionKind
 import app.mangiamundo.core.ReminderPlan
 import app.mangiamundo.core.Status
+import app.mangiamundo.ui.label
 import app.mangiamundo.core.Visit
 import app.mangiamundo.core.World
 import app.mangiamundo.core.withRecent
@@ -602,11 +603,9 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
             val was = before.countries.firstOrNull { it.code == code } ?: continue
             val now = after.countries.firstOrNull { it.code == code } ?: continue
             val info = country(code) ?: continue
-            if (now.status == Status.COMPLETED && was.status != Status.COMPLETED) {
-                messageChannel.trySend("${info.flag} ${info.name} complete")
-            } else if (was.visited == 0) {
-                messageChannel.trySend("${info.flag} ${info.name} tasted. ${now.places - now.visited} more to complete it.")
-            }
+            if (now.status == was.status || now.status == Status.AVAILABLE) continue
+            val more = if (now.status == Status.COMPLETED) "" else " ${now.goal - now.visited} more for diamond."
+            messageChannel.trySend("${info.flag} ${info.name}: ${now.status.label.lowercase()}.$more")
         }
         for (badge in after.badges) {
             if (badge.earned && before.badges.none { it.id == badge.id && it.earned }) {

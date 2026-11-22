@@ -25,6 +25,7 @@ import app.mangiamundo.core.NearbyCountry
 import app.mangiamundo.core.Reminder
 import java.time.LocalDate
 import app.mangiamundo.core.CountryProgress
+import app.mangiamundo.core.Status
 import app.mangiamundo.core.Discover
 import app.mangiamundo.core.GroupProgress
 import app.mangiamundo.core.Place
@@ -56,11 +57,11 @@ class ScreensTest {
         Country("PE", "Peru", "SA", "🇵🇪"), Country("CN", "China", "AS", "🇨🇳"),
     )
     private val progress = listOf(
-        CountryProgress("IT", "EU", 6, 6), CountryProgress("FR", "EU", 4, 1),
-        CountryProgress("GR", "EU", 3, 0), CountryProgress("ET", "AF", 2, 1),
-        CountryProgress("MA", "AF", 2, 0), CountryProgress("JP", "AS", 5, 2),
-        CountryProgress("TH", "AS", 3, 0), CountryProgress("CN", "AS", 7, 0),
-        CountryProgress("MX", "NA", 2, 0), CountryProgress("PE", "SA", 1, 0),
+        CountryProgress("IT", "EU", 6, 6, 6, Status.COMPLETED), CountryProgress("FR", "EU", 4, 1, 4, Status.DISCOVERED),
+        CountryProgress("GR", "EU", 3, 0, 3, Status.AVAILABLE), CountryProgress("ET", "AF", 2, 1, 2, Status.DISCOVERED),
+        CountryProgress("MA", "AF", 2, 0, 2, Status.AVAILABLE), CountryProgress("JP", "AS", 14, 6, 10, Status.PLATINUM),
+        CountryProgress("TH", "AS", 3, 0, 3, Status.AVAILABLE), CountryProgress("CN", "AS", 7, 0, 7, Status.AVAILABLE),
+        CountryProgress("MX", "NA", 2, 0, 2, Status.AVAILABLE), CountryProgress("PE", "SA", 1, 0, 1, Status.AVAILABLE),
     )
     private val discover = Discover(
         countries = progress,
@@ -74,7 +75,7 @@ class ScreensTest {
         badges = listOf(
             Badge("first-bite", BadgeKind.VISITS, "First check-in", "Check in at any place.", 1, 1, true),
             Badge("flags-5", BadgeKind.COUNTRIES, "5 countries", "Eat the food of 5 countries.", 4, 5, false),
-            Badge("complete-1", BadgeKind.COMPLETED, "1 country complete", "", 1, 1, true),
+            Badge("complete-1", BadgeKind.COMPLETED, "1 diamond country", "", 1, 1, true),
             Badge("continent-EU", BadgeKind.CONTINENT, "Europe", "", 2, 3, false),
             Badge("world", BadgeKind.WORLD, "Whole world", "", 4, 10, false),
         ),

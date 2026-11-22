@@ -35,7 +35,7 @@
 
 	<dl class="totals">
 		<div><dt>Places visited</dt><dd>{discover.places_visited} <span class="muted">of {discover.places}</span></dd></div>
-		<div><dt>Countries completed</dt><dd>{discover.world.completed}</dd></div>
+		<div><dt>Diamond countries</dt><dd>{discover.world.completed}</dd></div>
 	</dl>
 	{/if}
 </section>

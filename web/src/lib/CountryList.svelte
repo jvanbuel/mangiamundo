@@ -1,11 +1,9 @@
 <script lang="ts">
 	import Gem from '@lucide/svelte/icons/gem';
 	import { country } from './state.svelte';
-	import { statusOf, type Discover } from './types';
+	import { STATUS_LABELS, type Discover } from './types';
 
 	let { discover, onselect }: { discover: Discover; onselect: (code: string) => void } = $props();
-
-	const LABELS = { available: 'To discover', discovered: 'Tasted', completed: 'Completed' } as const;
 
 	const groups = $derived(
 		discover.continents
@@ -14,7 +12,7 @@
 				continent,
 				countries: discover.countries
 					.filter((c) => c.continent === continent.code)
-					.map((c) => ({ ...c, info: country(c.code), status: statusOf(c) }))
+					.map((c) => ({ ...c, info: country(c.code) }))
 					.sort((a, b) => (a.info?.name ?? '').localeCompare(b.info?.name ?? ''))
 			}))
 	);
@@ -33,7 +31,7 @@
 						<span class="flag" aria-hidden="true">{entry.info?.flag}</span>
 						<span class="name">{entry.info?.name ?? entry.code}</span>
 						<span class="count">{entry.visited}/{entry.places}</span>
-						<span class="mark {entry.status}" title={LABELS[entry.status]}>
+						<span class="mark {entry.status}" title={STATUS_LABELS[entry.status]}>
 							{#if entry.status === 'completed'}<Gem size={10} strokeWidth={3} aria-hidden="true" />{/if}
 						</span>
 					</button>
@@ -96,7 +94,7 @@
 		font-variant-numeric: tabular-nums;
 	}
 
-	/* Status by shape as well as colour: empty ring, half full, full with a tick. */
+	/* Status by shape as well as colour: ring, half full, full, full with a gem. */
 	.mark {
 		width: 14px;
 		height: 14px;
@@ -110,6 +108,11 @@
 	.mark.discovered {
 		border-color: var(--discovered);
 		background: linear-gradient(to top, var(--discovered) 50%, transparent 50%);
+	}
+
+	.mark.platinum {
+		border-color: var(--platinum-edge);
+		background: var(--platinum-metal);
 	}
 
 	.mark.completed {

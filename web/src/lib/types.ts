@@ -48,12 +48,15 @@ export function visitedToday(place: Place, now = new Date()): boolean {
 	return latest !== undefined && new Date(latest.at * 1000).toDateString() === now.toDateString();
 }
 
-export type Status = 'available' | 'discovered' | 'completed';
+export type Status = Schemas['Status'];
 
-export function statusOf(c: { places: number; visited: number }): Status {
-	if (c.visited === 0) return 'available';
-	return c.visited >= c.places ? 'completed' : 'discovered';
-}
+/** What players call each status: `discovered` is gold, `completed` diamond. */
+export const STATUS_LABELS: Record<Status, string> = {
+	available: 'To discover',
+	discovered: 'Gold',
+	platinum: 'Platinum',
+	completed: 'Diamond'
+};
 
 export const distance = (m: number) => (m < 1000 ? `${Math.round(m / 10) * 10} m` : `${(m / 1000).toFixed(1)} km`);
 

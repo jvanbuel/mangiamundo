@@ -247,11 +247,13 @@ pub async fn area_rows(
 
 /// Visits count each place once, however often the user went back.
 pub async fn lifetime(db: &SqlitePool, user: &str) -> sqlx::Result<Lifetime> {
-    let visits: i64 =
-        sqlx::query_scalar("SELECT COUNT(DISTINCT place_id) FROM visits WHERE user_id = ?")
-            .bind(user)
-            .fetch_one(db)
-            .await?;
+    let (visits, verified): (i64, i64) = sqlx::query_as(
+        "SELECT COUNT(DISTINCT place_id), COUNT(DISTINCT place_id) FILTER (WHERE verified)
+         FROM visits WHERE user_id = ?",
+    )
+    .bind(user)
+    .fetch_one(db)
+    .await?;
     let countries: i64 = sqlx::query_scalar(
         "SELECT COUNT(DISTINCT pc.country) FROM visits v
          JOIN place_countries pc ON pc.place_id = v.place_id WHERE v.user_id = ?",
@@ -268,6 +270,7 @@ pub async fn lifetime(db: &SqlitePool, user: &str) -> sqlx::Result<Lifetime> {
     .await?;
     Ok(Lifetime {
         visits: visits as u32,
+        verified: verified as u32,
         countries: countries as u32,
         added: added as u32,
         country_bonuses: country_bonuses as u32,

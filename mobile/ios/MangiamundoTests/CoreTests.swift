@@ -143,6 +143,7 @@ final class ContractTests: XCTestCase {
         let discover = try decode(Discover.self, "discover-newer")
         XCTAssertEqual(discover.badges[0].kind, .unknown)
         XCTAssertEqual(discover.events[0].status, .unknown)
+        XCTAssertEqual(discover.countries[0].status, .discovered)
     }
 }
 

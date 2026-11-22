@@ -563,9 +563,15 @@ export interface components {
             continent: string;
             /**
              * Format: int32
+             * @description Places to visit for diamond: [`DIAMOND_PLACES`], or every place when there are fewer.
+             */
+            goal: number;
+            /**
+             * Format: int32
              * @description Places of this country in the area.
              */
             places: number;
+            status: components["schemas"]["Status"];
             /** Format: int32 */
             visited: number;
         };
@@ -647,7 +653,7 @@ export interface components {
             code: string;
             /**
              * Format: int32
-             * @description Available countries where every place was visited.
+             * @description Available countries at diamond.
              */
             completed: number;
             /**
@@ -805,6 +811,12 @@ export interface components {
             /** @description Send it as `Authorization: Bearer <token>`. */
             token: string;
         };
+        /**
+         * @description How far the user got with a country's food in the area. Clients show `discovered` as
+         *     gold and `completed` as diamond.
+         * @enum {string}
+         */
+        Status: "available" | "discovered" | "platinum" | "completed";
         /** @description A browser's PushSubscription (as from `subscription.toJSON()`), plus the user's area. */
         SubscribeBody: {
             /** @description The area to send reminders for. */

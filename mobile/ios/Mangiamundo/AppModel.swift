@@ -617,11 +617,9 @@ final class AppModel {
             guard let was = before.countries.first(where: { $0.code == code }),
                   let now = after.countries.first(where: { $0.code == code }),
                   let info = country(code) else { continue }
-            if now.status == .completed, was.status != .completed {
-                toast("\(info.flag) \(info.name) complete")
-            } else if was.visited == 0 {
-                toast("\(info.flag) \(info.name) tasted. \(now.places - now.visited) more to complete it.")
-            }
+            guard now.status != was.status, now.status != .available else { continue }
+            let more = now.status == .completed ? "" : " \(now.goal - now.visited) more for diamond."
+            toast("\(info.flag) \(info.name): \(now.status.label.lowercased()).\(more)")
         }
         for badge in after.badges where badge.earned {
             if !before.badges.contains(where: { $0.id == badge.id && $0.earned }) {

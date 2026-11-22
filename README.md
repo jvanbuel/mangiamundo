@@ -93,11 +93,12 @@ HTTPS (or localhost), and iPhones only for apps added to the home screen.
 
 ## How the game works
 
-- **Tasted**: you checked in at one or more places of a country.
-- **Completed**: you visited every place of that country in your area.
+- **Gold**: you checked in at one or more places of a country.
+- **Platinum**: you visited 5 of its places in your area.
+- **Diamond**: you visited 10 of its places, or all of them when it has fewer.
 - **Continent / world badges**: taste every country that is available in your city.
-- **XP**: 10 per check-in, 50 per new country. Level *n* starts at 100·(n−1)² XP.
-- A check-in made within 250 m of the place is marked as verified.
+- **XP**: 10 per check-in, 50 per new country, and 15 more for a check-in made within
+  250 m of the place (verified). Level *n* starts at 100·(n−1)² XP.
 
 Accounts are anonymous: each device asks `POST /api/session` for a token once and
 sends it as `Authorization: Bearer <token>`.

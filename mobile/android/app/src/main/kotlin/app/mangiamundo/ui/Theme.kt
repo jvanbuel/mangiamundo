@@ -18,8 +18,8 @@ import app.mangiamundo.R
 
 /**
  * The palette of web/src/app.css, so every client looks the same: blue for the app and
- * for countries still to discover, gold once a country is tasted, and a sparkling
- * diamond once it is completed.
+ * for countries still to discover, gold once a country is tasted, platinum after a few
+ * places, and a sparkling diamond once it is completed.
  */
 data class AppColors(
     val bg: Color,
@@ -42,6 +42,8 @@ data class AppColors(
     val discoveredEdge: Color,
     val discoveredText: Color,
     val onDiscovered: Color,
+    val platinum: Color,
+    val platinumEdge: Color,
     /** The diamond's base fill on the map. */
     val completed: Color,
     val completedEdge: Color,
@@ -61,6 +63,15 @@ data class AppColors(
             0.5f to Color(0xFFF1EAFF),
             0.65f to Color(0xFFBDE5FB),
             1f to Color(0xFFF0FBFF),
+        )
+
+    /** Platinum as a surface: a cool metallic sheen. */
+    val platinumMetal: Brush
+        get() = Brush.linearGradient(
+            0f to Color(0xFFF4F6F8),
+            0.45f to Color(0xFFC3C8D0),
+            0.6f to Color(0xFFEEF0F3),
+            1f to Color(0xFFAAB1BB),
         )
 
     /** A full progress bar in icy blue with a bright band. */
@@ -88,6 +99,8 @@ val LightColors = AppColors(
     discoveredEdge = Color(0xFF8A6200),
     discoveredText = Color(0xFF7A5600),
     onDiscovered = Color(0xFF3D2A00),
+    platinum = Color(0xFFC3C8D0),
+    platinumEdge = Color(0xFF5F6773),
     completed = Color(0xFFE3F5FE),
     completedEdge = Color(0xFF2F8FC4),
     completedFacet = Color(0xFF8FCDEF),
@@ -117,6 +130,8 @@ val DarkColors = AppColors(
     discoveredEdge = Color(0xFFF2C14E),
     discoveredText = Color(0xFFF2C14E),
     onDiscovered = Color(0xFF2A1A00),
+    platinum = Color(0xFFC9CED6),
+    platinumEdge = Color(0xFFEEF1F5),
     completed = Color(0xFFE3F5FE),
     completedEdge = Color(0xFF8FD6FF),
     completedFacet = Color(0xFF8FCDEF),

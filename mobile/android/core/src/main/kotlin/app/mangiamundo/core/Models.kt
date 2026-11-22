@@ -26,7 +26,16 @@ data class Continent(val code: String, val name: String)
 @Serializable
 data class Catalog(val countries: List<Country>, val continents: List<Continent>)
 
-enum class Status { AVAILABLE, DISCOVERED, COMPLETED }
+/** How far the user got with a country's food: gold, platinum, then diamond. */
+@Serializable
+enum class Status {
+    @SerialName("available") AVAILABLE,
+    /** Gold. */
+    @SerialName("discovered") DISCOVERED,
+    @SerialName("platinum") PLATINUM,
+    /** Diamond. */
+    @SerialName("completed") COMPLETED,
+}
 
 @Serializable
 data class CountryProgress(
@@ -34,14 +43,11 @@ data class CountryProgress(
     val continent: String,
     val places: Int,
     val visited: Int,
-) {
-    val status: Status
-        get() = when {
-            visited == 0 -> Status.AVAILABLE
-            visited >= places -> Status.COMPLETED
-            else -> Status.DISCOVERED
-        }
-}
+    /** Places to visit for diamond. */
+    val goal: Int,
+    /** A status from a newer server reads as gold. */
+    val status: Status = Status.DISCOVERED,
+)
 
 @Serializable
 data class GroupProgress(
