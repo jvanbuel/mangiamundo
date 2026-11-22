@@ -3,14 +3,15 @@
 //! Every few minutes the server looks at each subscription in the subscriber's own
 //! time zone. From 10:00 on the day a celebration or event starts it sends one
 //! notification, but only when the subscriber's area has places of that country. It also
-//! says when food from a country the subscriber hasn't eaten yet appears in their area.
+//! says when food from a country the subscriber hasn't eaten yet appears in their area,
+//! and on the first of the month what that month's quests are.
 
 use std::collections::{HashMap, HashSet};
 use std::time::Duration as StdDuration;
 
 use base64::engine::general_purpose::URL_SAFE_NO_PAD;
 use base64::Engine;
-use chrono::{Duration, NaiveDate, Timelike};
+use chrono::{Datelike, Duration, NaiveDate, Timelike};
 use serde::{Deserialize, Serialize};
 use sqlx::{Row, SqlitePool};
 use web_push::{
@@ -241,14 +242,37 @@ async fn deliver(
     }
 }
 
+/// The reminder of the month's quests, on its first day.
+pub fn quests_notification(monthly: &crate::game::MonthlyQuests) -> Notification {
+    let titles: Vec<&str> = monthly.quests.iter().map(|q| q.title.as_str()).collect();
+    Notification {
+        title: "New quests this month".into(),
+        body: format!("{}.", titles.join(", ")),
+        url: "/?tab=badges".into(),
+        tag: "quests".into(),
+    }
+}
+
 /// The reminders due for one subscriber on `day`, keyed for de-duplication.
 async fn due(
     state: &AppState,
     user: &str,
     day: NaiveDate,
+    area_id: &str,
+    rows: &[PlaceRow],
     counts: &HashMap<String, u32>,
 ) -> anyhow::Result<Vec<(String, Notification)>> {
     let mut out = Vec::new();
+    if day.day() == 1 {
+        // ponytail: this also books quests already finished on the 1st; harmless, they pay once.
+        let monthly = crate::api::monthly_quests(state, Some(user), area_id, day, rows)
+            .await
+            .map_err(|e| anyhow::anyhow!("{e:?}"))?;
+        out.push((
+            format!("quests:{}", monthly.month),
+            quests_notification(&monthly),
+        ));
+    }
     for celebration in calendar::starting_on(day) {
         if let Some(notification) = celebration_notification(&celebration, counts) {
             out.push((
@@ -336,7 +360,9 @@ pub async fn run_once(state: &AppState, pusher: &Pusher) -> anyhow::Result<usize
         }
 
         let mut gone = false;
-        for (dedupe, notification) in due(state, &user, local.date_naive(), &counts).await? {
+        for (dedupe, notification) in
+            due(state, &user, local.date_naive(), area_id, &rows, &counts).await?
+        {
             if !store::mark_push_sent(&state.db, &sub.endpoint, &dedupe, state.now()).await? {
                 continue;
             }

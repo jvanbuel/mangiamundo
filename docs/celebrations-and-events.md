@@ -4,7 +4,7 @@
 
 - `backend/data/celebrations.json`: national days and food festivals per country.
   Fixed dates use `"date": "MM-DD"`; moving ones list `"dates"` per year (filled in
-  for 2026–2028, so extend it before 2029). Moon-sighting dates are marked
+  for 2026–2028; a test fails once next year is missing). Moon-sighting dates are marked
   `approximate`.
 - `backend/data/events.json`: time-limited challenges ("Japan month"): countries, a
   date range and how many different places to visit. Only check-ins made during the

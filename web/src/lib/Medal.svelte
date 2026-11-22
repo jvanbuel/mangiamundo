@@ -1,16 +1,18 @@
 <script lang="ts">
 	import BadgeCheck from '@lucide/svelte/icons/badge-check';
 	import Crown from '@lucide/svelte/icons/crown';
+	import Flame from '@lucide/svelte/icons/flame';
 	import Flag from '@lucide/svelte/icons/flag';
 	import Globe from '@lucide/svelte/icons/globe';
 	import Map from '@lucide/svelte/icons/map';
 	import MapPinPlus from '@lucide/svelte/icons/map-pin-plus';
 	import PartyPopper from '@lucide/svelte/icons/party-popper';
+	import Target from '@lucide/svelte/icons/target';
 	import Utensils from '@lucide/svelte/icons/utensils';
 	import type { BadgeKind } from './types';
 
-	/** Badge kinds, plus `event` for time-limited badges. */
-	type MedalKind = BadgeKind | 'event';
+	/** Badge kinds, plus `event` for time-limited badges and `quest` for monthly quests. */
+	type MedalKind = BadgeKind | 'event' | 'quest';
 
 	let { kind, earned = true, size = 64 }: { kind: MedalKind; earned?: boolean; size?: number } = $props();
 
@@ -22,7 +24,9 @@
 		world: Globe,
 		everything: Crown,
 		pioneer: MapPinPlus,
-		event: PartyPopper
+		streak: Flame,
+		event: PartyPopper,
+		quest: Target
 	};
 	/** Gold for tasting, diamond for finishing, blue for the rest. */
 	const FACES: Record<MedalKind, 'gold' | 'diamond' | 'blue' | 'event'> = {
@@ -33,7 +37,9 @@
 		world: 'diamond',
 		everything: 'diamond',
 		pioneer: 'blue',
-		event: 'event'
+		streak: 'gold',
+		event: 'event',
+		quest: 'blue'
 	};
 	const COLORS = { gold: 'var(--discovered)', diamond: 'var(--diamond)', blue: 'var(--accent)', event: 'var(--event)' };
 	const EDGES = {

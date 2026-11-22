@@ -333,7 +333,8 @@
           "continent",
           "world",
           "everything",
-          "pioneer"
+          "pioneer",
+          "streak"
         ],
         "type": "string"
       },
@@ -635,11 +636,15 @@
                   "$ref": "#/components/schemas/EventProgress"
                 },
                 "type": "array"
+              },
+              "quests": {
+                "$ref": "#/components/schemas/MonthlyQuests"
               }
             },
             "required": [
               "area",
-              "events"
+              "events",
+              "quests"
             ],
             "type": "object"
           }
@@ -1035,6 +1040,36 @@
         ],
         "type": "object"
       },
+      "MonthlyQuests": {
+        "properties": {
+          "ends": {
+            "format": "date",
+            "type": "string"
+          },
+          "month": {
+            "description": "e.g. `2026-11`.",
+            "type": "string"
+          },
+          "quests": {
+            "items": {
+              "$ref": "#/components/schemas/Quest"
+            },
+            "type": "array"
+          },
+          "starts": {
+            "description": "First and last day, inclusive.",
+            "format": "date",
+            "type": "string"
+          }
+        },
+        "required": [
+          "month",
+          "starts",
+          "ends",
+          "quests"
+        ],
+        "type": "object"
+      },
       "NearbyCountry": {
         "properties": {
           "code": {
@@ -1208,6 +1243,11 @@
             "minimum": 0,
             "type": "integer"
           },
+          "best_streak": {
+            "format": "int32",
+            "minimum": 0,
+            "type": "integer"
+          },
           "countries": {
             "format": "int32",
             "minimum": 0,
@@ -1225,6 +1265,12 @@
             "type": "integer"
           },
           "next_level_xp": {
+            "format": "int32",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "streak": {
+            "description": "Months in a row with at least one check-in, up to this one. A month without one yet\ndoesn't break it until the month is over.",
             "format": "int32",
             "minimum": 0,
             "type": "integer"
@@ -1247,7 +1293,9 @@
           "next_level_xp",
           "visits",
           "countries",
-          "added"
+          "added",
+          "streak",
+          "best_streak"
         ],
         "type": "object"
       },
@@ -1262,6 +1310,70 @@
           "public_key"
         ],
         "type": "object"
+      },
+      "Quest": {
+        "properties": {
+          "countries": {
+            "description": "The countries that count, for quests about particular ones; empty otherwise.",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "description": {
+            "type": "string"
+          },
+          "done": {
+            "type": "boolean"
+          },
+          "id": {
+            "description": "Stable within the month, e.g. `new-country`.",
+            "type": "string"
+          },
+          "kind": {
+            "$ref": "#/components/schemas/QuestKind"
+          },
+          "progress": {
+            "format": "int32",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "target": {
+            "format": "int32",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "title": {
+            "type": "string"
+          },
+          "xp": {
+            "format": "int32",
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "id",
+          "kind",
+          "title",
+          "description",
+          "countries",
+          "progress",
+          "target",
+          "done",
+          "xp"
+        ],
+        "type": "object"
+      },
+      "QuestKind": {
+        "enum": [
+          "new_country",
+          "continents",
+          "celebration",
+          "level_up",
+          "check_ins"
+        ],
+        "type": "string"
       },
       "RecoveryCode": {
         "properties": {
@@ -2396,7 +2508,7 @@
             "token": []
           }
         ],
-        "summary": "Countries available in the area, progress, badges, profile and events.",
+        "summary": "Countries available in the area, progress, badges, profile, events and monthly quests.",
         "tags": [
           "game"
         ]

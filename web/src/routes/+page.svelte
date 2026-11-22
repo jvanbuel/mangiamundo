@@ -195,7 +195,7 @@
 					<CountryList discover={app.discover} onselect={select} />
 					{@render addEntry()}
 				{:else}
-					<Badges badges={app.discover.badges} events={app.discover.events} />
+					<Badges badges={app.discover.badges} events={app.discover.events} quests={app.discover.quests} />
 				{/if}
 			{/if}
 		{/if}

@@ -73,6 +73,33 @@
       "title": "Pioneer"
     },
     {
+      "description": "Check in somewhere every month for 3 months.",
+      "earned": false,
+      "id": "streak-3",
+      "kind": "streak",
+      "progress": 1,
+      "target": 3,
+      "title": "3 months in a row"
+    },
+    {
+      "description": "Check in somewhere every month for 6 months.",
+      "earned": false,
+      "id": "streak-6",
+      "kind": "streak",
+      "progress": 1,
+      "target": 6,
+      "title": "6 months in a row"
+    },
+    {
+      "description": "Check in somewhere every month for 12 months.",
+      "earned": false,
+      "id": "streak-12",
+      "kind": "streak",
+      "progress": 1,
+      "target": 12,
+      "title": "12 months in a row"
+    },
+    {
       "description": "Eat from every Africa country found here.",
       "earned": false,
       "id": "continent-AF",
@@ -532,12 +559,56 @@
   "places_visited": 2,
   "profile": {
     "added": 0,
+    "best_streak": 1,
     "countries": 1,
-    "level": 1,
-    "level_xp": 0,
-    "next_level_xp": 100,
+    "level": 2,
+    "level_xp": 100,
+    "next_level_xp": 400,
+    "streak": 1,
     "visits": 2,
-    "xp": 85
+    "xp": 235
+  },
+  "quests": {
+    "ends": "2026-11-30",
+    "month": "2026-11",
+    "quests": [
+      {
+        "countries": [
+          "NP"
+        ],
+        "description": "Visit places of a country celebrating this month.",
+        "done": false,
+        "id": "celebration",
+        "kind": "celebration",
+        "progress": 0,
+        "target": 2,
+        "title": "Join the celebration",
+        "xp": 75
+      },
+      {
+        "countries": [],
+        "description": "Eat the food of a country you haven't tried yet.",
+        "done": true,
+        "id": "new-country",
+        "kind": "new_country",
+        "progress": 1,
+        "target": 1,
+        "title": "Taste a new country",
+        "xp": 100
+      },
+      {
+        "countries": [],
+        "description": "Check in at two places this month.",
+        "done": true,
+        "id": "check-ins",
+        "kind": "check_ins",
+        "progress": 2,
+        "target": 2,
+        "title": "Two check-ins",
+        "xp": 50
+      }
+    ],
+    "starts": "2026-11-01"
   },
   "unknown_field": true,
   "world": {

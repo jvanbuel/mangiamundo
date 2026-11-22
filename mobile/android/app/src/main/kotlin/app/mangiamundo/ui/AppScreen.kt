@@ -264,7 +264,7 @@ fun AppScreen(vm: AppViewModel = viewModel()) {
                                     }
                                     item(key = "add") { addLink() }
                                 } else {
-                                    item(key = "badges") { BadgeGrid(discover.badges, discover.events) }
+                                    item(key = "badges") { BadgeGrid(discover.badges, discover.events, discover.quests) }
                                 }
                             }
                         }

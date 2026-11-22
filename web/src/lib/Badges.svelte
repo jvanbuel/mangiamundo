@@ -1,8 +1,8 @@
 <script lang="ts">
 	import Medal from './Medal.svelte';
-	import type { Badge, EventProgress } from './types';
+	import type { Badge, EventProgress, MonthlyQuests } from './types';
 
-	let { badges, events }: { badges: Badge[]; events: EventProgress[] } = $props();
+	let { badges, events, quests }: { badges: Badge[]; events: EventProgress[]; quests: MonthlyQuests } = $props();
 
 	const sorted = $derived([...badges].sort((a, b) => Number(b.earned) - Number(a.earned)));
 	const running = $derived(events.filter((e) => e.status !== 'ended' && !e.earned));
@@ -19,6 +19,31 @@
 		return left <= 0 ? 'Last day' : `${left + 1} days left`;
 	}
 </script>
+
+<section class="limited">
+	<div class="row">
+		<h3>This month</h3>
+		<span class="when">Until {short(quests.ends)}</span>
+	</div>
+	<ul>
+		{#each quests.quests as q (q.id)}
+			<li>
+				<Medal kind="quest" earned={q.done} size={52} />
+				<div class="info">
+					<div class="row">
+						<strong>{q.title}</strong>
+						<span class="muted">{q.done ? 'Done' : `+${q.xp} XP`}</span>
+					</div>
+					<p class="muted">{q.description}</p>
+					<div class="row progress">
+						<div class="bar"><span style:width="{(q.progress / q.target) * 100}%"></span></div>
+						<span class="muted">{q.progress} / {q.target}</span>
+					</div>
+				</div>
+			</li>
+		{/each}
+	</ul>
+</section>
 
 {#if running.length}
 	<section class="limited">

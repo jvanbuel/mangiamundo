@@ -1,10 +1,12 @@
 {
   "profile": {
     "added": 0,
+    "best_streak": 1,
     "countries": 1,
     "level": 1,
     "level_xp": 0,
     "next_level_xp": 100,
+    "streak": 1,
     "visits": 1,
     "xp": 75
   },
