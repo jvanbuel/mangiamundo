@@ -14,9 +14,10 @@
 	import Toasts from '#lib/Toasts.svelte';
 	import WorldMap from '#lib/WorldMap.svelte';
 	import MapPin from '@lucide/svelte/icons/map-pin';
+	import Dices from '@lucide/svelte/icons/dices';
 	import Navigation from '@lucide/svelte/icons/navigation';
 	import Settings from '@lucide/svelte/icons/settings';
-	import { app, init, lookAgainNearby, refresh, select, setProjection, setTheme, toast, type Theme } from '#lib/state.svelte.ts';
+	import { app, init, lookAgainNearby, refresh, select, setProjection, setTheme, spin, toast, type Theme } from '#lib/state.svelte.ts';
 
 	let pickerOpen = $state(false);
 	let settingsOpen = $state(false);
@@ -77,11 +78,17 @@
 				location={app.location}
 				projection={app.projection}
 				theme={`${app.theme}-${systemDark}`}
+				spinning={app.spinning}
 				onselect={pick}
 			/>
 		{/if}
 
 		<div class="controls">
+			{#if app.discover}
+				<button class="spin" disabled={app.spinning} onclick={spin} title="Where shall we eat? Spin for a place to try">
+					<Dices size={16} strokeWidth={2.5} aria-hidden="true" />{app.spinning ? 'Spinning…' : 'Spin'}
+				</button>
+			{/if}
 			<div class="toggle" role="group" aria-label="Map projection">
 				<button aria-pressed={app.projection === 'globe'} onclick={() => setProjection('globe')}>Globe</button>
 				<button aria-pressed={app.projection === 'mercator'} onclick={() => setProjection('mercator')}>Flat</button>
@@ -371,6 +378,23 @@
 		z-index: 1;
 		display: flex;
 		gap: 8px;
+	}
+
+	.spin {
+		display: inline-flex;
+		align-items: center;
+		gap: 6px;
+		padding: 6px 16px;
+		border-radius: 999px;
+		background: var(--accent);
+		color: var(--on-accent);
+		font-size: var(--text-sm);
+		font-weight: 700;
+		box-shadow: inset 0 -3px 0 color-mix(in srgb, var(--accent) 70%, #000);
+	}
+
+	.spin:disabled {
+		opacity: 0.8;
 	}
 
 	.setting {

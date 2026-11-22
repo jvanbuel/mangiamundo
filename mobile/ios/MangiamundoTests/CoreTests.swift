@@ -8,6 +8,15 @@ final class CoreTests: XCTestCase {
         world = try XCTUnwrap(World.bundled())
     }
 
+    func testSpinsLandOnTheMainland() throws {
+        let france = try XCTUnwrap(world.countries.first { $0.code == "FR" }).landing()
+        XCTAssertLessThan(abs(france.lng - 2.5), 4)
+        XCTAssertLessThan(abs(france.lat - 46.5), 4)
+        let belgium = try XCTUnwrap(world.countries.first { $0.code == "BE" }).landing()
+        XCTAssertEqual(world.country(lng: belgium.lng, lat: belgium.lat)?.code, "BE")
+        XCTAssertEqual(belgium.zoom, 4)
+    }
+
     func testFindsCountriesByPosition() {
         XCTAssertEqual(world.country(lng: 4.70, lat: 50.88)?.code, "BE")
         XCTAssertEqual(world.country(lng: 139.65, lat: 35.68)?.code, "JP")

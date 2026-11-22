@@ -4,6 +4,7 @@
 	import type { Map as MapLibreMap, MapGeoJSONFeature } from 'maplibre-gl';
 	import type { Feature, FeatureCollection, Geometry } from 'geojson';
 	import { type Country, type CountryProgress, type Location } from './types';
+	import { SPIN_MS } from './state.svelte';
 
 	interface Props {
 		countries: Country[];
@@ -13,10 +14,12 @@
 		projection: 'globe' | 'mercator';
 		/** Changes whenever the colour scheme does, so the map can repaint. */
 		theme: string;
+		/** Turns the globe until it goes false; the camera then flies to `selected`. */
+		spinning: boolean;
 		onselect: (code: string, name: string, available: boolean) => void;
 	}
 
-	let { countries, progress, selected, location, projection, theme, onselect }: Props = $props();
+	let { countries, progress, selected, location, projection, theme, spinning, onselect }: Props = $props();
 
 	/** Zoom at which the globe's diameter fills most of the map's shorter side. */
 	function fittingZoom(el: HTMLElement, lat: number, fill = 0.95): number {
@@ -387,6 +390,8 @@
 		map.setPaintProperty('fill', 'fill-opacity', fillOpacity(selected !== null) as any);
 
 		// The camera's one owner: fly to the selected country, or else the globe around the user.
+		// A spin has the camera until it lands.
+		if (spinning) return;
 		const box = selected ? bounds.get(selected) : null;
 		const animate = !still;
 		if (box) {
@@ -397,6 +402,28 @@
 			const zoom = fittingZoom(map.getContainer(), location.lat);
 			map.easeTo({ center: [location.lng, location.lat], zoom, duration: animate ? 1200 : 0 });
 		}
+	});
+
+	// A spin: zoom out to the whole globe and turn it until the spin lands, when the camera
+	// effect above flies to the chosen country.
+	$effect(() => {
+		if (!map || !spinning || still) return;
+		const m = map;
+		m.stop();
+		const from = m.getCenter();
+		const fromZoom = m.getZoom();
+		const globe = fittingZoom(m.getContainer(), from.lat);
+		const start = performance.now();
+		let frame = 0;
+		const tick = (now: number) => {
+			const elapsed = now - start;
+			const out = Math.min(1, elapsed / 500);
+			// One turn per SPIN_MS, zooming out over the first half second.
+			m.jumpTo({ center: [from.lng + (360 * elapsed) / SPIN_MS, from.lat], zoom: fromZoom + (globe - fromZoom) * out });
+			frame = requestAnimationFrame(tick);
+		};
+		frame = requestAnimationFrame(tick);
+		return () => cancelAnimationFrame(frame);
 	});
 
 	// Completed countries get the diamond: facets over their fill, and sparkles.

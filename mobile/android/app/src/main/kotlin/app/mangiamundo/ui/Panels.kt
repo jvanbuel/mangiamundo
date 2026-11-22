@@ -32,6 +32,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.rounded.AddLocationAlt
 import androidx.compose.material.icons.rounded.Celebration
+import androidx.compose.material.icons.rounded.Casino
 import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.Diamond
 import androidx.compose.material.icons.rounded.Close
@@ -747,6 +748,11 @@ fun PlaceDetail(
     refreshing: Boolean = false,
     onRefresh: () -> Unit = {},
     onEdit: () -> Unit = {},
+    /** The place came from a spin: offer to spin again or put it off. */
+    spun: Boolean = false,
+    spinning: Boolean = false,
+    onSpin: () -> Unit = {},
+    onNotToday: () -> Unit = {},
     today: LocalDate = LocalDate.now(),
     onToggle: () -> Unit,
 ) {
@@ -783,6 +789,12 @@ fun PlaceDetail(
         ) {
             CheckInButton(place, busy, today, onToggle)
             PlaceLinks(place)
+        }
+        if (spun) {
+            Row(Modifier.padding(bottom = 12.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                ChunkyButton("Spin again", onSpin, face = colors.track, content = colors.text, enabled = !spinning, icon = Icons.Rounded.Casino)
+                ChunkyButton("Not today", onNotToday, face = colors.track, content = colors.text, enabled = !spinning)
+            }
         }
         val where = listOfNotNull(place.address, place.distanceM.takeIf { it > 0 }?.let { "${distance(it)} away" })
         if (where.isNotEmpty()) Text(where.joinToString(" · "), style = body, color = colors.text)

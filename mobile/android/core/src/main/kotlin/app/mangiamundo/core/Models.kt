@@ -309,7 +309,11 @@ data class AreaProgress(
 )
 
 @Serializable
-internal data class ErrorBody(val error: String? = null)
+internal data class ErrorBody(val error: String? = null, val code: String? = null)
+
+/** A place to try from `/api/suggestion`, and the country the globe lands on. */
+@Serializable
+data class Suggestion(val country: String, val place: Place)
 
 @Serializable
 internal data class CheckInBody(val position: LatLng? = null)
