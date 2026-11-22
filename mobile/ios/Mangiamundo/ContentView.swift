@@ -93,6 +93,20 @@ struct ContentView: View {
         }
     }
 
+    /// The lit-up map as the user sees it now, with their progress, for the share sheet.
+    private func shareCard(_ discover: Discover) -> (card: ShareCard, message: String)? {
+        guard let world = model.world else { return nil }
+        let place = model.location?.area.name ?? "my city"
+        let (tasted, total) = (discover.world.discovered, discover.world.available)
+        let card = ShareCard(
+            world: world, statuses: statuses, kind: model.projection, camera: model.camera,
+            headline: "\(tasted) of \(total) countries tasted",
+            caption: "\(place) · Level \(discover.profile.level) · mangiamundo.com"
+        )
+        let message = "I've tasted food from \(tasted) of the \(total) countries I can eat in \(place). Level \(discover.profile.level) on Mangiamundo. https://mangiamundo.com"
+        return (card, message)
+    }
+
     private var statuses: [String: Status] {
         var result: [String: Status] = [:]
         for entry in model.discover?.countries ?? [] {
@@ -168,7 +182,7 @@ struct ContentView: View {
                     .foregroundStyle(Theme.muted)
                 addLink
             } else {
-                Passport(discover: discover)
+                Passport(discover: discover, share: shareCard(discover))
                 if selected == nil && !model.celebrations.isEmpty {
                     ComingUp(celebrations: model.celebrations)
                 }

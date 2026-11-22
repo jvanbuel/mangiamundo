@@ -1,3 +1,29 @@
+<script module lang="ts">
+	import type { Map as ShownMap } from 'maplibre-gl';
+
+	let shown: ShownMap | null = null;
+
+	/**
+	 * The map as it is drawn right now, copied to a plain canvas. WebGL clears its
+	 * buffer once a frame is on screen, so the copy is taken while a fresh frame renders.
+	 */
+	export function mapSnapshot(): Promise<HTMLCanvasElement | null> {
+		const m = shown;
+		if (!m) return Promise.resolve(null);
+		return new Promise((resolve) => {
+			m.once('render', () => {
+				const src = m.getCanvas();
+				const copy = document.createElement('canvas');
+				copy.width = src.width;
+				copy.height = src.height;
+				copy.getContext('2d')!.drawImage(src, 0, 0);
+				resolve(copy);
+			});
+			m.triggerRepaint();
+		});
+	}
+</script>
+
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import { prefersReducedMotion } from 'svelte/motion';
@@ -358,13 +384,14 @@
 				const attribution = container.querySelector('.maplibregl-ctrl-attrib');
 				attribution?.classList.remove('maplibregl-compact-show');
 				attribution?.removeAttribute('open');
-				if (!disposed) map = m;
+				if (!disposed) map = shown = m;
 			});
 
 		})();
 
 		return () => {
 			disposed = true;
+			if (shown === instance) shown = null;
 			instance?.remove();
 		};
 	});

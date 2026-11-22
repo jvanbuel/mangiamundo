@@ -33,6 +33,7 @@ import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.rounded.AddLocationAlt
 import androidx.compose.material.icons.rounded.Celebration
 import androidx.compose.material.icons.rounded.Check
+import androidx.compose.material.icons.rounded.Share
 import androidx.compose.material.icons.rounded.Diamond
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.Notifications
@@ -493,7 +494,7 @@ private fun StatRow(label: String, value: Int, total: Int? = null) {
 }
 
 @Composable
-fun Passport(discover: Discover) {
+fun Passport(discover: Discover, onShare: (() -> Unit)? = null) {
     val colors = LocalAppColors.current
     val profile = discover.profile
     Card {
@@ -519,6 +520,9 @@ fun Passport(discover: Discover) {
                     Text("Diamond countries", style = MaterialTheme.typography.bodySmall, color = colors.muted)
                     Text("${discover.world.completed}", style = MaterialTheme.typography.titleSmall, color = colors.text)
                 }
+            }
+            if (onShare != null && discover.placesVisited > 0) {
+                ChunkyButton("Share my map", onClick = onShare, icon = Icons.Rounded.Share)
             }
         }
     }

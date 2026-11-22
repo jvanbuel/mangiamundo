@@ -38,10 +38,15 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.drawWithContent
+import androidx.compose.ui.graphics.asAndroidBitmap
+import androidx.compose.ui.graphics.layer.drawLayer
+import androidx.compose.ui.graphics.rememberGraphicsLayer
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -55,6 +60,7 @@ import android.Manifest
 import android.os.Build
 import app.mangiamundo.core.AreaKind
 import app.mangiamundo.core.ProjectionKind
+import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -150,6 +156,9 @@ fun AppScreen(vm: AppViewModel = viewModel()) {
     val discover = vm.discover
     val selected = discover?.countries?.firstOrNull { it.code == vm.selected }
     val statuses = remember(discover) { discover?.countries.orEmpty().associate { it.code to it.status } }
+    // The map as last drawn, kept so it can be shared as an image.
+    val mapLayer = rememberGraphicsLayer()
+    val shareScope = rememberCoroutineScope()
 
     Scaffold(
         // The place sheet covers this host, so it shows messages itself while open.
@@ -170,7 +179,10 @@ fun AppScreen(vm: AppViewModel = viewModel()) {
                             camera = vm.camera,
                             onCamera = { vm.camera = it },
                             onTap = { vm.tapCountry(it.code, it.name) },
-                            modifier = Modifier.fillMaxSize(),
+                            modifier = Modifier.fillMaxSize().drawWithContent {
+                                mapLayer.record { this@drawWithContent.drawContent() }
+                                drawLayer(mapLayer)
+                            },
                         )
                     }
                     SingleChoiceSegmentedButtonRow(
@@ -215,7 +227,23 @@ fun AppScreen(vm: AppViewModel = viewModel()) {
                             item(key = "add") { addLink() }
                         }
                         else -> {
-                            item { Passport(discover) }
+                            item {
+                                Passport(discover, onShare = {
+                                    shareScope.launch {
+                                        val place = vm.location?.area?.name ?: "my city"
+                                        val (tasted, total) = discover.world.discovered to discover.world.available
+                                        val level = discover.profile.level
+                                        shareMap(
+                                            context,
+                                            mapLayer.toImageBitmap().asAndroidBitmap(),
+                                            headline = "$tasted of $total countries tasted",
+                                            caption = "$place · Level $level · mangiamundo.com",
+                                            message = "I've tasted food from $tasted of the $total countries I can eat in $place. Level $level on Mangiamundo. https://mangiamundo.com",
+                                            colors = colors,
+                                        )
+                                    }
+                                })
+                            }
                             if (selected == null && vm.celebrations.isNotEmpty()) {
                                 item { ComingUp(vm.celebrations, vm.remindersOn, toggleReminders, vm::country, onOpen = vm::select) }
                             }

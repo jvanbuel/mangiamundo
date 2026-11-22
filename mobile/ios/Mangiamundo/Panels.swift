@@ -679,6 +679,8 @@ struct LocationPicker: View {
 
 struct Passport: View {
     let discover: Discover
+    /// The map to share, with what to say alongside it.
+    var share: (card: ShareCard, message: String)? = nil
 
     var body: some View {
         let profile = discover.profile
@@ -712,6 +714,13 @@ struct Passport: View {
                 HStack(alignment: .top) {
                     stat("Places visited", "\(discover.placesVisited) of \(discover.places)")
                     stat("Diamond countries", "\(discover.world.completed)")
+                }
+
+                if let share, discover.placesVisited > 0 {
+                    ShareLink(item: share.card, message: Text(share.message), preview: SharePreview(share.card.headline)) {
+                        Label("Share my map", systemImage: "square.and.arrow.up")
+                    }
+                    .buttonStyle(ChunkyButtonStyle(small: true))
                 }
             }
         }
