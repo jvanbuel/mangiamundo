@@ -29,6 +29,18 @@ struct AccountSection: View {
                 if let made { note("You made one \(ago(made)).") }
             }
 
+            if let url = model.publicProfileURL {
+                heading("Public link")
+                note("Anyone with your link can see your map, level and badges. Turning it off breaks the link; sharing again makes a new one.")
+                HStack(spacing: 8) {
+                    Link(destination: url) { Label("Open", systemImage: "safari") }
+                        .buttonStyle(ChunkyButtonStyle(face: Theme.panelRaised, content: Theme.text, small: true))
+                    Button("Turn off") { model.unshareProgress() }
+                        .buttonStyle(ChunkyButtonStyle(face: Theme.panelRaised, content: Theme.text, small: true))
+                        .disabled(model.accountBusy || model.sharing)
+                }
+            }
+
             heading("Use it on another device")
             if let link = model.linkCode {
                 ShownCode(code: link.code)

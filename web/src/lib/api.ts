@@ -1,4 +1,4 @@
-import type { Account, AddPlace, AddedPlace, Addition, NearbyResult, RefreshResult, Area, AreaProgress, Catalog, Celebration, Discover, Health, Located, Place, Suggestion, VisitResult } from './types';
+import type { Account, AddPlace, AddedPlace, Addition, NearbyResult, RefreshResult, Area, AreaProgress, Catalog, Celebration, Discover, Health, Located, Place, ShareLink, Suggestion, VisitResult } from './types';
 
 const BASE = import.meta.env.VITE_API_BASE ?? '';
 const TOKEN_KEY = 'mangiamundo.token';
@@ -113,6 +113,15 @@ export const checkIn = (placeId: string, here: { lat: number; lng: number } | nu
 	});
 
 export const removeVisit = (visitId: number) => authed<void>('DELETE', `/api/visits/${visitId}`);
+
+/** Makes (or moves to this area) the public page of the user's progress. */
+export const shareProgress = (areaId: string) => authed<ShareLink>('POST', `/api/share?${area(areaId)}`);
+
+/** Turns the public page off. */
+export const unshareProgress = () => authed<void>('DELETE', '/api/share');
+
+/** A public page for one check-in. */
+export const shareVisit = (visitId: number) => authed<ShareLink>('POST', `/api/visits/${visitId}/share`);
 
 /** "This place has closed": hides it for this user, and for everyone after a second report. */
 export const reportClosed = (placeId: string) =>

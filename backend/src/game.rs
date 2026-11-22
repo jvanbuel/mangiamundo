@@ -70,7 +70,7 @@ impl Bonus {
 
 /// How far the user got with a country's food in the area. Clients show `discovered` as
 /// gold and `completed` as diamond.
-#[derive(Debug, Clone, Copy, Serialize, PartialEq, Eq, PartialOrd, Ord, utoipa::ToSchema)]
+#[derive(Debug, Clone, Copy, Serialize, PartialEq, Eq, PartialOrd, Ord, Hash, utoipa::ToSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum Status {
     Available,

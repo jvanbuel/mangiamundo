@@ -10,6 +10,8 @@ import app.mangiamundo.core.Account
 import app.mangiamundo.core.ApiClient
 import app.mangiamundo.core.ApiException
 import app.mangiamundo.core.LinkCode
+import app.mangiamundo.core.ShareLink
+import app.mangiamundo.ui.shareLink
 import app.mangiamundo.core.Camera
 import app.mangiamundo.core.Catalog
 import app.mangiamundo.core.Celebration
@@ -765,6 +767,40 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun makeLinkCode() = accountAction { linkCode = api.newLinkCode() }
+
+    /** Whether a share sheet is being prepared. */
+    var sharing by mutableStateOf(false); private set
+
+    /** Shares the map of the current area through a public page, made on first use. */
+    fun shareProgress() {
+        val areaId = location?.area?.id ?: return
+        share { api.shareProgress(areaId) }
+    }
+
+    fun shareVisit(visitId: Long) = share { api.shareVisit(visitId) }
+
+    private fun share(make: suspend () -> ShareLink) {
+        if (sharing) return
+        sharing = true
+        viewModelScope.launch {
+            try {
+                val link = make()
+                // The settings load the account, public link included, when they open.
+                shareLink(getApplication(), link, api.card(link))
+            } catch (e: Exception) {
+                messageChannel.trySend("Could not share: ${e.message}")
+            }
+            sharing = false
+        }
+    }
+
+    /** The public page as a full link; null when it's off. */
+    val publicProfileUrl: String? get() = account?.publicProfile?.let { BuildConfig.API_BASE.trimEnd('/') + it }
+
+    fun unshareProgress() = accountAction {
+        api.unshareProgress()
+        account = api.account()
+    }
 
     fun clearLinkCode() {
         linkCode = null

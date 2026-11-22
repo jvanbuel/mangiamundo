@@ -12,6 +12,9 @@ RUN npm run build
 
 FROM rust:1-bookworm AS backend
 WORKDIR /backend
+# The share card draws the apps' country outlines in their font.
+COPY mobile/shared/world.json /mobile/shared/
+COPY mobile/android/app/src/main/res/font/nunito_extrabold.ttf mobile/android/app/src/main/res/font/nunito_semibold.ttf /mobile/android/app/src/main/res/font/
 COPY backend/ ./
 ARG GIT_COMMIT
 RUN cargo build --release --locked

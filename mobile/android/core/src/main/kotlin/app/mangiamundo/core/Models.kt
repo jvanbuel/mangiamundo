@@ -297,6 +297,16 @@ data class Account(
     @SerialName("recovery_code_created_at") val recoveryCodeCreatedAt: Long? = null,
     /** Most recently used first. */
     val devices: List<Device> = emptyList(),
+    /** The public page of the user's progress, like `/p/abcd2345ef`; null when it's off. */
+    @SerialName("public_profile") val publicProfile: String? = null,
+)
+
+/** A public link to share, with its card image and a sentence to go with it. */
+@Serializable
+data class ShareLink(
+    val url: String,
+    @SerialName("image_url") val imageUrl: String,
+    val text: String,
 )
 
 /** How far the server is with loading an area, for the progress wheel. */

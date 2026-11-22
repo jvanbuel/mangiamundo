@@ -679,6 +679,7 @@ struct LocationPicker: View {
 
 struct Passport: View {
     let discover: Discover
+    @Environment(AppModel.self) private var model
 
     var body: some View {
         let profile = discover.profile
@@ -712,6 +713,19 @@ struct Passport: View {
                 HStack(alignment: .top) {
                     stat("Places visited", "\(discover.placesVisited) of \(discover.places)")
                     stat("Diamond countries", "\(discover.world.completed)")
+                }
+
+                if discover.placesVisited > 0 {
+                    HStack(spacing: 10) {
+                        Button { model.shareProgress() } label: {
+                            Label(model.sharing ? "Preparing…" : "Share my map", systemImage: "square.and.arrow.up")
+                        }
+                        .buttonStyle(ChunkyButtonStyle(small: true))
+                        .disabled(model.sharing)
+                        Text("Makes a public link to your map, level and badges.")
+                            .font(Theme.font(.caption))
+                            .foregroundStyle(Theme.muted)
+                    }
                 }
             }
         }
@@ -1033,9 +1047,17 @@ struct PlaceDetail: View {
             }
             ForEach(place.visits) { visit in
                 let date = Date(timeIntervalSince1970: TimeInterval(visit.at)).formatted(date: .complete, time: .omitted)
-                Text(date + (visit.verified ? " · checked in on the spot" : ""))
-                    .font(Theme.font(.subheadline))
-                    .padding(.vertical, 6)
+                HStack {
+                    Text(date + (visit.verified ? " · checked in on the spot" : ""))
+                        .font(Theme.font(.subheadline))
+                    Spacer()
+                    Button { model.shareVisit(visit.id) } label: {
+                        Label("Share", systemImage: "square.and.arrow.up")
+                    }
+                    .buttonStyle(ChunkyButtonStyle(small: true))
+                    .disabled(model.sharing)
+                }
+                .padding(.vertical, 6)
                 Divider().overlay(Theme.line)
             }
 

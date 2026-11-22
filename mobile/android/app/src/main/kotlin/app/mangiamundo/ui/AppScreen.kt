@@ -229,7 +229,7 @@ fun AppScreen(vm: AppViewModel = viewModel()) {
                             item(key = "add") { addLink() }
                         }
                         else -> {
-                            item { Passport(discover) }
+                            item { Passport(discover, sharing = vm.sharing, onShare = vm::shareProgress) }
                             if (selected == null && vm.celebrations.isNotEmpty()) {
                                 item { ComingUp(vm.celebrations, vm.remindersOn, toggleReminders, vm::country, onOpen = vm::select) }
                             }
@@ -290,6 +290,8 @@ fun AppScreen(vm: AppViewModel = viewModel()) {
                         refreshing = vm.refreshingPlace == place.id,
                         onRefresh = { vm.refreshPlace(place.id) },
                         onEdit = { vm.editingOnOsm(place.id) },
+                        onShareVisit = vm::shareVisit,
+                        sharing = vm.sharing,
                         spun = vm.spun == place.id,
                         spinning = vm.spinning,
                         onSpin = vm::spin,

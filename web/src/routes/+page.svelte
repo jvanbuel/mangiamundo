@@ -171,7 +171,7 @@
 		{:else}
 			<!-- Progress is for the overview; a country or place gets the room to itself. -->
 			{#if !selected && !app.placeId}
-				<div class="card" class:dim={app.loading}><Passport discover={app.discover} /></div>
+				<div class="card" class:dim={app.loading}><Passport discover={app.discover} areaId={app.location.area.id} /></div>
 			{/if}
 
 			{#if app.celebrations.length && !selected && !app.placeId}

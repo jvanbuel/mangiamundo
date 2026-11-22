@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import * as api from './api';
-	import { accountChanged, toast } from './state.svelte.ts';
+	import { accountChanged, app, toast } from './state.svelte.ts';
 	import type { Account } from './types';
 
 	let account = $state<Account | null>(null);
@@ -16,17 +16,28 @@
 	const message = (e: unknown) => (e instanceof Error ? e.message : 'Something went wrong.');
 	const linkLeft = $derived(link ? Math.max(0, Math.ceil((link.expires_at - now) / 60)) : 0);
 
+	/** Counts loads, so only the latest one's answer is shown. */
+	let loads = 0;
+
 	async function load() {
+		const mine = ++loads;
 		try {
-			account = await api.account();
+			const loaded = await api.account();
+			if (mine !== loads) return;
+			account = loaded;
 			error = null;
 		} catch (e) {
-			error = message(e);
+			if (mine === loads) error = message(e);
 		}
 	}
 
-	onMount(() => {
+	// On opening, and again when sharing elsewhere on the page makes or moves the link.
+	$effect(() => {
+		void app.publicLink;
 		void load();
+	});
+
+	onMount(() => {
 		const timer = setInterval(() => {
 			now = Date.now() / 1000;
 			if (link && link.expires_at <= now) link = null;
@@ -98,6 +109,12 @@
 			await Promise.all([load(), accountChanged()]);
 		});
 
+	const unshare = () =>
+		act(async () => {
+			await api.unshareProgress();
+			app.publicLink++;
+		});
+
 	const ago = (at: number) => {
 		const days = Math.floor((now - at) / 86400);
 		if (days < 1) return 'today';
@@ -167,6 +184,15 @@
 				</li>
 			{/each}
 		</ul>
+	{/if}
+
+	{#if account?.public_profile}
+		<h3>Public link</h3>
+		<p class="muted small">
+			Anyone with <a href={account.public_profile} target="_blank" rel="noopener">your link</a> can see your map, level and badges.
+			Turning it off breaks the link; sharing again makes a new one.
+		</p>
+		<button class="action" disabled={busy} onclick={unshare}>Turn off the public link</button>
 	{/if}
 
 	<button class="danger" disabled={busy} onclick={deleteEverything}>Delete my account</button>

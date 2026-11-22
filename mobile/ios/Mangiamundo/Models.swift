@@ -22,6 +22,15 @@ struct Account: Decodable {
     let recoveryCodeCreatedAt: Int?
     /// Most recently used first.
     let devices: [Device]
+    /// The public page of the user's progress, like `/p/abcd2345ef`; nil when it's off.
+    let publicProfile: String?
+}
+
+/// A public link to share, with its card image and a sentence to go with it.
+struct ShareLink: Decodable {
+    let url: String
+    let imageUrl: String
+    let text: String
 }
 
 /// A device signed in to the account.

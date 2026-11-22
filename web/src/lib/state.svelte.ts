@@ -90,6 +90,8 @@ export const app = $state({
 	reminders: 'off' as 'on' | 'off' | 'unsupported' | 'install',
 	remindersBusy: false,
 	toasts: [] as Toast[],
+	/** Goes up whenever the public link is made or turned off, for whatever shows it. */
+	publicLink: 0,
 	/** Areas used lately, newest first, for switching back quickly. */
 	recents: [] as Area[]
 });

@@ -1,7 +1,10 @@
 <script lang="ts">
+	import { shareProgress } from './api';
+	import { app } from './state.svelte';
+	import ShareButton from './ShareButton.svelte';
 	import type { Discover } from './types';
 
-	let { discover }: { discover: Discover } = $props();
+	let { discover, areaId }: { discover: Discover; areaId: string } = $props();
 
 	const profile = $derived(discover.profile);
 	const pct = (part: number, whole: number) => (whole ? (part / whole) * 100 : 0);
@@ -37,6 +40,18 @@
 		<div><dt>Places visited</dt><dd>{discover.places_visited} <span class="muted">of {discover.places}</span></dd></div>
 		<div><dt>Diamond countries</dt><dd>{discover.world.completed}</dd></div>
 	</dl>
+
+	<div class="share">
+		<ShareButton
+			label="Share my map"
+			link={async () => {
+				const link = await shareProgress(areaId);
+				app.publicLink++;
+				return link;
+			}}
+		/>
+		<span class="muted">Makes a public link to your map, level and badges.</span>
+	</div>
 	{/if}
 </section>
 
@@ -85,6 +100,14 @@
 		margin: 2px 0 0;
 		font-weight: 700;
 		font-variant-numeric: tabular-nums;
+	}
+
+	.share {
+		display: flex;
+		align-items: center;
+		flex-wrap: wrap;
+		gap: 6px 10px;
+		font-size: var(--text-xs);
 	}
 
 	dd .muted {

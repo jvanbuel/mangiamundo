@@ -484,6 +484,27 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/share": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Shares the user's progress in an area: makes their public page (the first time) or
+         *     moves it to this area, and returns its link. `DELETE` turns the page off.
+         */
+        post: operations["share_profile"];
+        /** Turns the public page off: its link stops working. Sharing again makes a new one. */
+        delete: operations["unshare_profile"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/suggestion": {
         parameters: {
             query?: never;
@@ -522,6 +543,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/visits/{visit_id}/share": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Shares one check-in: a public page with the place, its food and the date. The same
+         *     link each time; it goes when the check-in is removed.
+         */
+        post: operations["share_visit"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -531,6 +572,11 @@ export interface components {
             created_at: number;
             /** @description Most recently used first. */
             devices: components["schemas"]["Device"][];
+            /**
+             * @description The public page of the user's progress, like `/p/abcd2345ef`, made by sharing;
+             *     `null` when it's off.
+             */
+            public_profile: string | null;
             /**
              * Format: int64
              * @description When the current recovery code was made, `null` when there is none yet.
@@ -990,6 +1036,15 @@ export interface components {
         Session: {
             /** @description Send it as `Authorization: Bearer <token>`. */
             token: string;
+        };
+        /** @description A public link and what to say alongside it. */
+        ShareLink: {
+            /** @description The card image: 1200 × 630 PNG, the map with a caption. */
+            image_url: string;
+            /** @description A sentence to share with the link. */
+            text: string;
+            /** @description The public page, also the link preview. */
+            url: string;
         };
         /**
          * @description How far the user got with a country's food in the area. Clients show `discovered` as
@@ -1903,6 +1958,69 @@ export interface operations {
             };
         };
     };
+    share_profile: {
+        parameters: {
+            query: {
+                /** @description An area id from `/api/areas` or `/api/areas/locate`. */
+                area: string;
+                /**
+                 * @description The user's IANA time zone (e.g. `Asia/Tokyo`), which decides which day "today"
+                 *     is for event and celebration dates. UTC when missing or unknown.
+                 */
+                tz?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ShareLink"];
+                };
+            };
+            /** @description An error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    unshare_profile: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Off, or it was never on */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description An error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
     suggestion: {
         parameters: {
             query: {
@@ -1959,6 +2077,37 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+            /** @description An error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    share_visit: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description A visit id from a place's `visits`. */
+                visit_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ShareLink"];
+                };
             };
             /** @description An error */
             default: {

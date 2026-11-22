@@ -28,6 +28,7 @@ opening-hours = { version = "2.1", default-features = false, features = ["auto-t
 utoipa = { version = "6", features = ["chrono"] }
 utoipa-axum = "0.3"
 sha2 = "0.10"
+resvg = { version = "0.50.0", default-features = false, features = ["text"] }
 
 [dev-dependencies]
 tower = { version = "0.5", features = ["util"] }
