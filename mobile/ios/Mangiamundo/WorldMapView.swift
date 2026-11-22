@@ -88,7 +88,9 @@ struct WorldMapView: View {
         }
     }
 
-    /// Pixel offsets and sizes of a diamond's three sparkles, so small countries get them too.
+    /// Pixel offsets and sizes of a diamond's three sparkles at full size; the cluster is
+    /// about 50 points across and shrinks to fit countries smaller than that on screen.
+    private static let sparkleSpan: CGFloat = 50
     private static let sparkles: [(dx: CGFloat, dy: CGFloat, size: CGFloat)] = [(0, 0, 13), (17, -14, 8), (-19, 15, 6.5)]
 
     /// A four-pointed star: tips at `tip` from the centre, sides curving in to `waist`.
@@ -123,15 +125,22 @@ struct WorldMapView: View {
         // One path per fill colour plus one for all borders.
         var land = Path(), available = Path(), discovered = Path(), platinum = Path(), completed = Path()
         var borders = Path(), outline = Path()
-        // Where each completed country's sparkles go: the middle of its largest visible ring.
-        var sparkleAt: [CGPoint] = []
+        // Where each completed country's sparkles go: the middle of its largest visible ring,
+        // scaled to that ring's size on screen so they stay within the country.
+        var sparkleAt: [(point: CGPoint, scale: CGFloat)] = []
+        // Bordering diamonds shine as one surface: one path per run of completed neighbours
+        // (and per copy of the flat map).
+        let regions = world.regions(Set(statuses.filter { $0.value == .completed }.keys))
+        var gems: [String: Path] = [:]
 
         // The flat map repeats sideways, so draw the copies that are in view.
         let copies: [Double] = flat ? [-360, 0, 360] : [0]
         for country in world.countries {
             let status = statuses[country.code]
-            var largest: (count: Int, sum: CGPoint) = (0, .zero)
+            var largest: (count: Int, sum: CGPoint, box: CGRect) = (0, .zero, .null)
             for shift in copies {
+                var gem = Path()
+                defer { if !gem.isEmpty, let region = regions[country.code] { gems["\(region) \(shift)", default: Path()].addPath(gem) } }
                 if flat {
                     if projector.project(lng: country.maxLng + shift, lat: 0).point.x < 0 { continue }
                     if projector.project(lng: country.minLng + shift, lat: 0).point.x > size.width { continue }
@@ -139,7 +148,7 @@ struct WorldMapView: View {
                 for coordinates in country.rings where coordinates.count >= 6 {
                     var ring = Path()
                     var visible = false
-                    var seen = 0, sum = CGPoint.zero
+                    var seen = 0, sum = CGPoint.zero, box = CGRect.null
                     for i in stride(from: 0, to: coordinates.count - 1, by: 2) {
                         let projected = projector.project(lng: coordinates[i] + shift, lat: coordinates[i + 1])
                         if projected.visible {
@@ -147,25 +156,28 @@ struct WorldMapView: View {
                             seen += 1
                             sum.x += projected.point.x
                             sum.y += projected.point.y
+                            box = box.union(CGRect(origin: projected.point, size: .zero))
                         }
                         if i == 0 { ring.move(to: projected.point) } else { ring.addLine(to: projected.point) }
                     }
                     if !visible { continue } // Entirely on the far side of the globe.
-                    if status == .completed, seen > largest.count { largest = (seen, sum) }
+                    if status == .completed, seen > largest.count { largest = (seen, sum, box) }
                     ring.closeSubpath()
                     switch status {
                     case nil: land.addPath(ring)
                     case .available: available.addPath(ring)
                     case .discovered: discovered.addPath(ring)
                     case .platinum: platinum.addPath(ring)
-                    case .completed: completed.addPath(ring)
+                    case .completed: completed.addPath(ring); gem.addPath(ring)
                     }
                     borders.addPath(ring)
                     if country.code == selected { outline.addPath(ring) }
                 }
             }
             if largest.count > 0 {
-                sparkleAt.append(CGPoint(x: largest.sum.x / CGFloat(largest.count), y: largest.sum.y / CGFloat(largest.count)))
+                let point = CGPoint(x: largest.sum.x / CGFloat(largest.count), y: largest.sum.y / CGFloat(largest.count))
+                let fit = min(largest.box.width, largest.box.height) / Self.sparkleSpan
+                sparkleAt.append((point, min(1, max(0.2, fit))))
             }
         }
 
@@ -176,22 +188,45 @@ struct WorldMapView: View {
         context.fill(platinum, with: .color(Theme.platinum), style: evenOdd)
         context.fill(completed, with: .color(Theme.completed), style: evenOdd)
 
-        // Facets cut into each diamond: a lattice of crossing lines.
-        if !completed.isEmpty {
+        // Each diamond shines: lit from the top left, deeper towards the bottom right, and
+        // now and then a glint of light sweeps across it (not with Reduce Motion).
+        for gem in gems.values {
+            let box = gem.boundingRect
             context.drawLayer { layer in
-                layer.clip(to: completed, style: evenOdd)
-                let box = completed.boundingRect
-                var facets = Path()
-                let step: CGFloat = 10
-                var x = box.minX - box.height
-                while x < box.maxX {
-                    facets.move(to: CGPoint(x: x, y: box.minY))
-                    facets.addLine(to: CGPoint(x: x + box.height, y: box.maxY))
-                    facets.move(to: CGPoint(x: x + box.height, y: box.minY))
-                    facets.addLine(to: CGPoint(x: x, y: box.maxY))
-                    x += step
-                }
-                layer.stroke(facets, with: .color(Theme.completedFacet), lineWidth: 1)
+                layer.clip(to: gem, style: evenOdd)
+                layer.fill(Path(box), with: .linearGradient(
+                    Gradient(stops: [
+                        .init(color: .white, location: 0),
+                        .init(color: Theme.completed, location: 0.45),
+                        .init(color: Theme.completedFacet, location: 1)
+                    ]),
+                    startPoint: CGPoint(x: box.minX, y: box.minY),
+                    endPoint: CGPoint(x: box.maxX, y: box.maxY)
+                ))
+                guard let time else { return }
+                // A 4-second cycle: the band crosses in the last 30% of it, then rests.
+                let phase = (time / 4).truncatingRemainder(dividingBy: 1)
+                guard phase > 0.7 else { return }
+                let t = CGFloat((phase - 0.7) / 0.3)
+                // A diagonal band, from the top-left corner to the bottom-right one: a white
+                // heart with rainbow fringes, like light split by a cut stone.
+                let c = CGPoint(x: box.minX + t * box.width, y: box.minY + t * box.height)
+                let d = max(box.width, box.height) * 0.18
+                layer.fill(Path(box), with: .linearGradient(
+                    Gradient(stops: [
+                        .init(color: .red.opacity(0), location: 0),
+                        .init(color: .red.opacity(0.35), location: 0.15),
+                        .init(color: .orange.opacity(0.45), location: 0.27),
+                        .init(color: .yellow.opacity(0.55), location: 0.38),
+                        .init(color: .white.opacity(0.9), location: 0.5),
+                        .init(color: .cyan.opacity(0.55), location: 0.62),
+                        .init(color: .blue.opacity(0.45), location: 0.73),
+                        .init(color: .purple.opacity(0.35), location: 0.85),
+                        .init(color: .purple.opacity(0), location: 1)
+                    ]),
+                    startPoint: CGPoint(x: c.x - d, y: c.y - d),
+                    endPoint: CGPoint(x: c.x + d, y: c.y + d)
+                ))
             }
         }
 
@@ -214,12 +249,12 @@ struct WorldMapView: View {
         // Sparkles: the diamond's edge colour with a white heart. Each flashes on its own
         // beat, growing and brightening quickly and then shrinking back (full and still
         // with Reduce Motion).
-        for at in sparkleAt {
+        for (at, scale) in sparkleAt {
             for (i, sparkle) in Self.sparkles.enumerated() {
-                let c = CGPoint(x: at.x + sparkle.dx, y: at.y + sparkle.dy)
+                let c = CGPoint(x: at.x + sparkle.dx * scale, y: at.y + sparkle.dy * scale)
                 let wave = time.map { max(0, sin($0 * 2.6 + Double(i) * 2.1)) } ?? 1
                 let flash = CGFloat(wave * wave)
-                let tip = sparkle.size * (0.55 + 0.45 * flash)
+                let tip = sparkle.size * scale * (0.55 + 0.45 * flash)
                 var glint = context
                 glint.opacity = 0.25 + 0.75 * flash
                 glint.fill(Self.star(at: c, tip: tip, waist: tip * 0.25), with: .color(Theme.completedEdge))

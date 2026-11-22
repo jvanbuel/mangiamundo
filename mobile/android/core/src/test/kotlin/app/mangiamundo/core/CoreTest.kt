@@ -28,6 +28,15 @@ class CoreTest {
     }
 
     @Test
+    fun groupsBorderingCountries() {
+        val regions = world.regions(setOf("BE", "NL", "FR", "JP"))
+        assertEquals(regions["BE"], regions["NL"])
+        assertEquals(regions["BE"], regions["FR"])
+        assertTrue(regions["JP"] != regions["BE"])
+        assertFalse("PL" in world.neighbours.getValue("FR"))
+    }
+
+    @Test
     fun projectionsRoundTrip() {
         val out = FloatArray(2)
         for (kind in ProjectionKind.entries) {

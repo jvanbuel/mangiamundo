@@ -47,6 +47,41 @@ class WorldCountry(
 }
 
 class World(val countries: List<WorldCountry>) {
+    /** The countries each one borders: outlines that share a vertex. */
+    val neighbours: Map<String, Set<String>> = run {
+        val at = HashMap<Pair<Double, Double>, MutableSet<String>>()
+        for (country in countries) {
+            for (ring in country.rings) {
+                for (i in 0 until ring.size - 1 step 2) at.getOrPut(ring[i] to ring[i + 1]) { HashSet() }.add(country.code)
+            }
+        }
+        val neighbours = HashMap<String, MutableSet<String>>()
+        for (codes in at.values) {
+            if (codes.size < 2) continue
+            for (code in codes) neighbours.getOrPut(code) { HashSet() }.addAll(codes - code)
+        }
+        neighbours
+    }
+
+    /** Groups [codes] into runs of bordering countries: each code maps to its run's first code. */
+    fun regions(codes: Set<String>): Map<String, String> {
+        val region = HashMap<String, String>()
+        for (start in codes) {
+            if (start in region) continue
+            region[start] = start
+            val queue = ArrayDeque(listOf(start))
+            while (queue.isNotEmpty()) {
+                for (next in neighbours[queue.removeLast()].orEmpty()) {
+                    if (next in codes && next !in region) {
+                        region[next] = start
+                        queue.add(next)
+                    }
+                }
+            }
+        }
+        return region
+    }
+
     /** The country at a position, or null over the sea. */
     fun countryAt(lng: Double, lat: Double): WorldCountry? {
         // Some rings run past the antimeridian (lng > 180 or < -180), so try the wrapped copies.
