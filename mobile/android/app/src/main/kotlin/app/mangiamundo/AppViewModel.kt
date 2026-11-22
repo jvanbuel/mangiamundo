@@ -827,6 +827,45 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         account = api.account()
     }
 
+    /** The address a sign-in code went to, while the code is awaited. */
+    var codeSentTo by mutableStateOf<String?>(null); private set
+
+    fun sendEmailCode(email: String) = accountAction {
+        val address = email.trim()
+        api.sendEmailCode(address)
+        codeSentTo = address
+    }
+
+    fun forgetEmailCode() {
+        codeSentTo = null
+    }
+
+    fun signIn(code: String) {
+        val email = codeSentTo ?: return
+        accountAction {
+            try {
+                api.signIn(email, code)
+            } catch (e: ApiException) {
+                if (e.status != 404) throw e
+                messageChannel.trySend("Wrong code. Check it, or ask for a new one.")
+                return@accountAction
+            }
+            codeSentTo = null
+            recoveryCode = null
+            linkCode = null
+            messageChannel.trySend("Signed in. Your progress now follows you to every device you sign in on.")
+            accountChanged()
+        }
+    }
+
+    fun signOut() = accountAction {
+        api.signOut()
+        recoveryCode = null
+        linkCode = null
+        messageChannel.trySend("Signed out. Sign in again to get your progress back here.")
+        accountChanged()
+    }
+
     fun deleteAccount() = accountAction {
         api.deleteAccount()
         recoveryCode = null

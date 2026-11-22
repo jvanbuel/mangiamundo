@@ -1,3 +1,4 @@
+import AuthenticationServices
 import SwiftUI
 import UIKit
 
@@ -7,6 +8,10 @@ struct AccountSection: View {
     @State private var entered = ""
     @State private var confirmingNewCode = false
     @State private var confirmingDelete = false
+    @State private var confirmingSignOut = false
+    @State private var email = ""
+    @State private var code = ""
+    @Environment(\.colorScheme) private var colorScheme
     @State private var now = Date()
 
     private let tick = Timer.publish(every: 5, on: .main, in: .common).autoconnect()
@@ -14,8 +19,14 @@ struct AccountSection: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             Divider().overlay(Theme.line).padding(.vertical, 8)
+            signIn
+
             heading("Your progress")
-            note("It lives on this device. Keep a recovery code to get it back after reinstalling the app or on a new phone.")
+            if model.account?.identities.isEmpty == false {
+                note("A recovery code also gets it back, without signing in.")
+            } else {
+                note("It lives on this device. Keep a recovery code to get it back after reinstalling the app or on a new phone.")
+            }
             if let code = model.recoveryCode {
                 ShownCode(code: code)
                 note("Shown only now. Anyone with this code can use your account.")
@@ -105,11 +116,83 @@ struct AccountSection: View {
         } message: {
             Text("The old one stops working.")
         }
+        .confirmationDialog("Sign out of this device?", isPresented: $confirmingSignOut, titleVisibility: .visible) {
+            Button("Sign out") { model.signOut() }
+        } message: {
+            Text("Your progress stays in your account; this device starts afresh.")
+        }
         .confirmationDialog("Delete your account?", isPresented: $confirmingDelete, titleVisibility: .visible) {
             Button("Delete", role: .destructive) { model.deleteAccount() }
         } message: {
             Text("Every check-in, badge and added place is gone for good, on all your devices.")
         }
+    }
+
+    /// Signing in is optional: with Apple, or with a code sent by email.
+    @ViewBuilder private var signIn: some View {
+        heading("Sign in")
+        if let identities = model.account?.identities, !identities.isEmpty {
+            note("Signed in with \(identities.map(describe).joined(separator: ", ")).")
+            Button("Sign out of this device") { confirmingSignOut = true }
+                .buttonStyle(ChunkyButtonStyle())
+                .disabled(model.accountBusy)
+        } else {
+            note("Optional. Sign in to keep your progress on all your devices; without it, it stays on this one.")
+            SignInWithAppleButton(.signIn) { request in
+                request.requestedScopes = [.email]
+            } onCompletion: { result in
+                switch result {
+                case .success(let authorization):
+                    guard let credential = authorization.credential as? ASAuthorizationAppleIDCredential,
+                          let data = credential.identityToken,
+                          let token = String(data: data, encoding: .utf8) else { return }
+                    model.signInWithApple(idToken: token)
+                case .failure(let error):
+                    if (error as? ASAuthorizationError)?.code != .canceled {
+                        model.toast("Sign in with Apple did not work: \(error.localizedDescription)")
+                    }
+                }
+            }
+            .signInWithAppleButtonStyle(colorScheme == .dark ? .white : .black)
+            .frame(height: 44)
+            .disabled(model.accountBusy)
+
+            if let sentTo = model.codeSentTo {
+                note("Enter the code we sent to \(sentTo).")
+                HStack {
+                    TextField("123456", text: $code)
+                        .textFieldStyle(.roundedBorder)
+                        .keyboardType(.numberPad)
+                        .textContentType(.oneTimeCode)
+                    Button("Sign in") { model.signIn(code: code); code = "" }
+                        .buttonStyle(ChunkyButtonStyle())
+                        .disabled(model.accountBusy || code.trimmingCharacters(in: .whitespaces).isEmpty)
+                }
+                Button("Use another address") { model.forgetEmailCode() }
+                    .font(Theme.font(.caption, .bold))
+                    .foregroundStyle(Theme.accent)
+            } else {
+                note("Or get a code by email.")
+                HStack {
+                    TextField("you@example.com", text: $email)
+                        .textFieldStyle(.roundedBorder)
+                        .keyboardType(.emailAddress)
+                        .textContentType(.emailAddress)
+                        .textInputAutocapitalization(.never)
+                        .autocorrectionDisabled()
+                        .submitLabel(.send)
+                        .onSubmit { model.sendEmailCode(email) }
+                    Button("Send code") { model.sendEmailCode(email) }
+                        .buttonStyle(ChunkyButtonStyle())
+                        .disabled(model.accountBusy || email.trimmingCharacters(in: .whitespaces).isEmpty)
+                }
+            }
+        }
+    }
+
+    private func describe(_ identity: Identity) -> String {
+        let name = ["apple": "Apple", "google": "Google", "email": "email"][identity.provider] ?? identity.provider
+        return identity.email.map { "\(name) (\($0))" } ?? name
     }
 
     private func restore() {

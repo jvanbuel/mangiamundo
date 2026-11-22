@@ -183,19 +183,48 @@ actor APIClient {
     /// Signs this device in to the account of a recovery or link code. What this device did
     /// before moves into that account. An unknown, used or expired code is a 404.
     func restore(code: String) async throws {
-        var body: [String: Any] = ["code": code]
+        try await switchAccount("/api/session/restore", ["code": code])
+    }
+
+    /// Emails a 6-digit sign-in code.
+    func sendEmailCode(_ email: String) async throws {
+        let data = try JSONSerialization.data(withJSONObject: ["email": email])
+        _ = try await request("POST", "/api/auth/email/code", body: data)
+    }
+
+    /// Signs in with an emailed code. A wrong, used or expired code is a 404.
+    func signIn(email: String, code: String) async throws {
+        try await switchAccount("/api/auth/email", ["email": email, "code": code])
+    }
+
+    /// Signs in with an ID token from Sign in with Apple.
+    func signInWithApple(idToken: String) async throws {
+        try await switchAccount("/api/auth/apple", ["id_token": idToken])
+    }
+
+    /// Signs this device out of its account; it starts afresh with a new, empty one.
+    func signOut() async throws {
+        if let me = try await account().devices.first(where: \.current) {
+            try await removeDevice(id: me.id)
+        }
+        defaults.removeObject(forKey: Self.tokenKey)
+    }
+
+    /// Sends the device's token along to an endpoint that answers with another account's
+    /// session (what this device held merges into it), and keeps that session.
+    private func switchAccount(_ path: String, _ fields: [String: String]) async throws {
+        var body = fields
         body["device"] = deviceName
         let data = try JSONSerialization.data(withJSONObject: body)
         struct Session: Decodable { let token: String }
         let current = defaults.string(forKey: Self.tokenKey)
         let session: Session
         do {
-            // The current token lets what this device did merge into the restored account.
-            session = try decode(await request("POST", "/api/session/restore", body: data, token: current))
+            session = try decode(await request("POST", path, body: data, token: current))
         } catch let error as APIError where error.status == 401 && current != nil {
-            // This device was signed out elsewhere: drop that token and restore without it.
+            // This device was signed out elsewhere: drop that token and go on without it.
             if defaults.string(forKey: Self.tokenKey) == current { defaults.removeObject(forKey: Self.tokenKey) }
-            session = try decode(await request("POST", "/api/session/restore", body: data))
+            session = try decode(await request("POST", path, body: data))
         }
         defaults.set(session.token, forKey: Self.tokenKey)
     }

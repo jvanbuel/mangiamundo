@@ -27,6 +27,10 @@ targets:
         # Real devices use the deployed backend. The simulator shares the Mac's localhost.
         API_BASE_URL: https://mangiamundo.com
         "API_BASE_URL[sdk=iphonesimulator*]": http://localhost:8080
+    entitlements:
+      path: Mangiamundo/Mangiamundo.entitlements
+      properties:
+        com.apple.developer.applesignin: [Default]
     # Writes the commit into the built Info.plist, to tell old builds apart in the app.
     postBuildScripts:
       - name: Stamp git commit

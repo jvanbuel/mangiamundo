@@ -2,6 +2,7 @@
 	import { onMount } from 'svelte';
 	import * as api from './api';
 	import { accountChanged, app, toast } from './state.svelte.ts';
+	import SignIn from './SignIn.svelte';
 	import type { Account } from './types';
 
 	let account = $state<Account | null>(null);
@@ -124,8 +125,14 @@
 </script>
 
 <section class="account">
+	<SignIn {account} onchange={load} />
+
 	<h3>Your progress</h3>
-	<p class="muted">It lives on this device. Keep a recovery code to get it back after clearing your browser or on a new phone.</p>
+	{#if account?.identities.length}
+		<p class="muted">A recovery code also gets it back, without signing in.</p>
+	{:else}
+		<p class="muted">It lives on this device. Keep a recovery code to get it back after clearing your browser or on a new phone.</p>
+	{/if}
 
 	{#if recoveryCode}
 		<div class="code" aria-live="polite">
@@ -205,24 +212,24 @@
 		border-top: 1px solid var(--line);
 	}
 
-	h3 {
+	.account :global(h3) {
 		font-size: var(--text-sm);
 		margin: 14px 0 6px;
 	}
 
-	h3:first-child {
+	.account :global(h3:first-child) {
 		margin-top: 0;
 	}
 
-	.account p {
+	.account :global(p) {
 		margin: 0 0 8px;
 	}
 
-	.small {
+	.account :global(.small) {
 		font-size: var(--text-xs);
 	}
 
-	.action {
+	.account :global(.action) {
 		padding: 8px 14px;
 		border-radius: 10px;
 		background: var(--accent);
@@ -231,7 +238,7 @@
 		font-size: var(--text-sm);
 	}
 
-	.action:disabled {
+	.account :global(.action:disabled) {
 		opacity: 0.6;
 	}
 
@@ -258,24 +265,24 @@
 		padding: 6px;
 	}
 
-	form {
+	.account :global(form) {
 		margin-top: 14px;
 	}
 
-	label {
+	.account :global(label) {
 		display: block;
 		font-weight: 700;
 		font-size: var(--text-sm);
 		margin-bottom: 6px;
 	}
 
-	.row {
+	.account :global(.row) {
 		display: flex;
 		gap: 8px;
 		margin-bottom: 6px;
 	}
 
-	input {
+	.account :global(input) {
 		flex: 1;
 		min-width: 0;
 		padding: 8px 10px;

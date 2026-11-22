@@ -193,6 +193,97 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/auth/apple": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Signs in with Apple. Sent with the device's current token, an Apple ID new to the server
+         *     joins that account; one that already has an account brings this device there, and
+         *     what the device's account held moves along, as with a recovery code.
+         */
+        post: operations["sign_in_apple"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/auth/email": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Signs in with an emailed code, as `POST /api/auth/apple` does with Apple. A code works
+         *     once, for 10 minutes, and stops working after 5 wrong tries.
+         */
+        post: operations["sign_in_email"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/auth/email/code": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Emails a 6-digit sign-in code, valid for 10 minutes. A new one replaces the last. */
+        post: operations["send_email_code"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/auth/google": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Signs in with Google, as `POST /api/auth/apple` does with Apple. */
+        post: operations["sign_in_google"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/auth/providers": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["auth_providers"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/celebrations": {
         parameters: {
             query?: never;
@@ -573,6 +664,11 @@ export interface components {
             /** @description Most recently used first. */
             devices: components["schemas"]["Device"][];
             /**
+             * @description The ways to sign in to the account, oldest first; empty for an account that only
+             *     lives on its devices.
+             */
+            identities: components["schemas"]["Identity"][];
+            /**
              * @description The public page of the user's progress, like `/p/abcd2345ef`, made by sharing;
              *     `null` when it's off.
              */
@@ -663,6 +759,18 @@ export interface components {
         AreaView: components["schemas"]["AreaInfo"] & {
             /** Format: int64 */
             fetched_at: number;
+        };
+        /** @description The sign-in methods this server offers, with the public ids the web app needs. */
+        AuthProviders: {
+            /**
+             * @description The Services ID for Sign in with Apple on the web; `null` when it isn't set up
+             *     (the iOS app signs in with Apple regardless).
+             */
+            apple: string | null;
+            /** @description Codes by email; always offered. */
+            email: boolean;
+            /** @description The web client id for Google's sign-in button; `null` when Google isn't set up. */
+            google: string | null;
         };
         Badge: {
             description: string;
@@ -788,6 +896,16 @@ export interface components {
             area: components["schemas"]["AreaView"];
             events: components["schemas"]["EventProgress"][];
         };
+        EmailCodeRequest: {
+            email: string;
+        };
+        EmailSignIn: {
+            /** @description The 6 digits from the email. */
+            code: string;
+            /** @description As in `POST /api/session`. */
+            device?: string | null;
+            email: string;
+        };
         /** @description Every error response, whatever the status. */
         ErrorBody: {
             code: components["schemas"]["ErrorCode"];
@@ -888,6 +1006,19 @@ export interface components {
             open: boolean;
             /** @description Short status line, e.g. "Open until 22:00". */
             text: string;
+        };
+        IdTokenSignIn: {
+            /** @description As in `POST /api/session`. */
+            device?: string | null;
+            /** @description The ID token (a JWT) from Sign in with Apple or Google. */
+            id_token: string;
+        };
+        /** @description A way to sign in: Sign in with Apple, Google or an email address. */
+        Identity: {
+            /** @description The address it goes with, when known. Apple may give a private relay address. */
+            email: string | null;
+            /** @description `apple`, `google` or `email`. */
+            provider: string;
         };
         LatLng: {
             /** Format: double */
@@ -1442,6 +1573,170 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    sign_in_apple: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["IdTokenSignIn"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Session"];
+                };
+            };
+            /** @description `bad_request` for a token that isn't valid */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    sign_in_email: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["EmailSignIn"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Session"];
+                };
+            };
+            /** @description `not_found`: a wrong, used or expired code */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description An error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    send_email_code: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["EmailCodeRequest"];
+            };
+        };
+        responses: {
+            /** @description Sent */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description `too_many_requests`: wait a few minutes */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description An error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    sign_in_google: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["IdTokenSignIn"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Session"];
+                };
+            };
+            /** @description `bad_request` for a token that isn't valid */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    auth_providers: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AuthProviders"];
                 };
             };
         };

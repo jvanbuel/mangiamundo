@@ -32,6 +32,7 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardCapitalization
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -52,6 +53,8 @@ fun AccountSection(vm: AppViewModel) {
         Unit
     }
     var entered by remember { mutableStateOf("") }
+    var email by remember { mutableStateOf("") }
+    var signInCode by remember { mutableStateOf("") }
     var confirm by remember { mutableStateOf<Confirm?>(null) }
     var now by remember { mutableLongStateOf(System.currentTimeMillis() / 1000) }
 
@@ -75,6 +78,7 @@ fun AccountSection(vm: AppViewModel) {
                     when (what) {
                         Confirm.NEW_RECOVERY_CODE -> vm.makeRecoveryCode()
                         Confirm.DELETE -> vm.deleteAccount()
+                        Confirm.SIGN_OUT -> vm.signOut()
                     }
                 }) { Text(what.action) }
             },
@@ -84,9 +88,58 @@ fun AccountSection(vm: AppViewModel) {
 
     Column(Modifier.padding(top = 16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
         HorizontalDivider(color = colors.line)
+        Heading("Sign in")
+        val identities = vm.account?.identities.orEmpty()
+        if (identities.isNotEmpty()) {
+            val names = mapOf("apple" to "Apple", "google" to "Google", "email" to "email")
+            val list = identities.joinToString { i -> (names[i.provider] ?: i.provider) + (i.email?.let { " ($it)" } ?: "") }
+            Text("Signed in with $list.", color = colors.muted, style = small)
+            ChunkyButton("Sign out of this device", onClick = { confirm = Confirm.SIGN_OUT }, enabled = !vm.accountBusy)
+        } else {
+            Text(
+                "Optional. Sign in to keep your progress on all your devices; without it, it stays on this one.",
+                color = colors.muted,
+                style = small,
+            )
+            val sentTo = vm.codeSentTo
+            if (sentTo != null) {
+                Text("Enter the code we sent to $sentTo.", color = colors.muted, style = small)
+                val submitCode = { if (signInCode.isNotBlank()) { vm.signIn(signInCode); signInCode = "" } }
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    OutlinedTextField(
+                        value = signInCode,
+                        onValueChange = { signInCode = it },
+                        placeholder = { Text("123456") },
+                        singleLine = true,
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number, imeAction = ImeAction.Done),
+                        keyboardActions = KeyboardActions(onDone = { submitCode() }),
+                        modifier = Modifier.weight(1f),
+                    )
+                    ChunkyButton("Sign in", onClick = submitCode, enabled = !vm.accountBusy && signInCode.isNotBlank())
+                }
+                TextButton(onClick = vm::forgetEmailCode) { Text("Use another address") }
+            } else {
+                Text("Get a code by email.", color = colors.muted, style = small)
+                val send = { if (email.isNotBlank()) vm.sendEmailCode(email) }
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    OutlinedTextField(
+                        value = email,
+                        onValueChange = { email = it },
+                        placeholder = { Text("you@example.com") },
+                        singleLine = true,
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Email, autoCorrectEnabled = false, imeAction = ImeAction.Send),
+                        keyboardActions = KeyboardActions(onSend = { send() }),
+                        modifier = Modifier.weight(1f),
+                    )
+                    ChunkyButton("Send code", onClick = send, enabled = !vm.accountBusy && email.isNotBlank())
+                }
+            }
+        }
+
         Heading("Your progress")
         Text(
-            "It lives on this device. Keep a recovery code to get it back after reinstalling the app or on a new phone.",
+            if (identities.isNotEmpty()) "A recovery code also gets it back, without signing in."
+            else "It lives on this device. Keep a recovery code to get it back after reinstalling the app or on a new phone.",
             color = colors.muted,
             style = small,
         )
@@ -190,6 +243,7 @@ fun AccountSection(vm: AppViewModel) {
 
 private enum class Confirm(val title: String, val text: String, val action: String) {
     NEW_RECOVERY_CODE("Make a new recovery code?", "The old one stops working.", "Make a new one"),
+    SIGN_OUT("Sign out of this device?", "Your progress stays in your account; this device starts afresh.", "Sign out"),
     DELETE(
         "Delete your account?",
         "Every check-in, badge and added place is gone for good, on all your devices.",

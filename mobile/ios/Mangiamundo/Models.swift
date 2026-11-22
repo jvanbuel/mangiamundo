@@ -24,6 +24,15 @@ struct Account: Decodable {
     let devices: [Device]
     /// The public page of the user's progress, like `/p/abcd2345ef`; nil when it's off.
     let publicProfile: String?
+    /// The ways to sign in, oldest first; empty for an account that lives on its devices.
+    let identities: [Identity]
+}
+
+/// A way to sign in: Sign in with Apple, Google or an email address.
+struct Identity: Decodable, Hashable {
+    /// "apple", "google" or "email".
+    let provider: String
+    let email: String?
 }
 
 /// A public link to share, with its card image and a sentence to go with it.

@@ -154,15 +154,39 @@ class ApiClient(private val baseUrl: String, private val tokens: TokenStore, pri
      * Signs this device in to the account of a recovery or link code. What this device did
      * before moves into that account. An unknown, used or expired code is a 404.
      */
-    suspend fun restore(code: String) = tokenLock.withLock {
-        val body = json.encodeToString(RestoreBody.serializer(), RestoreBody(code, deviceName))
+    suspend fun restore(code: String) = switchAccount("/api/session/restore", mapOf("code" to code))
+
+    /** Emails a 6-digit sign-in code. */
+    suspend fun sendEmailCode(email: String) {
+        request("POST", "/api/auth/email/code", jsonObject(mapOf("email" to email)))
+    }
+
+    /** Signs in with an emailed code. A wrong, used or expired code is a 404. */
+    suspend fun signIn(email: String, code: String) =
+        switchAccount("/api/auth/email", mapOf("email" to email, "code" to code))
+
+    /** Signs this device out of its account; it starts afresh with a new, empty one. */
+    suspend fun signOut() {
+        account().devices.firstOrNull { it.current }?.let { removeDevice(it.id) }
+        tokenLock.withLock { tokens.token = null }
+    }
+
+    private fun jsonObject(fields: Map<String, String?>): String =
+        kotlinx.serialization.json.JsonObject(fields.mapValues { kotlinx.serialization.json.JsonPrimitive(it.value) }).toString()
+
+    /**
+     * Sends the device's token along to an endpoint that answers with another account's
+     * session (what this device held merges into it), and keeps that session.
+     */
+    private suspend fun switchAccount(path: String, fields: Map<String, String>) = tokenLock.withLock {
+        val body = jsonObject(fields + ("device" to deviceName))
         // The current token goes first so this device's progress merges; a rejected one is dropped.
         val text = try {
-            request("POST", "/api/session/restore", body, tokens.token)
+            request("POST", path, body, tokens.token)
         } catch (e: ApiException) {
             if (e.status != 401 || tokens.token == null) throw e
             tokens.token = null
-            request("POST", "/api/session/restore", body)
+            request("POST", path, body)
         }
         tokens.token = json.decodeFromString<Session>(text).token
     }

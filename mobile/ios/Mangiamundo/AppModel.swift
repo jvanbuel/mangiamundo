@@ -854,6 +854,59 @@ final class AppModel {
         }
     }
 
+    /// The address a sign-in code went to, while the code is awaited.
+    private(set) var codeSentTo: String?
+
+    func sendEmailCode(_ email: String) {
+        accountAction {
+            let address = email.trimmingCharacters(in: .whitespaces)
+            try await self.api.sendEmailCode(address)
+            self.codeSentTo = address
+        }
+    }
+
+    func forgetEmailCode() {
+        codeSentTo = nil
+    }
+
+    func signIn(code: String) {
+        guard let email = codeSentTo else { return }
+        accountAction {
+            do {
+                try await self.api.signIn(email: email, code: code)
+            } catch let error as APIError where error.status == 404 {
+                self.toast("Wrong code. Check it, or ask for a new one.")
+                return
+            }
+            self.codeSentTo = nil
+            await self.signedIn()
+        }
+    }
+
+    func signInWithApple(idToken: String) {
+        accountAction {
+            try await self.api.signInWithApple(idToken: idToken)
+            await self.signedIn()
+        }
+    }
+
+    private func signedIn() async {
+        recoveryCode = nil
+        linkCode = nil
+        toast("Signed in. Your progress now follows you to every device you sign in on.")
+        await accountChanged()
+    }
+
+    func signOut() {
+        accountAction {
+            try await self.api.signOut()
+            self.recoveryCode = nil
+            self.linkCode = nil
+            self.toast("Signed out. Sign in again to get your progress back here.")
+            await self.accountChanged()
+        }
+    }
+
     func deleteAccount() {
         accountAction {
             try await self.api.deleteAccount()
