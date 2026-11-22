@@ -198,18 +198,21 @@ impl City {
 
     /// The city's restaurants; a postal code shows the ones inside it.
     fn places(&self) -> Vec<FoundPlace> {
-        let seed = self.slug.bytes().fold(0xcbf2_9ce4_8422_2325u64, |h, b| {
-            (h ^ b as u64).wrapping_mul(0x100_0000_01b3)
-        });
-        let mut rng = Rng(seed);
         let b = self.bbox();
         let mut places = Vec::new();
         for cuisine in CUISINES {
-            // Roughly four in ten cuisines exist in any given city.
-            if rng.unit() > 0.4 {
+            // Seeded per city and cuisine, so growing the catalog leaves existing places be.
+            let seed = format!("{}/{}", self.slug, cuisine.country)
+                .bytes()
+                .fold(0xcbf2_9ce4_8422_2325u64, |h, b| {
+                    (h ^ b as u64).wrapping_mul(0x100_0000_01b3)
+                });
+            let mut rng = Rng(seed);
+            let country = catalog::country(cuisine.country).expect("catalog is consistent");
+            // Roughly three in ten cuisines exist in any given city, and its own one always.
+            if rng.unit() > 0.3 && country.name != self.country {
                 continue;
             }
-            let country = catalog::country(cuisine.country).expect("catalog is consistent");
             let count = 1 + (rng.next() % 4) as usize;
             for n in 0..count {
                 let lat = b.south + rng.unit() * (b.north - b.south);
