@@ -27,6 +27,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.ClipEntry
 import androidx.compose.ui.platform.LocalClipboard
+import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
@@ -42,6 +43,7 @@ import kotlinx.coroutines.launch
 @Composable
 fun AccountSection(vm: AppViewModel) {
     val colors = LocalAppColors.current
+    val uriHandler = LocalUriHandler.current
     val small = MaterialTheme.typography.bodySmall
     val clipboard = LocalClipboard.current
     val scope = rememberCoroutineScope()
@@ -102,6 +104,19 @@ fun AccountSection(vm: AppViewModel) {
                 enabled = !vm.accountBusy && loaded,
             )
             if (made != null) Text("You made one ${ago(made, now)}.", color = colors.muted, style = small)
+        }
+
+        vm.publicProfileUrl?.let { url ->
+            Heading("Public link")
+            Text(
+                "Anyone with your link can see your map, level and badges. Turning it off breaks the link; sharing again makes a new one.",
+                color = colors.muted,
+                style = small,
+            )
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                ChunkyButton("Open", onClick = { uriHandler.openUri(url) }, face = colors.panelRaised, content = colors.text)
+                ChunkyButton("Turn off", onClick = vm::unshareProgress, enabled = !vm.accountBusy, face = colors.panelRaised, content = colors.text)
+            }
         }
 
         Heading("Use it on another device")

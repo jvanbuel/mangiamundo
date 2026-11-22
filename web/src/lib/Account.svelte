@@ -98,6 +98,12 @@
 			await Promise.all([load(), accountChanged()]);
 		});
 
+	const unshare = () =>
+		act(async () => {
+			await api.unshareProgress();
+			await load();
+		});
+
 	const ago = (at: number) => {
 		const days = Math.floor((now - at) / 86400);
 		if (days < 1) return 'today';
@@ -167,6 +173,15 @@
 				</li>
 			{/each}
 		</ul>
+	{/if}
+
+	{#if account?.public_profile}
+		<h3>Public link</h3>
+		<p class="muted small">
+			Anyone with <a href={account.public_profile} target="_blank" rel="noopener">your link</a> can see your map, level and badges.
+			Turning it off breaks the link; sharing again makes a new one.
+		</p>
+		<button class="action" disabled={busy} onclick={unshare}>Turn off the public link</button>
 	{/if}
 
 	<button class="danger" disabled={busy} onclick={deleteEverything}>Delete my account</button>

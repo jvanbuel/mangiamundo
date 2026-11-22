@@ -1,6 +1,8 @@
 <script lang="ts">
 	import ArrowLeft from '@lucide/svelte/icons/arrow-left';
 	import CheckIn from './CheckIn.svelte';
+	import ShareButton from './ShareButton.svelte';
+	import { shareVisit } from './api';
 	import { app, closePlace, country, editingOnOsm, refreshPlace, reportClosed } from './state.svelte';
 	import { directions, distance, type Place } from './types';
 
@@ -85,9 +87,12 @@
 		{#if place.visits.length}
 			<ul>
 				{#each place.visits as visit (visit.id)}
-					<li>
-						{day(visit.at)}
-						{#if visit.verified}<span class="verified"> · checked in on the spot</span>{/if}
+					<li class="visit">
+						<span>
+							{day(visit.at)}
+							{#if visit.verified}<span class="verified"> · checked in on the spot</span>{/if}
+						</span>
+						<ShareButton label="Share" link={() => shareVisit(visit.id)} />
 					</li>
 				{/each}
 			</ul>
@@ -123,6 +128,14 @@
 {/if}
 
 <style>
+	.visit {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		gap: 10px;
+		padding: 3px 0;
+	}
+
 	.back {
 		display: inline-flex;
 		align-items: center;

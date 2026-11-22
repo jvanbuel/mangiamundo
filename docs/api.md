@@ -42,3 +42,17 @@ or a **link code** (8 characters, one use, 10 minutes) for another device.
 whatever that account holds is merged into the restored one.
 
 `DELETE /api/account` deletes the account and everything in it.
+
+## Sharing
+
+`POST /api/share?area=…` makes the user's public page (`/p/{slug}`) the first time, or
+moves it to that area, and returns its `url`, the card's `image_url` and a sentence to
+share. The page shows the map, level, countries per continent and earned badges, never
+places or dates. `DELETE /api/share` turns it off; `GET /api/account` has its path as
+`public_profile`.
+
+`POST /api/visits/{id}/share` does the same for one check-in (`/c/{slug}`): the place, its
+food and the date. Removing the check-in removes the page.
+
+The card (`…/card.png`, 1200 × 630) is drawn on the server from `mobile/shared/world.json`
+and the apps' Nunito font, so link previews and the share sheets show the same image.

@@ -14,6 +14,13 @@
             },
             "type": "array"
           },
+          "public_profile": {
+            "description": "The public page of the user's progress, like `/p/abcd2345ef`, made by sharing;\n`null` when it's off.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
           "recovery_code_created_at": {
             "description": "When the current recovery code was made, `null` when there is none yet.",
             "format": "int64",
@@ -26,7 +33,8 @@
         "required": [
           "created_at",
           "recovery_code_created_at",
-          "devices"
+          "devices",
+          "public_profile"
         ],
         "type": "object"
       },
@@ -1257,6 +1265,29 @@
         },
         "required": [
           "token"
+        ],
+        "type": "object"
+      },
+      "ShareLink": {
+        "description": "A public link and what to say alongside it.",
+        "properties": {
+          "image_url": {
+            "description": "The card image: 1200 × 630 PNG, the map with a caption.",
+            "type": "string"
+          },
+          "text": {
+            "description": "A sentence to share with the link.",
+            "type": "string"
+          },
+          "url": {
+            "description": "The public page, also the link preview.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "url",
+          "image_url",
+          "text"
         ],
         "type": "object"
       },
@@ -2682,6 +2713,88 @@
         ]
       }
     },
+    "/api/share": {
+      "delete": {
+        "operationId": "unshare_profile",
+        "responses": {
+          "204": {
+            "description": "Off, or it was never on"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "An error"
+          }
+        },
+        "security": [
+          {
+            "token": []
+          }
+        ],
+        "summary": "Turns the public page off: its link stops working. Sharing again makes a new one.",
+        "tags": [
+          "share"
+        ]
+      },
+      "post": {
+        "operationId": "share_profile",
+        "parameters": [
+          {
+            "description": "An area id from `/api/areas` or `/api/areas/locate`.",
+            "in": "query",
+            "name": "area",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "The user's IANA time zone (e.g. `Asia/Tokyo`), which decides which day \"today\"\nis for event and celebration dates. UTC when missing or unknown.",
+            "in": "query",
+            "name": "tz",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ShareLink"
+                }
+              }
+            }
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "An error"
+          }
+        },
+        "security": [
+          {
+            "token": []
+          }
+        ],
+        "summary": "Shares the user's progress in an area: makes their public page (the first time) or\nmoves it to this area, and returns its link. `DELETE` turns the page off.",
+        "tags": [
+          "share"
+        ]
+      }
+    },
     "/api/visits/{visit_id}": {
       "delete": {
         "operationId": "remove_visit",
@@ -2720,6 +2833,53 @@
         "summary": "Removes one visit. The place stays visited while the user has other visits to it.",
         "tags": [
           "game"
+        ]
+      }
+    },
+    "/api/visits/{visit_id}/share": {
+      "post": {
+        "operationId": "share_visit",
+        "parameters": [
+          {
+            "description": "A visit id from a place's `visits`.",
+            "in": "path",
+            "name": "visit_id",
+            "required": true,
+            "schema": {
+              "format": "int64",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ShareLink"
+                }
+              }
+            }
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "An error"
+          }
+        },
+        "security": [
+          {
+            "token": []
+          }
+        ],
+        "summary": "Shares one check-in: a public page with the place, its food and the date. The same\nlink each time; it goes when the check-in is removed.",
+        "tags": [
+          "share"
         ]
       }
     }

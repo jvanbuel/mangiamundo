@@ -49,9 +49,13 @@ pub struct Account {
     pub recovery_code_created_at: Option<i64>,
     /// Most recently used first.
     pub devices: Vec<Device>,
+    /// The public page of the user's progress, like `/p/abcd2345ef`, made by sharing;
+    /// `null` when it's off.
+    #[schema(required = true)]
+    pub public_profile: Option<String>,
 }
 
-fn random_code(len: usize) -> String {
+pub(crate) fn random_code(len: usize) -> String {
     let mut bytes = vec![0u8; len];
     getrandom::fill(&mut bytes).expect("the system has no randomness");
     bytes
@@ -190,6 +194,7 @@ pub async fn account(db: &SqlitePool, session: &Session) -> sqlx::Result<Account
         created_at: row.get("created_at"),
         recovery_code_created_at: row.get("recovery_created_at"),
         devices,
+        public_profile: crate::share::profile_slug(db, &session.user).await?.map(|slug| format!("/p/{slug}")),
     })
 }
 
@@ -285,6 +290,8 @@ async fn merge(tx: &mut sqlx::SqliteConnection, from: &str, into: &str) -> sqlx:
         "UPDATE push_subscriptions SET user_id = ?1 WHERE user_id = ?2",
         "UPDATE places SET added_by = ?1 WHERE added_by = ?2",
         "UPDATE additions SET user_id = ?1 WHERE user_id = ?2",
+        // The restored account's own page wins; otherwise the merged one's moves over.
+        "UPDATE OR IGNORE public_profiles SET user_id = ?1 WHERE user_id = ?2",
         // Other devices of the merged account keep working, now as the restored one.
         "UPDATE sessions SET user_id = ?1 WHERE user_id = ?2",
     ] {

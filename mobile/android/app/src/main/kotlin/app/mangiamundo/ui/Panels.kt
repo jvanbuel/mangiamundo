@@ -494,7 +494,7 @@ private fun StatRow(label: String, value: Int, total: Int? = null) {
 }
 
 @Composable
-fun Passport(discover: Discover, onShare: (() -> Unit)? = null) {
+fun Passport(discover: Discover, sharing: Boolean = false, onShare: (() -> Unit)? = null) {
     val colors = LocalAppColors.current
     val profile = discover.profile
     Card {
@@ -522,7 +522,10 @@ fun Passport(discover: Discover, onShare: (() -> Unit)? = null) {
                 }
             }
             if (onShare != null && discover.placesVisited > 0) {
-                ChunkyButton("Share my map", onClick = onShare, icon = Icons.Rounded.Share)
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    ChunkyButton(if (sharing) "Preparing…" else "Share my map", onClick = onShare, enabled = !sharing, icon = Icons.Rounded.Share)
+                    Text("Makes a public link to your map, level and badges.", style = MaterialTheme.typography.bodySmall, color = colors.muted)
+                }
             }
         }
     }
@@ -751,6 +754,9 @@ fun PlaceDetail(
     refreshing: Boolean = false,
     onRefresh: () -> Unit = {},
     onEdit: () -> Unit = {},
+    /** Shares one visit; no share buttons without it. */
+    onShareVisit: ((Long) -> Unit)? = null,
+    sharing: Boolean = false,
     today: LocalDate = LocalDate.now(),
     onToggle: () -> Unit,
 ) {
@@ -824,12 +830,17 @@ fun PlaceDetail(
         }
         for (visit in place.visits) {
             val date = java.time.Instant.ofEpochSecond(visit.at).atZone(java.time.ZoneId.systemDefault()).format(visitDate)
-            Text(
-                date + if (visit.verified) " · checked in on the spot" else "",
-                style = body,
-                color = colors.text,
-                modifier = Modifier.padding(vertical = 6.dp),
-            )
+            Row(Modifier.padding(vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    date + if (visit.verified) " · checked in on the spot" else "",
+                    style = body,
+                    color = colors.text,
+                    modifier = Modifier.weight(1f),
+                )
+                if (onShareVisit != null) {
+                    ChunkyButton("Share", onClick = { onShareVisit(visit.id) }, enabled = !sharing, icon = Icons.Rounded.Share)
+                }
+            }
             HorizontalDivider(color = colors.line)
         }
 

@@ -5,4 +5,8 @@ web/build
 **/*.db*
 **/.env
 mobile
+# Except what the backend's share card builds in.
+!mobile/shared/world.json
+!mobile/android/app/src/main/res/font/nunito_extrabold.ttf
+!mobile/android/app/src/main/res/font/nunito_semibold.ttf
 .git

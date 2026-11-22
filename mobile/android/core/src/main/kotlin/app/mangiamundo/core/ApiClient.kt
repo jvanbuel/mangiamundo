@@ -60,6 +60,24 @@ class ApiClient(private val baseUrl: String, private val tokens: TokenStore, pri
         authed("DELETE", "/api/visits/$visitId")
     }
 
+    /** Makes (or moves to this area) the public page of the user's progress. */
+    suspend fun shareProgress(areaId: String): ShareLink =
+        json.decodeFromString(authed("POST", "/api/share?${area(areaId)}"))
+
+    /** Turns the public page off. */
+    suspend fun unshareProgress() {
+        authed("DELETE", "/api/share")
+    }
+
+    /** A public page for one check-in. */
+    suspend fun shareVisit(visitId: Long): ShareLink =
+        json.decodeFromString(authed("POST", "/api/visits/$visitId/share"))
+
+    /** The share card; null when it can't be loaded, so the link is shared alone. */
+    suspend fun card(link: ShareLink): ByteArray? = withContext(Dispatchers.IO) {
+        runCatching { URL(link.imageUrl).readBytes() }.getOrNull()
+    }
+
     /** "This place has closed": hides it for this user, and for everyone after a second report. */
     suspend fun reportClosed(placeId: String) {
         authed("PUT", "/api/places/${encode(placeId)}/closed")

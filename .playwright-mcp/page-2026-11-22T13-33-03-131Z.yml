@@ -1,0 +1,73 @@
+- main [ref=f1e12]:
+  - generic [ref=f1e13]:
+    - generic [ref=f1e14]:
+      - region "Map" [ref=f1e15]
+      - group [ref=f1e16]:
+        - generic "Toggle attribution" [ref=f1e17] [cursor=pointer]
+    - generic [ref=f1e18]:
+      - button "Spin" [ref=f1e327] [cursor=pointer]
+      - group "Map projection" [ref=f1e19]:
+        - button "Globe" [pressed] [ref=f1e20] [cursor=pointer]
+        - button "Flat" [ref=f1e21] [cursor=pointer]
+    - list "Legend" [ref=f1e45]:
+      - listitem [ref=f1e46]: To discover
+      - listitem [ref=f1e48]: Gold
+      - listitem [ref=f1e50]: Platinum
+      - listitem [ref=f1e52]: Diamond
+      - listitem [ref=f1e54]: None nearby
+  - complementary [ref=f1e22]:
+    - generic [ref=f1e23]:
+      - heading [level=1] [ref=f1e24]:
+        - text: Mangiamundo
+        - button "Settings" [ref=f1e25] [cursor=pointer]
+      - button "Leuven Change" [ref=f1e56] [cursor=pointer]:
+        - generic [ref=f1e58]: Leuven
+        - generic [ref=f1e59]: Change
+    - generic [ref=f1e328]:
+      - button "Lithuania" [ref=f1e329] [cursor=pointer]
+      - generic [ref=f1e331]:
+        - heading "Chez Lithuania" [active] [level=2] [ref=f1e332]
+        - paragraph [ref=f1e333]: Lithuanian
+        - paragraph [ref=f1e334]:
+          - generic [ref=f1e335]: 🇱🇹 Lithuania
+      - generic [ref=f1e336]:
+        - button "Check in" [ref=f1e337] [cursor=pointer]
+        - link "Directions" [ref=f1e338] [cursor=pointer]:
+          - /url: https://www.openstreetmap.org/directions?route=%3B50.89689843844579%2C4.7032922153409
+      - generic [ref=f1e339]:
+        - button "Spin again" [ref=f1e340] [cursor=pointer]
+        - button "Not today" [ref=f1e342] [cursor=pointer]
+      - paragraph [ref=f1e343]: 194 Demo Street · 1.9 km away
+      - generic [ref=f1e344]:
+        - heading "Opening hours" [level=3] [ref=f1e345]
+        - paragraph [ref=f1e346]: Open until 22:00
+        - table [ref=f1e347]:
+          - rowgroup [ref=f1e348]:
+            - row [ref=f1e349]:
+              - rowheader "Monday" [ref=f1e350]
+              - cell "Closed" [ref=f1e351]
+            - row [ref=f1e352]:
+              - rowheader "Tuesday" [ref=f1e353]
+              - cell "12:00-22:00" [ref=f1e354]
+            - row [ref=f1e355]:
+              - rowheader "Wednesday" [ref=f1e356]
+              - cell "12:00-22:00" [ref=f1e357]
+            - row [ref=f1e358]:
+              - rowheader "Thursday" [ref=f1e359]
+              - cell "12:00-22:00" [ref=f1e360]
+            - row [ref=f1e361]:
+              - rowheader "Friday" [ref=f1e362]
+              - cell "12:00-22:00" [ref=f1e363]
+            - row [ref=f1e364]:
+              - rowheader "Saturday" [ref=f1e365]
+              - cell "12:00-22:00" [ref=f1e366]
+            - row [ref=f1e367]:
+              - rowheader "Sunday (today)" [ref=f1e368]:
+                - text: Sunday
+                - generic [ref=f1e369]: (today)
+              - cell "12:00-22:00" [ref=f1e370]
+      - generic [ref=f1e371]:
+        - heading "Your visits" [level=3] [ref=f1e372]
+        - paragraph [ref=f1e373]: Not visited yet.
+      - paragraph [ref=f1e375]:
+        - button "Closed for good?" [ref=f1e376] [cursor=pointer]

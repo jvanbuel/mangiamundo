@@ -31,7 +31,7 @@ use crate::calendar::{self, Celebration};
 use crate::game::{self, Lifetime, PlaceRow, Summary};
 use crate::providers::{AreaInfo, Located, Lookup};
 use crate::store::{self, Area, HoursStatus, PlaceView, Visit};
-use crate::{account, catalog, geo, hours, AppState};
+use crate::{account, catalog, geo, hours, share, AppState};
 
 /// A check-in counts as verified when made within this distance of the place.
 const VERIFY_DISTANCE_M: f64 = 250.0;
@@ -80,6 +80,8 @@ fn api_router() -> (Router<AppState>, utoipa::openapi::OpenApi) {
         .routes(routes!(report_closed))
         .routes(routes!(add_visit))
         .routes(routes!(remove_visit))
+        .routes(routes!(share_visit))
+        .routes(routes!(share_profile, unshare_profile))
         .routes(routes!(push_key))
         .routes(routes!(subscribe))
         .routes(routes!(unsubscribe))
@@ -97,6 +99,11 @@ pub fn router(state: AppState) -> Router {
         "/api/openapi.json",
         get(move || std::future::ready(Json(doc.clone()))),
     )
+    // Public pages of shared progress and check-ins, with their card images.
+    .route("/p/{slug}", get(|state, headers, slug| async { page_or_gone(profile_page(state, headers, slug).await) }))
+    .route("/p/{slug}/card.png", get(profile_card))
+    .route("/c/{slug}", get(|state, headers, slug| async { page_or_gone(visit_page(state, headers, slug).await) }))
+    .route("/c/{slug}/card.png", get(visit_card))
     // Unknown API paths get a JSON 404 rather than the web app's index.html.
     .route("/api", any(not_found))
     .route("/api/", any(not_found))
@@ -188,6 +195,8 @@ pub enum ApiError {
     Upstream(#[source] anyhow::Error),
     #[error("internal error")]
     Database(#[from] sqlx::Error),
+    #[error("internal error")]
+    Internal(#[source] anyhow::Error),
 }
 
 impl IntoResponse for ApiError {
@@ -209,6 +218,10 @@ impl IntoResponse for ApiError {
             }
             ApiError::Database(error) => {
                 tracing::error!(%error, "database error");
+                (StatusCode::INTERNAL_SERVER_ERROR, ErrorCode::Internal)
+            }
+            ApiError::Internal(error) => {
+                tracing::error!(error = format!("{error:#}"), "internal error");
                 (StatusCode::INTERNAL_SERVER_ERROR, ErrorCode::Internal)
             }
         };
@@ -1445,6 +1458,185 @@ async fn remove_visit(
 ) -> Result<StatusCode, ApiError> {
     store::remove_visit(&state.db, &user, visit_id).await?;
     Ok(StatusCode::NO_CONTENT)
+}
+
+/// A public link and what to say alongside it.
+#[derive(Serialize, ToSchema)]
+struct ShareLink {
+    /// The public page, also the link preview.
+    url: String,
+    /// The card image: 1200 × 630 PNG, the map with a caption.
+    image_url: String,
+    /// A sentence to share with the link.
+    text: String,
+}
+
+/// `https://mangiamundo.com`: where the request was sent, as the browser or app saw it.
+fn origin(headers: &header::HeaderMap) -> String {
+    let host = headers
+        .get(header::HOST)
+        .and_then(|h| h.to_str().ok())
+        .unwrap_or("localhost");
+    let local = host.starts_with("localhost") || host.starts_with("127.0.0.1") || host.starts_with("10.0.2.2");
+    let proto = headers
+        .get("x-forwarded-proto")
+        .and_then(|h| h.to_str().ok())
+        .unwrap_or(if local { "http" } else { "https" });
+    format!("{proto}://{host}")
+}
+
+fn host(headers: &header::HeaderMap) -> String {
+    origin(headers).split("://").nth(1).unwrap_or_default().to_string()
+}
+
+/// Shares the user's progress in an area: makes their public page (the first time) or
+/// moves it to this area, and returns its link. `DELETE` turns the page off.
+#[utoipa::path(
+    post, path = "/api/share", tag = "share", params(AreaQuery), security(("token" = [])),
+    responses((status = 200, body = ShareLink), (status = "default", description = "An error", body = ErrorBody)),
+)]
+async fn share_profile(
+    State(state): State<AppState>,
+    User(user): User,
+    headers: header::HeaderMap,
+    Query(query): Query<AreaQuery>,
+) -> ApiResult<ShareLink> {
+    let area = resolve_area(&state, &query.area).await?;
+    let slug = share::publish_profile(&state.db, &user, area.id(), state.now()).await?;
+    let rows = store::area_rows(&state.db, area.id(), Some(&user)).await?;
+    let summary = game::summarize(&rows, store::lifetime(&state.db, &user).await?);
+    let url = format!("{}/p/{slug}", origin(&headers));
+    Ok(Json(ShareLink {
+        image_url: format!("{url}/card.png"),
+        url,
+        text: share::profile_text(&summary, &area.boundary.info.name),
+    }))
+}
+
+/// Turns the public page off: its link stops working. Sharing again makes a new one.
+#[utoipa::path(
+    delete, path = "/api/share", tag = "share", security(("token" = [])),
+    responses((status = 204, description = "Off, or it was never on"), (status = "default", description = "An error", body = ErrorBody)),
+)]
+async fn unshare_profile(State(state): State<AppState>, User(user): User) -> Result<StatusCode, ApiError> {
+    share::unpublish_profile(&state.db, &user).await?;
+    Ok(StatusCode::NO_CONTENT)
+}
+
+/// Shares one check-in: a public page with the place, its food and the date. The same
+/// link each time; it goes when the check-in is removed.
+#[utoipa::path(
+    post, path = "/api/visits/{visit_id}/share", tag = "share",
+    params(("visit_id" = i64, Path, description = "A visit id from a place's `visits`.")),
+    security(("token" = [])),
+    responses((status = 200, body = ShareLink), (status = "default", description = "An error", body = ErrorBody)),
+)]
+async fn share_visit(
+    State(state): State<AppState>,
+    User(user): User,
+    headers: header::HeaderMap,
+    Path(visit_id): Path<i64>,
+) -> ApiResult<ShareLink> {
+    let slug = share::share_visit(&state.db, &user, visit_id, state.now())
+        .await?
+        .ok_or(ApiError::NotFound("visit"))?;
+    let visit = share::find_visit(&state.db, &slug).await?.ok_or(ApiError::NotFound("visit"))?;
+    let url = format!("{}/c/{slug}", origin(&headers));
+    Ok(Json(ShareLink {
+        image_url: format!("{url}/card.png"),
+        url,
+        text: format!("{} on Mangiamundo.", share::visit_headline(&visit)),
+    }))
+}
+
+/// A public page's progress: the summary and the area's name.
+async fn public_profile(state: &AppState, slug: &str) -> Result<(Summary, String), ApiError> {
+    let (user, area_id) = share::find_profile(&state.db, slug).await?.ok_or(ApiError::NotFound("page"))?;
+    let area = store::find_area(&state.db, &area_id).await?.ok_or(ApiError::NotFound("page"))?;
+    let rows = store::area_rows(&state.db, &area_id, Some(&user)).await?;
+    let summary = game::summarize(&rows, store::lifetime(&state.db, &user).await?);
+    Ok((summary, area.boundary.info.name))
+}
+
+fn html(body: String) -> Response {
+    ([(header::CONTENT_TYPE, "text/html; charset=utf-8")], body).into_response()
+}
+
+/// People open these links in a browser, so a page that's gone says so in HTML.
+fn page_or_gone(result: Result<Response, ApiError>) -> Response {
+    match result {
+        Err(ApiError::NotFound(_)) => (
+            StatusCode::NOT_FOUND,
+            html(share::page(
+                "This link is gone",
+                "Whoever shared it turned it off.",
+                "/icon.svg",
+                "/",
+                "<h1>This link is gone</h1>\n<p class=\"muted\">Whoever shared it turned it off or removed the check-in.</p>\n",
+            )),
+        )
+            .into_response(),
+        other => other.into_response(),
+    }
+}
+
+fn png(bytes: Vec<u8>) -> Response {
+    (
+        [(header::CONTENT_TYPE, "image/png"), (header::CACHE_CONTROL, "public, max-age=300")],
+        bytes,
+    )
+        .into_response()
+}
+
+/// Draws a card off the async threads; it takes a few dozen milliseconds.
+async fn render_card(statuses: HashMap<String, game::Status>, headline: String, caption: String) -> Result<Vec<u8>, ApiError> {
+    tokio::task::spawn_blocking(move || {
+        let statuses = statuses.iter().map(|(c, s)| (c.as_str(), *s)).collect();
+        share::card_png(&statuses, &headline, &caption)
+    })
+    .await
+    .map_err(|e| ApiError::Internal(e.into()))?
+    .map_err(ApiError::Internal)
+}
+
+async fn profile_page(State(state): State<AppState>, headers: header::HeaderMap, Path(slug): Path<String>) -> Result<Response, ApiError> {
+    let (summary, area) = public_profile(&state, &slug).await?;
+    let url = format!("{}/p/{slug}", origin(&headers));
+    Ok(html(share::page(
+        &share::profile_headline(&summary),
+        &share::profile_text(&summary, &area),
+        &format!("{url}/card.png"),
+        &url,
+        &share::profile_body(&summary, &area),
+    )))
+}
+
+async fn profile_card(State(state): State<AppState>, headers: header::HeaderMap, Path(slug): Path<String>) -> Result<Response, ApiError> {
+    let (summary, area) = public_profile(&state, &slug).await?;
+    let statuses = summary.countries.iter().map(|c| (c.code.clone(), c.status)).collect();
+    let caption = format!("{area} · Level {} · {}", summary.profile.level, host(&headers));
+    Ok(png(render_card(statuses, share::profile_headline(&summary), caption).await?))
+}
+
+async fn visit_page(State(state): State<AppState>, headers: header::HeaderMap, Path(slug): Path<String>) -> Result<Response, ApiError> {
+    let visit = share::find_visit(&state.db, &slug).await?.ok_or(ApiError::NotFound("page"))?;
+    let url = format!("{}/c/{slug}", origin(&headers));
+    let headline = share::visit_headline(&visit);
+    Ok(html(share::page(
+        &headline,
+        &format!("{headline}, {}.", share::pretty_date(&visit.date)),
+        &format!("{url}/card.png"),
+        &url,
+        &share::visit_body(&visit),
+    )))
+}
+
+async fn visit_card(State(state): State<AppState>, headers: header::HeaderMap, Path(slug): Path<String>) -> Result<Response, ApiError> {
+    let visit = share::find_visit(&state.db, &slug).await?.ok_or(ApiError::NotFound("page"))?;
+    // The check-in's countries light up gold, as freshly tasted.
+    let statuses = visit.countries.iter().map(|c| (c.clone(), game::Status::Discovered)).collect();
+    let caption = format!("{} · {}", share::pretty_date(&visit.date), host(&headers));
+    Ok(png(render_card(statuses, share::visit_headline(&visit), caption).await?))
 }
 
 /// "This place has closed": hides it for the reporter now, and for everyone after more reports.

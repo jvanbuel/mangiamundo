@@ -1,0 +1,59 @@
+- main [ref=f5e12]:
+  - generic [ref=f5e13]:
+    - generic [ref=f5e14]:
+      - region "Map" [ref=f5e15]
+      - group [ref=f5e16]:
+        - generic "Toggle attribution" [ref=f5e17] [cursor=pointer]
+    - generic [ref=f5e18]:
+      - button "Spin" [ref=f5e19] [cursor=pointer]
+      - group "Map projection" [ref=f5e21]:
+        - button "Globe" [pressed] [ref=f5e22] [cursor=pointer]
+        - button "Flat" [ref=f5e23] [cursor=pointer]
+    - list "Legend" [ref=f5e24]:
+      - listitem [ref=f5e25]: To discover
+      - listitem [ref=f5e27]: Gold
+      - listitem [ref=f5e29]: Platinum
+      - listitem [ref=f5e31]: Diamond
+      - listitem [ref=f5e33]: None nearby
+  - complementary [ref=f5e35]:
+    - generic [ref=f5e36]:
+      - heading [level=1] [ref=f5e37]:
+        - text: Mangiamundo
+        - button "Settings" [ref=f5e38] [cursor=pointer]
+      - button "Leuven Change" [ref=f5e40] [cursor=pointer]:
+        - generic [ref=f5e42]: Leuven
+        - generic [ref=f5e43]: Change
+    - generic [ref=f5e44]:
+      - button "All countries" [ref=f5e45] [cursor=pointer]
+      - generic [ref=f5e47]:
+        - generic [aria-hidden] [ref=f5e48]: 🇩🇿
+        - generic [ref=f5e49]:
+          - heading "Algeria" [level=2] [ref=f5e50]
+          - paragraph [ref=f5e51]: 0 of 4 places visited · 4 more for diamond
+      - list [ref=f5e53]:
+        - listitem [ref=f5e54]: Open now
+        - listitem [ref=f5e55]:
+          - generic [ref=f5e56]:
+            - link "Little Algeria" [ref=f5e57] [cursor=pointer]:
+              - /url: "?place=demo-leuven-DZ-0"
+            - generic [ref=f5e58]: Open · 1.8 km · 121 Demo Street
+          - button "Check in" [ref=f5e59] [cursor=pointer]
+        - listitem [ref=f5e60]:
+          - generic [ref=f5e61]:
+            - link "Old Town Algeria" [ref=f5e62] [cursor=pointer]:
+              - /url: "?place=demo-leuven-DZ-1"
+            - generic [ref=f5e63]: Open until 22:00 · 2.0 km · 157 Demo Street
+          - button "Check in" [ref=f5e64] [cursor=pointer]
+        - listitem [ref=f5e65]: Hours unknown
+        - listitem [ref=f5e66]:
+          - generic [ref=f5e67]:
+            - link "Casa Algeria" [ref=f5e68] [cursor=pointer]:
+              - /url: "?place=demo-leuven-DZ-2"
+            - generic [ref=f5e69]: 1.9 km · 104 Demo Street
+          - button "Check in" [ref=f5e70] [cursor=pointer]
+        - listitem [ref=f5e71]:
+          - generic [ref=f5e72]:
+            - link "Old Town Algeria" [ref=f5e73] [cursor=pointer]:
+              - /url: "?place=demo-leuven-DZ-3"
+            - generic [ref=f5e74]: 2.2 km · 78 Demo Street
+          - button "Check in" [ref=f5e75] [cursor=pointer]

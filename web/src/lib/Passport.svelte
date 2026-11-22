@@ -1,16 +1,9 @@
 <script lang="ts">
-	import Share from '@lucide/svelte/icons/share-2';
-	import { shareProgress } from './share';
+	import { shareProgress } from './api';
+	import ShareButton from './ShareButton.svelte';
 	import type { Discover } from './types';
 
-	let { discover, place }: { discover: Discover; place: string } = $props();
-	let sharing = $state(false);
-
-	async function share() {
-		sharing = true;
-		await shareProgress(discover, place);
-		sharing = false;
-	}
+	let { discover, areaId }: { discover: Discover; areaId: string } = $props();
 
 	const profile = $derived(discover.profile);
 	const pct = (part: number, whole: number) => (whole ? (part / whole) * 100 : 0);
@@ -47,7 +40,10 @@
 		<div><dt>Diamond countries</dt><dd>{discover.world.completed}</dd></div>
 	</dl>
 
-	<button class="share" disabled={sharing} onclick={share}><Share size={15} strokeWidth={2.5} /> Share my map</button>
+	<div class="share">
+		<ShareButton label="Share my map" link={() => shareProgress(areaId)} />
+		<span class="muted">Makes a public link to your map, level and badges.</span>
+	</div>
 	{/if}
 </section>
 
@@ -99,26 +95,11 @@
 	}
 
 	.share {
-		justify-self: start;
-		display: inline-flex;
+		display: flex;
 		align-items: center;
-		gap: 6px;
-		padding: 6px 12px;
-		border-radius: 9px;
-		background: var(--accent);
-		color: var(--on-accent);
-		font-weight: 800;
-		font-size: var(--text-sm);
-		box-shadow: 0 2px 0 color-mix(in srgb, var(--accent) 70%, black);
-	}
-
-	.share:active {
-		transform: translateY(2px);
-		box-shadow: none;
-	}
-
-	.share:disabled {
-		opacity: 0.6;
+		flex-wrap: wrap;
+		gap: 6px 10px;
+		font-size: var(--text-xs);
 	}
 
 	dd .muted {

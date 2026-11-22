@@ -1,0 +1,28 @@
+- main [ref=f1e12]:
+  - generic [ref=f1e13]:
+    - generic [ref=f1e14]:
+      - region "Map" [ref=f1e15]
+      - group [ref=f1e16]:
+        - generic "Toggle attribution" [ref=f1e17] [cursor=pointer]
+    - group "Map projection" [ref=f1e19]:
+      - button "Globe" [pressed] [ref=f1e20] [cursor=pointer]
+      - button "Flat" [ref=f1e21] [cursor=pointer]
+  - complementary [ref=f1e22]:
+    - generic [ref=f1e23]:
+      - heading [level=1] [ref=f1e24]:
+        - text: Mangiamundo
+        - button "Settings" [ref=f1e25] [cursor=pointer]
+      - paragraph [ref=f1e27]: Eat the world, start with your city
+    - generic [ref=f1e28]:
+      - heading "Which of the world's kitchens are near you?" [level=2] [ref=f1e29]
+      - paragraph [ref=f1e30]: Tell us where you are and we will light up every country whose kitchen you can visit nearby.
+      - generic [ref=f1e31]:
+        - button "Use my current location" [ref=f1e32] [cursor=pointer]
+        - generic [ref=f1e34]:
+          - searchbox "Search a city or postal code" [active] [ref=f1e35]: Leuven
+          - button "Search" [ref=f1e36] [cursor=pointer]
+        - list [ref=f1e38]:
+          - listitem [ref=f1e39]:
+            - button "Leuven City · Belgium" [ref=f1e40] [cursor=pointer]:
+              - generic [ref=f1e41]: Leuven
+              - generic [ref=f1e42]: City · Belgium

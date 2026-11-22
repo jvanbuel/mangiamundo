@@ -1,0 +1,5 @@
+[   23397ms] [WARNING] %c[sveltekit] history_api_conflict
+%cAvoid using `history.pushState(...)` and `history.replaceState(...)` as these will conflict with SvelteKit's router. Use `goto(...)` from `$app/navigation` instead.
+https://svelte.dev/e/kit/history_api_conflict font-weight: bold font-weight: normal @ http://localhost:5173/@vite/client:364
+[   39261ms] TypeError: m.isEasing is not a function
+    at tick (http://localhost:5173/src/lib/WorldMap.svelte?t=1795354398231:588:10)
