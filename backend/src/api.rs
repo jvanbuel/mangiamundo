@@ -393,7 +393,7 @@ struct Restore {
 /// another account, that account's check-ins, added places and the rest move into the
 /// restored account, which then replaces it. A link code works once.
 #[utoipa::path(
-    post, path = "/api/session/restore", tag = "account",
+    post, path = "/api/session/restore", tag = "account", request_body = Restore,
     security((), ("token" = [])),
     responses(
         (status = 200, body = Session),

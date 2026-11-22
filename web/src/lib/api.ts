@@ -48,6 +48,9 @@ function token(): Promise<string> {
 	if (stored) return Promise.resolve(stored);
 	pendingToken ??= raw<{ token: string }>('POST', '/api/session', null, { device: deviceName() })
 		.then(({ token }) => {
+			// A restore that finished meanwhile stored its token; keep that one.
+			const restored = localStorage.getItem(TOKEN_KEY);
+			if (restored) return restored;
 			localStorage.setItem(TOKEN_KEY, token);
 			return token;
 		})
@@ -56,12 +59,14 @@ function token(): Promise<string> {
 }
 
 async function authed<T>(method: string, path: string, body?: unknown): Promise<T> {
+	const sent = await token();
 	try {
-		return await raw<T>(method, path, await token(), body);
+		return await raw<T>(method, path, sent, body);
 	} catch (error) {
 		// The server no longer knows this token (e.g. its database was reset): start over once.
+		// A newer token, such as one a restore stored meanwhile, stays.
 		if (error instanceof ApiError && error.status === 401) {
-			localStorage.removeItem(TOKEN_KEY);
+			if (localStorage.getItem(TOKEN_KEY) === sent) localStorage.removeItem(TOKEN_KEY);
 			return raw<T>(method, path, await token(), body);
 		}
 		throw error;
@@ -177,11 +182,18 @@ export const newLinkCode = () => authed<{ code: string; expires_at: number }>('P
  * before moves into that account.
  */
 export async function restore(code: string): Promise<void> {
-	const { token } = await raw<{ token: string }>('POST', '/api/session/restore', localStorage.getItem(TOKEN_KEY), {
-		code,
-		device: deviceName()
-	});
-	localStorage.setItem(TOKEN_KEY, token);
+	const body = { code, device: deviceName() };
+	const path = '/api/session/restore';
+	let session: { token: string };
+	try {
+		session = await raw<{ token: string }>('POST', path, localStorage.getItem(TOKEN_KEY), body);
+	} catch (error) {
+		// This device's session was ended (say, from another device): restore without it.
+		if (!(error instanceof ApiError && error.status === 401)) throw error;
+		localStorage.removeItem(TOKEN_KEY);
+		session = await raw<{ token: string }>('POST', path, null, body);
+	}
+	localStorage.setItem(TOKEN_KEY, session.token);
 }
 
 /** Signs another device out of this account. */

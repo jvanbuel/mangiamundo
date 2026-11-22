@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import * as api from './api';
-	import { refresh, toast } from './state.svelte.ts';
+	import { accountChanged, toast } from './state.svelte.ts';
 	import type { Account } from './types';
 
 	let account = $state<Account | null>(null);
@@ -79,7 +79,7 @@
 			recoveryCode = null;
 			link = null;
 			toast(null, 'Welcome back', 'Your progress is on this device now.');
-			await Promise.all([load(), refresh()]);
+			await Promise.all([load(), accountChanged()]);
 		});
 
 	const signOut = (id: string) =>
@@ -95,7 +95,7 @@
 			recoveryCode = null;
 			link = null;
 			toast(null, 'Account deleted', 'You start fresh on this device.');
-			await Promise.all([load(), refresh()]);
+			await Promise.all([load(), accountChanged()]);
 		});
 
 	const ago = (at: number) => {
@@ -117,7 +117,7 @@
 		</div>
 		<p class="muted small">Shown only now. Anyone with this code can use your account.</p>
 	{:else}
-		<button class="action" disabled={busy} onclick={makeRecoveryCode}>
+		<button class="action" disabled={busy || !account} onclick={makeRecoveryCode}>
 			{account?.recovery_code_created_at ? 'Make a new recovery code' : 'Make a recovery code'}
 		</button>
 		{#if account?.recovery_code_created_at}

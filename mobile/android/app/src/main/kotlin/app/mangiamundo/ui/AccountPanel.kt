@@ -93,11 +93,13 @@ fun AccountSection(vm: AppViewModel) {
             ShownCode(code) { copy(code) }
             Text("Shown only now. Anyone with this code can use your account.", color = colors.muted, style = small)
         } else {
+            // Until the account has loaded, it is unknown whether a code would replace one.
+            val loaded = vm.account != null
             val made = vm.account?.recoveryCodeCreatedAt
             ChunkyButton(
                 if (made != null) "Make a new recovery code" else "Make a recovery code",
                 onClick = { if (made != null) confirm = Confirm.NEW_RECOVERY_CODE else vm.makeRecoveryCode() },
-                enabled = !vm.accountBusy,
+                enabled = !vm.accountBusy && loaded,
             )
             if (made != null) Text("You made one ${ago(made, now)}.", color = colors.muted, style = small)
         }
@@ -137,7 +139,12 @@ fun AccountSection(vm: AppViewModel) {
         Text("What you did on this device so far is added to that account.", color = colors.muted, style = small)
 
         val devices = vm.account?.devices.orEmpty()
-        vm.accountError?.let { Text(it, color = colors.muted, style = small) }
+        vm.accountError?.let {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(it, color = colors.muted, style = small, modifier = Modifier.weight(1f))
+                TextButton(onClick = vm::loadAccount) { Text("Try again") }
+            }
+        }
         if (devices.size > 1) {
             Heading("Signed-in devices")
             for (device in devices) {

@@ -2361,3 +2361,50 @@ async fn link_codes_are_limited_per_hour() {
     assert_eq!(status, StatusCode::TOO_MANY_REQUESTS);
     assert_error(&error, "too_many_requests");
 }
+
+/// A restore that read its session before another restore moved that session to a new
+/// account merges that new account, not the stale one.
+#[tokio::test]
+async fn a_restore_merges_the_account_its_session_belongs_to_now() {
+    use mangiamundo::account;
+    let db = store::connect("sqlite::memory:").await.unwrap();
+    let user = |token: String| {
+        let db = db.clone();
+        async move {
+            account::session_for_token(&db, &token, START)
+                .await
+                .unwrap()
+                .unwrap()
+        }
+    };
+    let stale = user(account::create_user(&db, None, START).await.unwrap()).await;
+    let moved_to = user(account::create_user(&db, None, START).await.unwrap())
+        .await
+        .user;
+    let target = user(account::create_user(&db, None, START).await.unwrap())
+        .await
+        .user;
+    // The other restore, done meanwhile: this session now belongs to `moved_to`.
+    sqlx::query("UPDATE sessions SET user_id = ? WHERE id = ?")
+        .bind(&moved_to)
+        .bind(&stale.id)
+        .execute(&db)
+        .await
+        .unwrap();
+    let code = account::new_recovery_code(&db, &target, START)
+        .await
+        .unwrap();
+    account::redeem(&db, &code, Some(&stale), None, START)
+        .await
+        .unwrap()
+        .unwrap();
+    let left: Option<String> = sqlx::query_scalar("SELECT id FROM users WHERE id = ?")
+        .bind(&moved_to)
+        .fetch_optional(&db)
+        .await
+        .unwrap();
+    assert_eq!(
+        left, None,
+        "`moved_to` was merged into the restored account"
+    );
+}

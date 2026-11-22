@@ -935,6 +935,15 @@ export interface components {
          * @enum {string}
          */
         Refreshed: "updated" | "unchanged" | "gone";
+        Restore: {
+            /**
+             * @description A recovery code (`XXXX-XXXX-XXXX-XXXX-XXXX`) or a link code (`XXXX-XXXX`). Case,
+             *     spaces and dashes don't matter.
+             */
+            code: string;
+            /** @description As in `POST /api/session`. */
+            device?: string | null;
+        };
         /** @description XP for an added restaurant, granted once OpenStreetMap has it. */
         Reward: {
             /** @description The city the bonus was judged in. `null` when no city around it was cached. */
@@ -1818,7 +1827,11 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["Restore"];
+            };
+        };
         responses: {
             200: {
                 headers: {

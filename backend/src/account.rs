@@ -259,12 +259,16 @@ pub async fn redeem(
     };
     let Some(user) = user else { return Ok(None) };
     if let Some(old) = current {
-        sqlx::query("DELETE FROM sessions WHERE id = ?")
-            .bind(&old.id)
-            .execute(&mut *tx)
-            .await?;
-        if old.user != user {
-            merge(&mut tx, &old.user, &user).await?;
+        // The owner is read again here: a concurrent restore may have moved this session to
+        // another account since `old` was looked up. A session that is gone (signed out, its
+        // account deleted) has nothing left to merge.
+        let owner: Option<String> =
+            sqlx::query_scalar("DELETE FROM sessions WHERE id = ? RETURNING user_id")
+                .bind(&old.id)
+                .fetch_optional(&mut *tx)
+                .await?;
+        if let Some(owner) = owner.filter(|owner| *owner != user) {
+            merge(&mut tx, &owner, &user).await?;
         }
     }
     let token = start_session(&mut *tx, &user, device, now).await?;

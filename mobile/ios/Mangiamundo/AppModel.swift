@@ -700,8 +700,7 @@ final class AppModel {
             self.linkCode = nil
             onRestored()
             self.toast("Welcome back. Your progress is on this device now.")
-            self.account = try await self.api.account()
-            self.refresh()
+            await self.accountChanged()
         }
     }
 
@@ -718,9 +717,19 @@ final class AppModel {
             self.recoveryCode = nil
             self.linkCode = nil
             self.toast("Account deleted. You start fresh on this device.")
-            self.account = try await self.api.account()
-            self.refresh()
+            await self.accountChanged()
         }
+    }
+
+    /// After this device switches account: drop the previous account's visits, then load this one's.
+    private func accountChanged() async {
+        detailTask?.cancel()
+        detail = nil
+        // Cancels the places loader, clears its places and loads the open country again.
+        select(selected)
+        refresh()
+        // A failure here only shows in the account section: the switch itself worked.
+        await loadAccount()
     }
 
     func toast(_ text: String) {

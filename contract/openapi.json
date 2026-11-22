@@ -1176,6 +1176,25 @@
         ],
         "type": "string"
       },
+      "Restore": {
+        "properties": {
+          "code": {
+            "description": "A recovery code (`XXXX-XXXX-XXXX-XXXX-XXXX`) or a link code (`XXXX-XXXX`). Case,\nspaces and dashes don't matter.",
+            "type": "string"
+          },
+          "device": {
+            "description": "As in `POST /api/session`.",
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "code"
+        ],
+        "type": "object"
+      },
       "Reward": {
         "description": "XP for an added restaurant, granted once OpenStreetMap has it.",
         "properties": {
@@ -2589,6 +2608,16 @@
       "post": {
         "description": "Sent with the device's current token, that session ends, and when it belonged to\nanother account, that account's check-ins, added places and the rest move into the\nrestored account, which then replaces it. A link code works once.",
         "operationId": "restore_session",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Restore"
+              }
+            }
+          },
+          "required": true
+        },
         "responses": {
           "200": {
             "content": {

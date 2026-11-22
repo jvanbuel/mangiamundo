@@ -683,8 +683,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         linkCode = null
         onRestored()
         messageChannel.trySend("Welcome back. Your progress is on this device now.")
-        account = api.account()
-        refresh()
+        accountChanged()
     }
 
     fun signOut(deviceId: String) = accountAction {
@@ -697,8 +696,16 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         recoveryCode = null
         linkCode = null
         messageChannel.trySend("Account deleted. You start fresh on this device.")
-        account = api.account()
+        accountChanged()
+    }
+
+    /** This device is in another account now: drop what was loaded for the previous one. */
+    private fun accountChanged() {
+        closePlace()
+        select(selected)
         refresh()
+        account = null
+        loadAccount()
     }
 }
 

@@ -156,7 +156,15 @@ actor APIClient {
         let data = try JSONSerialization.data(withJSONObject: body)
         struct Session: Decodable { let token: String }
         let current = defaults.string(forKey: Self.tokenKey)
-        let session: Session = try decode(await request("POST", "/api/session/restore", body: data, token: current))
+        let session: Session
+        do {
+            // The current token lets what this device did merge into the restored account.
+            session = try decode(await request("POST", "/api/session/restore", body: data, token: current))
+        } catch let error as APIError where error.status == 401 && current != nil {
+            // This device was signed out elsewhere: drop that token and restore without it.
+            if defaults.string(forKey: Self.tokenKey) == current { defaults.removeObject(forKey: Self.tokenKey) }
+            session = try decode(await request("POST", "/api/session/restore", body: data))
+        }
         defaults.set(session.token, forKey: Self.tokenKey)
     }
 
@@ -206,16 +214,20 @@ actor APIClient {
         pendingToken = task
         defer { pendingToken = nil }
         let token = try await task.value
+        // A restore may have stored a token meanwhile: keep that one.
+        if let stored = defaults.string(forKey: Self.tokenKey) { return stored }
         defaults.set(token, forKey: Self.tokenKey)
         return token
     }
 
     private func authed(_ method: String, _ path: String, body: Data? = nil) async throws -> Data {
+        let sent = try await token()
         do {
-            return try await request(method, path, body: body, token: try await token())
+            return try await request(method, path, body: body, token: sent)
         } catch let error as APIError where error.status == 401 {
             // The server no longer knows this token (its database was reset): start over once.
-            defaults.removeObject(forKey: Self.tokenKey)
+            // A token stored meanwhile (by a restore) is newer: keep it.
+            if defaults.string(forKey: Self.tokenKey) == sent { defaults.removeObject(forKey: Self.tokenKey) }
             return try await request(method, path, body: body, token: try await token())
         }
     }

@@ -87,6 +87,7 @@ struct ContentView: View {
         .sheet(isPresented: $settingsOpen) {
             SettingsSheet(googleInstalled: googleInstalled)
                 .padding(20)
+                .overlay(alignment: .top) { ToastStack(toasts: model.toasts) }
                 .presentationDetents([.medium, .large])
                 .presentationBackground(Theme.panel)
         }

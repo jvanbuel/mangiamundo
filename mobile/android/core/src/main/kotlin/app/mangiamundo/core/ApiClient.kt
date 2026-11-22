@@ -121,7 +121,15 @@ class ApiClient(private val baseUrl: String, private val tokens: TokenStore, pri
      */
     suspend fun restore(code: String) = tokenLock.withLock {
         val body = json.encodeToString(RestoreBody.serializer(), RestoreBody(code, deviceName))
-        tokens.token = json.decodeFromString<Session>(request("POST", "/api/session/restore", body, tokens.token)).token
+        // The current token goes first so this device's progress merges; a rejected one is dropped.
+        val text = try {
+            request("POST", "/api/session/restore", body, tokens.token)
+        } catch (e: ApiException) {
+            if (e.status != 401 || tokens.token == null) throw e
+            tokens.token = null
+            request("POST", "/api/session/restore", body)
+        }
+        tokens.token = json.decodeFromString<Session>(text).token
     }
 
     /** Signs another device out of this account. */
@@ -149,15 +157,18 @@ class ApiClient(private val baseUrl: String, private val tokens: TokenStore, pri
             .also { tokens.token = it }
     }
 
-    private suspend fun authed(method: String, path: String, body: String? = null): String =
-        try {
-            request(method, path, body, token())
+    private suspend fun authed(method: String, path: String, body: String? = null): String {
+        val sent = token()
+        return try {
+            request(method, path, body, sent)
         } catch (e: ApiException) {
             // The server no longer knows this token (its database was reset): start over once.
+            // A token stored meanwhile, by a restore, is newer and stays.
             if (e.status != 401) throw e
-            tokens.token = null
+            tokenLock.withLock { if (tokens.token == sent) tokens.token = null }
             request(method, path, body, token())
         }
+    }
 
     private suspend fun request(
         method: String,
