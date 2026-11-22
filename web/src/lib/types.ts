@@ -19,6 +19,8 @@ export type AreaProgress = Schemas['LoadProgress'];
 export type Located = Schemas['Located'];
 export type Discover = Schemas['Discover'];
 export type Place = Schemas['PlaceView'];
+/** A place to try from `/api/suggestion`, and the country the globe lands on. */
+export type Suggestion = Schemas['Suggestion'];
 export type AddPlace = Schemas['AddPlace'];
 /** The place just added, with the XP it earns once OpenStreetMap has it. */
 export type AddedPlace = Schemas['AddedPlace'];

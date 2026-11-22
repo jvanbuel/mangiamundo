@@ -10,7 +10,8 @@ import java.net.HttpURLConnection
 import java.net.URL
 import java.net.URLEncoder
 
-class ApiException(val status: Int, message: String) : Exception(message)
+/** `code` is the server's error code, such as `nothing_open`. */
+class ApiException(val status: Int, message: String, val code: String? = null) : Exception(message)
 
 /** Where the anonymous account token of this device is kept. */
 interface TokenStore {
@@ -38,6 +39,13 @@ class ApiClient(private val baseUrl: String, private val tokens: TokenStore, pri
     suspend fun places(areaId: String, country: String, from: Pair<Double, Double>?): List<Place> {
         val position = from?.let { "&lat=${it.first}&lng=${it.second}" }.orEmpty()
         return json.decodeFromString(authed("GET", "/api/places?${area(areaId)}&country=$country$position"))
+    }
+
+    /** A random unvisited place to try, open now unless `open` is false, skipping `exclude`. */
+    suspend fun suggestion(areaId: String, from: Pair<Double, Double>?, exclude: Collection<String>, open: Boolean): Suggestion {
+        val position = from?.let { "&lat=${it.first}&lng=${it.second}" }.orEmpty()
+        val skip = exclude.joinToString(",") { encode(it) }
+        return json.decodeFromString(authed("GET", "/api/suggestion?${area(areaId)}&open=$open&exclude=$skip$position"))
     }
 
     suspend fun celebrations(areaId: String, days: Int = 60): List<Celebration> =
@@ -197,8 +205,8 @@ class ApiClient(private val baseUrl: String, private val tokens: TokenStore, pri
                 if (status == 204) "" else connection.inputStream.bufferedReader().use { it.readText() }
             } else {
                 val text = connection.errorStream?.bufferedReader()?.use { it.readText() }.orEmpty()
-                val detail = runCatching { json.decodeFromString<ErrorBody>(text).error }.getOrNull()
-                throw ApiException(status, detail ?: "Request failed ($status)")
+                val detail = runCatching { json.decodeFromString<ErrorBody>(text) }.getOrNull()
+                throw ApiException(status, detail?.error ?: "Request failed ($status)", detail?.code)
             }
         } catch (e: IOException) {
             throw ApiException(0, "Cannot reach the server.")

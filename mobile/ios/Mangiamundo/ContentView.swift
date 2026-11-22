@@ -35,6 +35,16 @@ struct ContentView: View {
                     }
                 }
                 .overlay(alignment: .topTrailing) { projectionPicker.padding(8) }
+                .overlay(alignment: .topLeading) {
+                    if model.discover != nil {
+                        Button { Task { await model.spin() } } label: {
+                            Label(model.spinning ? "Spinning…" : "Spin", systemImage: "dice.fill")
+                        }
+                        .buttonStyle(ChunkyButtonStyle())
+                        .disabled(model.spinning)
+                        .padding(8)
+                    }
+                }
                 .overlay(alignment: .bottomLeading) { Legend().padding(8) }
                 .frame(height: geometry.size.height * 0.42)
 

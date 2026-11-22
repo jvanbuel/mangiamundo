@@ -191,6 +191,12 @@ struct Discover: Decodable {
     let events: [EventProgress]
 }
 
+/// A place to try from `/api/suggestion`, and the country the globe lands on.
+struct Suggestion: Decodable {
+    let country: String
+    let place: Place
+}
+
 struct Place: Decodable, Identifiable {
     let id: String
     let name: String

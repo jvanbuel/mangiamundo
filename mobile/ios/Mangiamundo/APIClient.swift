@@ -3,6 +3,8 @@ import Foundation
 struct APIError: LocalizedError {
     let status: Int
     let message: String
+    /// The server's error code, such as `nothing_open`.
+    var code: String? = nil
 
     var errorDescription: String? { message }
 }
@@ -45,6 +47,13 @@ actor APIClient {
     func places(areaID: String, country: String, from: (lat: Double, lng: Double)?) async throws -> [Place] {
         let position = from.map { "&lat=\($0.lat)&lng=\($0.lng)" } ?? ""
         return try decode(await authed("GET", "/api/places?\(area(areaID))&country=\(country)\(position)"))
+    }
+
+    /// A random unvisited place to try, open now unless `open` is false, skipping `exclude`.
+    func suggestion(areaID: String, from: (lat: Double, lng: Double)?, exclude: [String], open: Bool) async throws -> Suggestion {
+        let position = from.map { "&lat=\($0.lat)&lng=\($0.lng)" } ?? ""
+        let skip = exclude.map(encode).joined(separator: ",")
+        return try decode(await authed("GET", "/api/suggestion?\(area(areaID))&open=\(open)&exclude=\(skip)\(position)"))
     }
 
     func celebrations(areaID: String, days: Int = 60) async throws -> [Celebration] {
@@ -254,9 +263,9 @@ actor APIClient {
         }
         let status = (response as? HTTPURLResponse)?.statusCode ?? 0
         guard (200..<300).contains(status) else {
-            struct ErrorBody: Decodable { let error: String? }
-            let detail = (try? decoder.decode(ErrorBody.self, from: data))?.error
-            throw APIError(status: status, message: detail ?? "Request failed (\(status))")
+            struct ErrorBody: Decodable { let error: String?; let code: String? }
+            let detail = try? decoder.decode(ErrorBody.self, from: data)
+            throw APIError(status: status, message: detail?.error ?? "Request failed (\(status))", code: detail?.code)
         }
         return data
     }
