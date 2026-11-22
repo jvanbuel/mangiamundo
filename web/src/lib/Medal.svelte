@@ -24,24 +24,36 @@
 		pioneer: MapPinPlus,
 		event: PartyPopper
 	};
-	const COLORS: Record<MedalKind, string> = {
-		visits: 'var(--available)',
-		countries: 'var(--available)',
-		completed: 'var(--completed)',
-		continent: 'var(--discovered)',
-		world: 'var(--completed)',
-		everything: 'var(--discovered)',
-		pioneer: 'var(--completed)',
-		event: 'var(--event)'
+	/** Gold for tasting, diamond for finishing, blue for the rest. */
+	const FACES: Record<MedalKind, 'gold' | 'diamond' | 'blue' | 'event'> = {
+		visits: 'gold',
+		countries: 'gold',
+		completed: 'diamond',
+		continent: 'diamond',
+		world: 'diamond',
+		everything: 'diamond',
+		pioneer: 'blue',
+		event: 'event'
 	};
+	const COLORS = { gold: 'var(--discovered)', diamond: 'var(--diamond)', blue: 'var(--accent)', event: 'var(--event)' };
+	const EDGES = {
+		gold: 'var(--discovered-edge)',
+		diamond: 'var(--completed-edge)',
+		blue: 'color-mix(in srgb, var(--accent) 70%, #000)',
+		event: 'color-mix(in srgb, var(--event) 70%, #000)'
+	};
+	const INKS = { gold: 'var(--on-discovered)', diamond: 'var(--on-completed)', blue: 'var(--on-accent)', event: 'var(--on-event)' };
+	const face = $derived(FACES[kind]);
 	const Icon = $derived(ICONS[kind]);
 </script>
 
 <span
 	class="medal"
-	class:locked={!earned}
+	class:shine={earned && face === 'diamond'}
 	style:--size="{size}px"
-	style:--color={earned ? COLORS[kind] : 'var(--line)'}
+	style:--color={earned ? COLORS[face] : 'var(--line)'}
+	style:--edge={earned ? EDGES[face] : 'color-mix(in srgb, var(--line) 70%, #000)'}
+	style:--ink={earned ? INKS[face] : 'var(--muted)'}
 	aria-hidden="true"
 >
 	<Icon size={size * 0.44} strokeWidth={2.5} />
@@ -57,11 +69,32 @@
 		place-items: center;
 		border-radius: 50%;
 		background: var(--color);
-		color: #fff;
-		box-shadow: inset 0 calc(var(--size) * -0.07) 0 color-mix(in srgb, var(--color) 70%, #000);
+		color: var(--ink);
+		box-shadow: inset 0 calc(var(--size) * -0.07) 0 var(--edge);
 	}
 
-	.medal.locked {
-		color: var(--muted);
+	/* Diamond medals catch the light now and then: a glint sweeps across. */
+	.shine {
+		position: relative;
+		overflow: hidden;
+	}
+
+	.shine::after {
+		content: '';
+		position: absolute;
+		inset: 0;
+		background: linear-gradient(115deg, transparent 35%, rgb(255 255 255 / 0.9) 50%, transparent 65%);
+		transform: translateX(-120%);
+		animation: glint 4s ease-in-out infinite;
+	}
+
+	.shine :global(svg) {
+		position: relative;
+		z-index: 1;
+	}
+
+	@keyframes glint {
+		0%, 70% { transform: translateX(-120%); }
+		100% { transform: translateX(120%); }
 	}
 </style>

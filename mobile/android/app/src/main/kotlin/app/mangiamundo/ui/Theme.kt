@@ -8,6 +8,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.material3.Typography
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.Font
@@ -15,7 +16,11 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import app.mangiamundo.R
 
-/** The palette of web/src/app.css, so every client looks the same. */
+/**
+ * The palette of web/src/app.css, so every client looks the same: blue for the app and
+ * for countries still to discover, gold once a country is tasted, and a sparkling
+ * diamond once it is completed.
+ */
 data class AppColors(
     val bg: Color,
     val panel: Color,
@@ -25,16 +30,43 @@ data class AppColors(
     val muted: Color,
     val accent: Color,
     val onAccent: Color,
+    /** Accent-coloured text on tinted backgrounds. */
+    val accentText: Color,
     val danger: Color,
     val ocean: Color,
     val land: Color,
+    val mapBorder: Color,
     val available: Color,
+    val availableEdge: Color,
     val discovered: Color,
+    val discoveredEdge: Color,
+    val discoveredText: Color,
+    val onDiscovered: Color,
+    /** The diamond's base fill on the map. */
     val completed: Color,
+    val completedEdge: Color,
+    val completedFacet: Color,
     val onCompleted: Color,
-    /** Limited-time events and celebrations. */
+    /** Limited-time events and celebrations: something to act on, so the action colour. */
     val event: Color,
-)
+    /** The empty part of a progress bar, and its outline. */
+    val track: Color,
+    val trackEdge: Color,
+) {
+    /** The diamond as a surface: icy, with a hint of prism. */
+    val diamond: Brush
+        get() = Brush.linearGradient(
+            0f to Color(0xFFF7FDFF),
+            0.35f to Color(0xFFC9ECFD),
+            0.5f to Color(0xFFF1EAFF),
+            0.65f to Color(0xFFBDE5FB),
+            1f to Color(0xFFF0FBFF),
+        )
+
+    /** A full progress bar in icy blue with a bright band. */
+    val diamondBar: Brush
+        get() = Brush.horizontalGradient(listOf(completedEdge, Color(0xFFBFEAFF), completedEdge))
+}
 
 val LightColors = AppColors(
     bg = Color(0xFFF2F5F8),
@@ -45,14 +77,24 @@ val LightColors = AppColors(
     muted = Color(0xFF5A6A7D),
     accent = Color(0xFF2873C2),
     onAccent = Color(0xFFFFFFFF),
+    accentText = Color(0xFF1D5A9E),
     danger = Color(0xFFB3261E),
-    ocean = Color(0xFFC4DAEF),
-    land = Color(0xFFE3E7EB),
+    ocean = Color(0xFFDBE5EF),
+    land = Color(0xFFFBFAF7),
+    mapBorder = Color(0xFFCFD8E2),
     available = Color(0xFF2873C2),
-    discovered = Color(0xFFC98508),
-    completed = Color(0xFF3DA35A),
-    onCompleted = Color(0xFF0B2A14),
-    event = Color(0xFFC2417A),
+    availableEdge = Color(0xFF1D5A9E),
+    discovered = Color(0xFFE0A100),
+    discoveredEdge = Color(0xFF8A6200),
+    discoveredText = Color(0xFF7A5600),
+    onDiscovered = Color(0xFF3D2A00),
+    completed = Color(0xFFE3F5FE),
+    completedEdge = Color(0xFF2F8FC4),
+    completedFacet = Color(0xFF8FCDEF),
+    onCompleted = Color(0xFF0B4A6B),
+    event = Color(0xFF2873C2),
+    track = Color(0xFFDBE2EA),
+    trackEdge = Color(0xFF8796A8),
 )
 
 val DarkColors = AppColors(
@@ -64,14 +106,24 @@ val DarkColors = AppColors(
     muted = Color(0xFF93A6BB),
     accent = Color(0xFF5BA6EE),
     onAccent = Color(0xFF07182A),
+    accentText = Color(0xFF8CC3F5),
     danger = Color(0xFFFF9D8A),
-    ocean = Color(0xFF0F2133),
-    land = Color(0xFF233A52),
+    ocean = Color(0xFF0A1726),
+    land = Color(0xFF22364B),
+    mapBorder = Color(0xFF0A1726),
     available = Color(0xFF3B8FD9),
-    discovered = Color(0xFFF2B53D),
-    completed = Color(0xFF54B96F),
-    onCompleted = Color(0xFF06210F),
-    event = Color(0xFFE46A9F),
+    availableEdge = Color(0xFF8CC3F5),
+    discovered = Color(0xFFF2C14E),
+    discoveredEdge = Color(0xFFF2C14E),
+    discoveredText = Color(0xFFF2C14E),
+    onDiscovered = Color(0xFF2A1A00),
+    completed = Color(0xFFE3F5FE),
+    completedEdge = Color(0xFF8FD6FF),
+    completedFacet = Color(0xFF8FCDEF),
+    onCompleted = Color(0xFF0B4A6B),
+    event = Color(0xFF5BA6EE),
+    track = Color(0xFF24405C),
+    trackEdge = Color(0xFF57708C),
 )
 
 val LocalAppColors = staticCompositionLocalOf { LightColors }

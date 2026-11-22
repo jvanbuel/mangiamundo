@@ -9,22 +9,50 @@
 	--line: #d5dee8;
 	--text: #14263a;
 	--muted: #5a6a7d;
+	/* Blue for the app and for countries still to discover, gold once you have tasted
+	   a country, and a sparkling diamond once you have eaten your way through it. The
+	   three steps differ in lightness as well as colour, and the diamond also has facets
+	   and sparkles on the map, so they hold up without colour vision. */
 	--accent: #2873c2;
 	--on-accent: #ffffff;
+	--accent-text: #1d5a9e;
 	--danger: #b3261e;
-	--ocean: #c4daef;
-	--land: #e3e7eb;
+	/* A faintly blue sea and near-white land, so blue can belong to the countries. */
+	--ocean: #dbe5ef;
+	--land: #fbfaf7;
+	--map-border: #cfd8e2;
 	--available: #2873c2;
-	--discovered: #c98508;
-	--completed: #3da35a;
-	--on-completed: #0b2a14;
-	--event: #c2417a;
+	--available-edge: #1d5a9e;
+	--on-available: #ffffff;
+	--discovered: #e0a100;
+	--discovered-edge: #8a6200;
+	--discovered-text: #7a5600;
+	--on-discovered: #3d2a00;
+	--completed: #e3f5fe;
+	--completed-edge: #2f8fc4;
+	--completed-facet: #8fcdef;
+	--on-completed: #0b4a6b;
+	/* The diamond as a surface: icy, with a hint of prism. */
+	--diamond: linear-gradient(135deg, #f7fdff 0%, #c9ecfd 35%, #f1eaff 50%, #bde5fb 65%, #f0fbff 100%);
+	/* Time-limited events are something to act on, so they take the action colour. */
+	--event: var(--accent);
+	--event-text: var(--accent-text);
+	--on-event: var(--on-accent);
+	/* The empty part of a progress bar, outlined so it shows at zero. */
+	--track: #dbe2ea;
+	--track-edge: #8796a8;
 	--glass: rgb(255 255 255 / 0.92);
 	--shadow: rgb(20 38 58 / 0.16);
 	--space: #FAFCFE;
 	color-scheme: light;
 
-	--radius: 14px;
+	/* Type scale and weights: body, emphasis, headings. */
+	--text-xs: 12px;
+	--text-sm: 14px;
+	--text-base: 16px;
+	--text-lg: 18px;
+	--text-xl: 22px;
+	--text-2xl: 28px;
 	/* A rounded sans in heavy weights: friendly, a little playful. */
 	font-family: 'Nunito Variable', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
 }
@@ -40,14 +68,28 @@
 		--muted: #93a6bb;
 		--accent: #5ba6ee;
 		--on-accent: #07182a;
+		--accent-text: #8cc3f5;
 		--danger: #ff9d8a;
-		--ocean: #0f2133;
-		--land: #233a52;
+		--ocean: #0a1726;
+		--land: #22364b;
+		--map-border: #0a1726;
 		--available: #3b8fd9;
-		--discovered: #f2b53d;
-		--completed: #54b96f;
-		--on-completed: #06210f;
-		--event: #e46a9f;
+		--available-edge: #8cc3f5;
+		--on-available: #07182a;
+		--discovered: #f2c14e;
+		--discovered-edge: #f2c14e;
+		--discovered-text: #f2c14e;
+		--on-discovered: #2a1a00;
+		--completed: #e3f5fe;
+		--completed-edge: #8fd6ff;
+		--completed-facet: #8fcdef;
+		--on-completed: #0b4a6b;
+		--diamond: linear-gradient(135deg, #f7fdff 0%, #c9ecfd 35%, #f1eaff 50%, #bde5fb 65%, #f0fbff 100%);
+		--event: var(--accent);
+		--event-text: var(--accent-text);
+		--on-event: var(--on-accent);
+		--track: #24405c;
+		--track-edge: #57708c;
 		--glass: rgb(19 37 54 / 0.9);
 		--shadow: rgb(0 0 0 / 0.45);
 		--space: #17324D;
@@ -64,14 +106,28 @@
 	--muted: #93a6bb;
 	--accent: #5ba6ee;
 	--on-accent: #07182a;
+	--accent-text: #8cc3f5;
 	--danger: #ff9d8a;
-	--ocean: #0f2133;
-	--land: #233a52;
+	--ocean: #0a1726;
+	--land: #22364b;
+	--map-border: #0a1726;
 	--available: #3b8fd9;
-	--discovered: #f2b53d;
-	--completed: #54b96f;
-	--on-completed: #06210f;
-	--event: #e46a9f;
+	--available-edge: #8cc3f5;
+	--on-available: #07182a;
+	--discovered: #f2c14e;
+	--discovered-edge: #f2c14e;
+	--discovered-text: #f2c14e;
+	--on-discovered: #2a1a00;
+	--completed: #e3f5fe;
+	--completed-edge: #8fd6ff;
+	--completed-facet: #8fcdef;
+	--on-completed: #0b4a6b;
+	--diamond: linear-gradient(135deg, #f7fdff 0%, #c9ecfd 35%, #f1eaff 50%, #bde5fb 65%, #f0fbff 100%);
+	--event: var(--accent);
+	--event-text: var(--accent-text);
+	--on-event: var(--on-accent);
+	--track: #24405c;
+	--track-edge: #57708c;
 	--glass: rgb(19 37 54 / 0.9);
 	--shadow: rgb(0 0 0 / 0.45);
 	--space: #17324D;
@@ -88,7 +144,7 @@ body {
 	margin: 0;
 	background: var(--bg);
 	color: var(--text);
-	font-size: 15px;
+	font-size: var(--text-base);
 	font-weight: 500;
 	line-height: 1.45;
 }
@@ -132,7 +188,8 @@ a {
 .bar {
 	height: 6px;
 	border-radius: 3px;
-	background: var(--line);
+	background: var(--track);
+	box-shadow: inset 0 0 0 1px var(--track-edge);
 	overflow: hidden;
 }
 
@@ -144,9 +201,13 @@ a {
 	transition: width 0.4s ease;
 }
 
+/* Reduced motion: nothing moves or grows, but fades and colour changes stay, so
+   changes are still noticed. */
 @media (prefers-reduced-motion: reduce) {
-	* {
-		transition: none !important;
+	*,
+	*::before,
+	*::after {
+		transition-property: opacity, color, background-color, border-color !important;
 		animation: none !important;
 	}
 }

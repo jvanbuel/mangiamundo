@@ -2,7 +2,7 @@
 	import ArrowLeft from '@lucide/svelte/icons/arrow-left';
 	import CheckIn from './CheckIn.svelte';
 	import { app, country, openPlace } from './state.svelte';
-	import { directions, distance, statusOf, type CountryProgress, type Place } from './types';
+	import { distance, statusOf, type CountryProgress, type Place } from './types';
 
 	let { progress, onback }: { progress: CountryProgress; onback: () => void } = $props();
 
@@ -59,17 +59,11 @@
 			<li>
 				<div class="info">
 					<a class="name" href="?place={encodeURIComponent(place.id)}" onclick={(e) => open(e, place)} {@attach refocus(place.id)}>{place.name}</a>
-					{#if now}
-						<span class="hours" class:open={now.open} title={place.hours?.raw}>{now.text}</span>
-					{/if}
+					<!-- One line of facts; directions and the website are on the place's own page. -->
 					<span class="muted">
-						{distance(place.distance_m)}{place.address ? ` · ${place.address}` : ''}
-						{#if place.visits[0]?.verified}<span class="verified"> · checked in on the spot</span>{/if}
+						{#if now}<span class="hours" class:open={now.open} title={place.hours?.raw}>{now.text}</span>{' · '}{/if}{distance(place.distance_m)}{place.address ? ` · ${place.address}` : ''}
 					</span>
-					<span class="links">
-						<a href={directions(place.lat, place.lng)} target="_blank" rel="noopener">Directions</a>
-						{#if place.url}<a href={place.url} target="_blank" rel="noopener">Website</a>{/if}
-					</span>
+					{#if place.visits[0]?.verified}<span class="verified">Checked in on the spot</span>{/if}
 				</div>
 				<CheckIn {place} />
 			</li>
@@ -83,9 +77,10 @@
 		align-items: center;
 		gap: 6px;
 		color: var(--muted);
-		font-size: 14px;
+		font-size: var(--text-sm);
 		font-weight: 700;
-		padding: 4px 0;
+		padding: 12px 8px 12px 0;
+		margin: -8px 0;
 	}
 
 	.back:hover {
@@ -105,20 +100,21 @@
 	}
 
 	h2 {
-		font-size: 24px;
+		font-size: var(--text-2xl);
 	}
 
 	p {
 		margin: 2px 0 0;
-		font-size: 14px;
+		font-size: var(--text-sm);
 	}
 
 	.bar span.discovered {
 		background: var(--discovered);
 	}
 
+	/* A full bar in icy blue with a bright band, so it reads at 6px tall. */
 	.bar span.completed {
-		background: var(--completed);
+		background: linear-gradient(90deg, var(--completed-edge), #bfeaff 50%, var(--completed-edge));
 	}
 
 	ul {
@@ -139,8 +135,8 @@
 	li.group {
 		padding: 18px 0 6px;
 		color: var(--muted);
-		font-size: 13px;
-		font-weight: 800;
+		font-size: var(--text-sm);
+		font-weight: 700;
 		text-transform: uppercase;
 		letter-spacing: 0.04em;
 	}
@@ -151,7 +147,7 @@
 	}
 
 	.hours.open {
-		color: var(--completed);
+		color: var(--text);
 	}
 
 	.info {
@@ -159,14 +155,14 @@
 		min-width: 0;
 		display: grid;
 		gap: 2px;
-		font-size: 14px;
+		font-size: var(--text-sm);
 	}
 
 	.name {
 		color: inherit;
 		text-decoration: none;
-		font-size: 16px;
-		font-weight: 800;
+		font-size: var(--text-base);
+		font-weight: 700;
 		overflow-wrap: anywhere;
 	}
 
@@ -181,25 +177,12 @@
 		inset: 0;
 	}
 
-	.links a,
 	li :global(.check) {
 		position: relative;
 		z-index: 1;
 	}
 
-	.links {
-		display: flex;
-		flex-wrap: wrap;
-		gap: 14px;
-		margin-top: 2px;
-		font-weight: 700;
-	}
-
-	.links a {
-		text-decoration: none;
-	}
-
 	.verified {
-		color: var(--completed);
+		color: var(--discovered-text);
 	}
 </style>

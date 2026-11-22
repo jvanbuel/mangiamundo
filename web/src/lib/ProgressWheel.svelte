@@ -42,10 +42,9 @@
 		align-items: center;
 		gap: 8px;
 		padding: 20px 24px 16px;
-		border-radius: 16px;
-		border: 2px solid var(--line);
-		border-bottom-width: 4px;
+		border-radius: 14px;
 		background: var(--panel);
+		box-shadow: 0 2px 6px var(--shadow), 0 12px 32px var(--shadow);
 	}
 
 	svg {
@@ -73,15 +72,15 @@
 
 	text {
 		fill: var(--text);
-		font-size: 18px;
-		font-weight: 800;
+		font-size: var(--text-lg);
+		font-weight: 700;
 		text-anchor: middle;
 		dominant-baseline: central;
 	}
 
 	p {
 		margin: 0;
-		font-size: 14px;
+		font-size: var(--text-sm);
 		font-weight: 700;
 		color: var(--muted);
 	}

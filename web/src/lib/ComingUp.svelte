@@ -6,7 +6,10 @@
 
 	let { celebrations }: { celebrations: Celebration[] } = $props();
 
-	const shown = $derived(celebrations.slice(0, 4));
+	// One by default, so the list of countries stays in view.
+	let expanded = $state(false);
+	const shown = $derived(celebrations.slice(0, expanded ? 4 : 1));
+	const more = $derived(Math.min(celebrations.length, 4) - 1);
 	const today = new Date().toISOString().slice(0, 10);
 
 	const parse = (day: string) => new Date(`${day}T12:00:00Z`);
@@ -64,6 +67,11 @@
 			</li>
 		{/each}
 	</ul>
+	{#if more > 0}
+		<button class="more" aria-expanded={expanded} onclick={() => (expanded = !expanded)}>
+			{expanded ? 'Show less' : `${more} more coming up`}
+		</button>
+	{/if}
 </section>
 
 <style>
@@ -76,7 +84,7 @@
 	}
 
 	h2 {
-		font-size: 18px;
+		font-size: var(--text-lg);
 	}
 
 	.remind {
@@ -86,8 +94,8 @@
 		padding: 6px 12px;
 		border-radius: 999px;
 		border: 2px solid var(--line);
-		font-size: 14px;
-		font-weight: 800;
+		font-size: var(--text-sm);
+		font-weight: 700;
 		color: var(--accent);
 	}
 
@@ -98,7 +106,7 @@
 
 	.note {
 		margin: 0 0 8px;
-		font-size: 13px;
+		font-size: var(--text-sm);
 	}
 
 	ul {
@@ -129,6 +137,7 @@
 		overflow: hidden;
 		border: 2px solid var(--line);
 		border-bottom-width: 3px;
+		background: var(--panel);
 		text-align: center;
 		line-height: 1.1;
 	}
@@ -136,16 +145,23 @@
 	.month {
 		padding: 2px 0;
 		background: var(--event);
-		color: #fff;
-		font-size: 11px;
-		font-weight: 800;
+		color: var(--on-event);
+		font-size: var(--text-xs);
+		font-weight: 700;
 		text-transform: uppercase;
 	}
 
 	.day {
 		padding: 3px 0 4px;
-		font-size: 18px;
+		font-size: var(--text-lg);
 		font-weight: 900;
+	}
+
+	.more {
+		color: var(--accent);
+		font-size: var(--text-sm);
+		font-weight: 700;
+		padding: 4px 0;
 	}
 
 	.text {
@@ -154,10 +170,10 @@
 	}
 
 	.title {
-		font-weight: 800;
+		font-weight: 700;
 	}
 
 	.text .muted {
-		font-size: 13px;
+		font-size: var(--text-sm);
 	}
 </style>

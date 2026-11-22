@@ -149,7 +149,7 @@
 		border-radius: 12px;
 		background: var(--accent);
 		color: var(--on-accent);
-		font-weight: 800;
+		font-weight: 700;
 		box-shadow: inset 0 -3px 0 color-mix(in srgb, var(--accent) 70%, #000);
 	}
 
@@ -168,7 +168,7 @@
 		padding: 9px 12px;
 		border-radius: 10px;
 		border: 1px solid var(--line);
-		background: var(--bg);
+		background: var(--panel);
 		color: var(--text);
 		font: inherit;
 	}
@@ -176,7 +176,7 @@
 	form button {
 		padding: 0 14px;
 		border-radius: 10px;
-		background: var(--panel-raised);
+		background: var(--panel);
 		border: 1px solid var(--line);
 	}
 
@@ -196,12 +196,12 @@
 	}
 
 	li button:hover {
-		background: var(--panel-raised);
+		background: var(--panel);
 	}
 
 	p {
 		margin: 0;
-		font-size: 13px;
+		font-size: var(--text-sm);
 	}
 
 	.error {
@@ -214,13 +214,13 @@
 	}
 
 	li .muted {
-		font-size: 12px;
+		font-size: var(--text-xs);
 	}
 
 	h3 {
 		margin: 4px 0 4px 10px;
-		font-size: 12px;
-		font-weight: 800;
+		font-size: var(--text-xs);
+		font-weight: 700;
 		text-transform: uppercase;
 		letter-spacing: 0.04em;
 		color: var(--muted);
@@ -240,7 +240,7 @@
 		width: auto;
 		display: grid;
 		place-items: center;
-		padding: 8px;
+		padding: 14px;
 		color: var(--muted);
 	}
 
@@ -258,7 +258,7 @@
 	.options button {
 		flex: 1;
 		padding: 8px 10px;
-		font-size: 13px;
+		font-size: var(--text-sm);
 	}
 
 	.options button + button {
@@ -266,7 +266,7 @@
 	}
 
 	.options button.on {
-		background: var(--panel-raised);
+		background: var(--panel);
 		color: var(--accent);
 		font-weight: 700;
 	}
