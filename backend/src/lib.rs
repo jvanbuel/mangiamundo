@@ -1,5 +1,6 @@
 pub mod account;
 pub mod api;
+pub mod auth;
 pub mod calendar;
 pub mod catalog;
 pub mod config;
@@ -31,6 +32,8 @@ pub struct AppState {
     pub osm_notes_url: Option<String>,
     /// Posts notes as the Mangiamundo OSM account when set, anonymously otherwise.
     pub osm_notes_token: Option<String>,
+    /// Signing in with Apple, Google or an emailed code.
+    pub auth: Arc<auth::Auth>,
     /// Areas being fetched right now, for the clients' progress wheel.
     pub loads: api::Loads,
     /// Recent requests per user, for limits on the ones that ask OpenStreetMap.

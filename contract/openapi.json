@@ -14,6 +14,13 @@
             },
             "type": "array"
           },
+          "identities": {
+            "description": "The ways to sign in to the account, oldest first; empty for an account that only\nlives on its devices.",
+            "items": {
+              "$ref": "#/components/schemas/Identity"
+            },
+            "type": "array"
+          },
           "public_profile": {
             "description": "The public page of the user's progress, like `/p/abcd2345ef`, made by sharing;\n`null` when it's off.",
             "type": [
@@ -34,7 +41,8 @@
           "created_at",
           "recovery_code_created_at",
           "devices",
-          "public_profile"
+          "public_profile",
+          "identities"
         ],
         "type": "object"
       },
@@ -247,6 +255,35 @@
           }
         ],
         "description": "An area as clients see it."
+      },
+      "AuthProviders": {
+        "description": "The sign-in methods this server offers, with the public ids the web app needs.",
+        "properties": {
+          "apple": {
+            "description": "The Services ID for Sign in with Apple on the web; `null` when it isn't set up\n(the iOS app signs in with Apple regardless).",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "email": {
+            "description": "Codes by email; always offered.",
+            "type": "boolean"
+          },
+          "google": {
+            "description": "The web client id for Google's sign-in button; `null` when Google isn't set up.",
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "apple",
+          "google",
+          "email"
+        ],
+        "type": "object"
       },
       "Badge": {
         "properties": {
@@ -608,6 +645,40 @@
           }
         ]
       },
+      "EmailCodeRequest": {
+        "properties": {
+          "email": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "email"
+        ],
+        "type": "object"
+      },
+      "EmailSignIn": {
+        "properties": {
+          "code": {
+            "description": "The 6 digits from the email.",
+            "type": "string"
+          },
+          "device": {
+            "description": "As in `POST /api/session`.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "email": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "email",
+          "code"
+        ],
+        "type": "object"
+      },
       "ErrorBody": {
         "description": "Every error response, whatever the status.",
         "properties": {
@@ -838,6 +909,46 @@
         "required": [
           "open",
           "text"
+        ],
+        "type": "object"
+      },
+      "IdTokenSignIn": {
+        "properties": {
+          "device": {
+            "description": "As in `POST /api/session`.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "id_token": {
+            "description": "The ID token (a JWT) from Sign in with Apple or Google.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id_token"
+        ],
+        "type": "object"
+      },
+      "Identity": {
+        "description": "A way to sign in: Sign in with Apple, Google or an email address.",
+        "properties": {
+          "email": {
+            "description": "The address it goes with, when known. Apple may give a private relay address.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "provider": {
+            "description": "`apple`, `google` or `email`.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "provider",
+          "email"
         ],
         "type": "object"
       },
@@ -1938,6 +2049,217 @@
         "summary": "How far loading an area's restaurants has come, for a progress wheel while `/api/discover`\nor `/api/places` waits on it. `null` when the area isn't loading.",
         "tags": [
           "areas"
+        ]
+      }
+    },
+    "/api/auth/apple": {
+      "post": {
+        "operationId": "sign_in_apple",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/IdTokenSignIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Session"
+                }
+              }
+            }
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "`bad_request` for a token that isn't valid"
+          }
+        },
+        "security": [
+          {},
+          {
+            "token": []
+          }
+        ],
+        "summary": "Signs in with Apple. Sent with the device's current token, an Apple ID new to the server\njoins that account; one that already has an account brings this device there, and\nwhat the device's account held moves along, as with a recovery code.",
+        "tags": [
+          "account"
+        ]
+      }
+    },
+    "/api/auth/email": {
+      "post": {
+        "operationId": "sign_in_email",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/EmailSignIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Session"
+                }
+              }
+            }
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "`not_found`: a wrong, used or expired code"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "An error"
+          }
+        },
+        "security": [
+          {},
+          {
+            "token": []
+          }
+        ],
+        "summary": "Signs in with an emailed code, as `POST /api/auth/apple` does with Apple. A code works\nonce, for 10 minutes, and stops working after 5 wrong tries.",
+        "tags": [
+          "account"
+        ]
+      }
+    },
+    "/api/auth/email/code": {
+      "post": {
+        "operationId": "send_email_code",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/EmailCodeRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": "Sent"
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "`too_many_requests`: wait a few minutes"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "An error"
+          }
+        },
+        "summary": "Emails a 6-digit sign-in code, valid for 10 minutes. A new one replaces the last.",
+        "tags": [
+          "account"
+        ]
+      }
+    },
+    "/api/auth/google": {
+      "post": {
+        "operationId": "sign_in_google",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/IdTokenSignIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Session"
+                }
+              }
+            }
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "`bad_request` for a token that isn't valid"
+          }
+        },
+        "security": [
+          {},
+          {
+            "token": []
+          }
+        ],
+        "summary": "Signs in with Google, as `POST /api/auth/apple` does with Apple.",
+        "tags": [
+          "account"
+        ]
+      }
+    },
+    "/api/auth/providers": {
+      "get": {
+        "operationId": "auth_providers",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuthProviders"
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "account"
         ]
       }
     },

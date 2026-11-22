@@ -55,6 +55,7 @@ async fn app_with_notes(
         push_key: None,
         osm_notes_url,
         osm_notes_token,
+        auth: Default::default(),
     });
     (router, now)
 }
@@ -1959,6 +1960,7 @@ async fn app_with_osm() -> (Router, Arc<AtomicI64>, Arc<FakeOsm>, sqlx::SqlitePo
         push_key: None,
         osm_notes_url: None,
         osm_notes_token: None,
+        auth: Default::default(),
     });
     (router, now, fake, db)
 }

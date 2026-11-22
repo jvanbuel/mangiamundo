@@ -41,6 +41,15 @@ or a **link code** (8 characters, one use, 10 minutes) for another device.
 `POST /api/session/restore` takes either; sent with the device's current token,
 whatever that account holds is merged into the restored one.
 
+Signing in is optional. `POST /api/auth/apple` and `POST /api/auth/google` take an ID token
+from Sign in with Apple or Google; the server checks its signature against the provider's
+published keys, its issuer, audience and expiry. `POST /api/auth/email/code` emails a
+6-digit code (through Resend; 3 per address per 10 minutes) and `POST /api/auth/email`
+signs in with it (once, within 10 minutes, at most 5 wrong tries). Sent with the device's
+current token, a new identity joins that account; one that already has an account brings
+the device there, merging what the device held, as a recovery code does. A bad token is a
+`bad_request`, never a 401. `GET /api/auth/providers` says which methods are set up.
+
 `DELETE /api/account` deletes the account and everything in it.
 
 ## Sharing

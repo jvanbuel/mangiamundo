@@ -53,6 +53,19 @@ pub struct Account {
     /// `null` when it's off.
     #[schema(required = true)]
     pub public_profile: Option<String>,
+    /// The ways to sign in to the account, oldest first; empty for an account that only
+    /// lives on its devices.
+    pub identities: Vec<Identity>,
+}
+
+/// A way to sign in: Sign in with Apple, Google or an email address.
+#[derive(Debug, Serialize, ToSchema)]
+pub struct Identity {
+    /// `apple`, `google` or `email`.
+    pub provider: String,
+    /// The address it goes with, when known. Apple may give a private relay address.
+    #[schema(required = true)]
+    pub email: Option<String>,
 }
 
 pub(crate) fn random_code(len: usize) -> String {
@@ -123,17 +136,23 @@ async fn start_session(
     Ok(token)
 }
 
-/// A new anonymous user with one session. Returns its token.
-pub async fn create_user(db: &SqlitePool, device: Option<&str>, now: i64) -> sqlx::Result<String> {
+/// Adds a user and returns its id.
+async fn insert_user(db: impl sqlx::SqliteExecutor<'_>, now: i64) -> sqlx::Result<String> {
     let id = uuid::Uuid::new_v4().to_string();
-    let mut tx = db.begin().await?;
     // `token` is a leftover column that must stay unique; the id is (see migration 0011).
     sqlx::query("INSERT INTO users (id, token, created_at) VALUES (?, ?, ?)")
         .bind(&id)
         .bind(&id)
         .bind(now)
-        .execute(&mut *tx)
+        .execute(db)
         .await?;
+    Ok(id)
+}
+
+/// A new anonymous user with one session. Returns its token.
+pub async fn create_user(db: &SqlitePool, device: Option<&str>, now: i64) -> sqlx::Result<String> {
+    let mut tx = db.begin().await?;
+    let id = insert_user(&mut *tx, now).await?;
     let token = start_session(&mut *tx, &id, device, now).await?;
     tx.commit().await?;
     Ok(token)
@@ -195,6 +214,13 @@ pub async fn account(db: &SqlitePool, session: &Session) -> sqlx::Result<Account
         recovery_code_created_at: row.get("recovery_created_at"),
         devices,
         public_profile: crate::share::profile_slug(db, &session.user).await?.map(|slug| format!("/p/{slug}")),
+        identities: sqlx::query("SELECT provider, email FROM identities WHERE user_id = ? ORDER BY created_at, provider")
+            .bind(&session.user)
+            .fetch_all(db)
+            .await?
+            .into_iter()
+            .map(|r| Identity { provider: r.get("provider"), email: r.get("email") })
+            .collect(),
     })
 }
 
@@ -263,6 +289,20 @@ pub async fn redeem(
         _ => None,
     };
     let Some(user) = user else { return Ok(None) };
+    let token = switch_to(&mut tx, &user, current, device, now).await?;
+    tx.commit().await?;
+    Ok(Some(token))
+}
+
+/// Signs this device in as `user`: the `current` session ends, and when it belonged to
+/// another account, that account merges into `user`. Returns the new session's token.
+async fn switch_to(
+    tx: &mut sqlx::SqliteConnection,
+    user: &str,
+    current: Option<&Session>,
+    device: Option<&str>,
+    now: i64,
+) -> sqlx::Result<String> {
     if let Some(old) = current {
         // The owner is read again here: a concurrent restore may have moved this session to
         // another account since `old` was looked up. A session that is gone (signed out, its
@@ -272,13 +312,71 @@ pub async fn redeem(
                 .bind(&old.id)
                 .fetch_optional(&mut *tx)
                 .await?;
-        if let Some(owner) = owner.filter(|owner| *owner != user) {
-            merge(&mut tx, &owner, &user).await?;
+        if let Some(owner) = owner.filter(|owner| owner != user) {
+            merge(tx, &owner, user).await?;
         }
     }
-    let token = start_session(&mut *tx, &user, device, now).await?;
+    start_session(&mut *tx, user, device, now).await
+}
+
+/// Signs in with an identity (Apple, Google or an email address). When an account already
+/// has it, this device switches to that account, bringing along what the current one holds.
+/// Otherwise the identity joins the current account, or a new one without a session.
+pub async fn sign_in_with(
+    db: &SqlitePool,
+    provider: &str,
+    subject: &str,
+    email: Option<&str>,
+    current: Option<&Session>,
+    device: Option<&str>,
+    now: i64,
+) -> sqlx::Result<String> {
+    let mut tx = db.begin().await?;
+    let owner: Option<String> =
+        sqlx::query_scalar("SELECT user_id FROM identities WHERE provider = ? AND subject = ?")
+            .bind(provider)
+            .bind(subject)
+            .fetch_optional(&mut *tx)
+            .await?;
+    let user = match owner {
+        Some(user) => {
+            // Apple sends the address only the first time; keep the one we have then.
+            if email.is_some() {
+                sqlx::query("UPDATE identities SET email = ? WHERE provider = ? AND subject = ?")
+                    .bind(email)
+                    .bind(provider)
+                    .bind(subject)
+                    .execute(&mut *tx)
+                    .await?;
+            }
+            user
+        }
+        None => {
+            let existing: Option<String> = match current {
+                Some(session) => sqlx::query_scalar("SELECT user_id FROM sessions WHERE id = ?")
+                    .bind(&session.id)
+                    .fetch_optional(&mut *tx)
+                    .await?,
+                None => None,
+            };
+            let user = match existing {
+                Some(user) => user,
+                None => insert_user(&mut *tx, now).await?,
+            };
+            sqlx::query("INSERT INTO identities (provider, subject, user_id, email, created_at) VALUES (?, ?, ?, ?, ?)")
+                .bind(provider)
+                .bind(subject)
+                .bind(&user)
+                .bind(email)
+                .bind(now)
+                .execute(&mut *tx)
+                .await?;
+            user
+        }
+    };
+    let token = switch_to(&mut tx, &user, current, device, now).await?;
     tx.commit().await?;
-    Ok(Some(token))
+    Ok(token)
 }
 
 /// Moves everything of user `from` to user `into`, then deletes `from`. Where both have the
@@ -292,6 +390,7 @@ async fn merge(tx: &mut sqlx::SqliteConnection, from: &str, into: &str) -> sqlx:
         "UPDATE additions SET user_id = ?1 WHERE user_id = ?2",
         // The restored account's own page wins; otherwise the merged one's moves over.
         "UPDATE OR IGNORE public_profiles SET user_id = ?1 WHERE user_id = ?2",
+        "UPDATE identities SET user_id = ?1 WHERE user_id = ?2",
         // Other devices of the merged account keep working, now as the restored one.
         "UPDATE sessions SET user_id = ?1 WHERE user_id = ?2",
     ] {

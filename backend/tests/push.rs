@@ -115,6 +115,7 @@ async fn sends_each_reminder_once_in_the_subscribers_morning() {
         push_key: Some(pusher.public_key.clone()),
         osm_notes_url: None,
         osm_notes_token: None,
+        auth: Default::default(),
     };
     let app = api::router(state.clone());
     let (push_url, service) = fake_push_service().await;
@@ -279,6 +280,7 @@ async fn tells_subscribers_once_about_new_food_from_the_import() {
         push_key: Some(pusher.public_key.clone()),
         osm_notes_url: None,
         osm_notes_token: None,
+        auth: Default::default(),
     };
     let app = api::router(state.clone());
     let (push_url, service) = fake_push_service().await;
