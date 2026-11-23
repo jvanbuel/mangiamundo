@@ -403,6 +403,28 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/places/unknown": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Restaurants in the area whose food is unknown: OpenStreetMap has no `cuisine` for them,
+         *     so they count for nothing until players say which country's food they serve. Nearest
+         *     first, at most 100. Places the user already answered for, and those players agreed on,
+         *     aren't listed. `countries` is always empty.
+         */
+        get: operations["unknown_places"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/places/{place_id}": {
         parameters: {
             query?: never;
@@ -434,6 +456,31 @@ export interface paths {
         /** "This place has closed": hides it for the reporter now, and for everyone after more reports. */
         put: operations["report_closed"];
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/places/{place_id}/cuisine": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Says which country's food a place from `/api/places/unknown` serves. The country counts
+         *     for the user straight away, and for everyone once two players said the same; the first
+         *     to name a country also has an OpenStreetMap note ask mappers to add the `cuisine` tag.
+         *     With `country: null` (no particular country's food) the place is no longer listed for the
+         *     user, and for nobody after two such answers; no note is posted. An answer is final: a
+         *     second one is a 409 `conflict`, as is one for a place whose food is already known. At
+         *     most 5 countries a day.
+         */
+        post: operations["suggest_cuisine"];
         delete?: never;
         options?: never;
         head?: never;
@@ -861,6 +908,25 @@ export interface components {
             /** Format: int32 */
             visited: number;
         };
+        /** @description The place after a player said what it serves. */
+        CuisineResult: {
+            /**
+             * @description Enough players said the same: it now counts for everyone (or, for "nothing
+             *     specific", it is no longer listed as unknown for anyone).
+             */
+            agreed: boolean;
+            /** @description As the user now sees it: with the country they said in `countries`. */
+            place: components["schemas"]["PlaceView"];
+        };
+        /** @description What a player says a place without a cuisine serves. */
+        CuisineSuggestion: {
+            /**
+             * @description The country whose food it serves (ISO 3166-1 alpha-2), one from `/api/countries` with
+             *     a cuisine; `null` when it serves no particular country's food, like a snack bar.
+             *     Required, also when `null`.
+             */
+            country: string | null;
+        };
         /** @description One day of a place's week. */
         Day: {
             /** @description English weekday name, e.g. "Monday". */
@@ -929,7 +995,7 @@ export interface components {
          *     - `internal` (500): anything else, such as a database error.
          * @enum {string}
          */
-        ErrorCode: "bad_request" | "unauthorized" | "not_found" | "method_not_allowed" | "nothing_open" | "nothing_left" | "too_many_requests" | "upstream" | "internal";
+        ErrorCode: "bad_request" | "unauthorized" | "not_found" | "method_not_allowed" | "conflict" | "nothing_open" | "nothing_left" | "too_many_requests" | "upstream" | "internal";
         /** @description A time-limited challenge, like "Japan month". Earned badges are kept for good. */
         Event: {
             countries: string[];
@@ -1989,6 +2055,40 @@ export interface operations {
             };
         };
     };
+    unknown_places: {
+        parameters: {
+            query: {
+                /** @description As for `/api/discover`. */
+                area: string;
+                /** @description As for `/api/places`: where the user is, for distances and the order. */
+                lat?: number;
+                lng?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PlaceView"][];
+                };
+            };
+            /** @description An error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
     place: {
         parameters: {
             query?: {
@@ -2042,6 +2142,45 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+            /** @description An error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    suggest_cuisine: {
+        parameters: {
+            query?: {
+                /** @description Where the user is, for the distance. Without it the distance is 0. */
+                lat?: number;
+                lng?: number;
+            };
+            header?: never;
+            path: {
+                /** @description A place id from `/api/places/unknown`. */
+                place_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CuisineSuggestion"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CuisineResult"];
+                };
             };
             /** @description An error */
             default: {

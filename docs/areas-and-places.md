@@ -26,6 +26,26 @@ The cuisine → country table lives in `backend/src/catalog.rs`. Regional labels
 ("asian", "mediterranean") and globalised dishes (pizza, kebab, burger) are left
 out on purpose.
 
+## Restaurants with unknown food
+
+Many restaurants on OpenStreetMap have a name but no `cuisine` tag. Named
+`amenity=restaurant` and `fast_food` places without one are fetched too (cafés, pubs
+and bars without one are left out: they're nearly always about drinks). They count for
+nothing until players say which country's food they serve:
+
+- `GET /api/places/unknown?area=…` lists them, nearest first.
+- `POST /api/places/{id}/cuisine` with `{ "country": "PE" }` makes the place count for
+  that player at once, and for everyone once two players agree. The first to name a
+  country posts an OpenStreetMap note asking mappers to add the `cuisine` tag.
+- `{ "country": null }` means no particular country's food (a snack bar, a brasserie):
+  the place leaves that player's list, and everyone's after two such answers. OSM has
+  no tag for "no cuisine", so this stays in our database and posts no note.
+- Answers are final, and at most 5 countries a day per player.
+- Once OpenStreetMap has a `cuisine` for the place, it wins and the answers are dropped.
+
+A place with a `cuisine` that maps to no country (`regional`, `burger`) is not in this
+list: OSM already says what it serves.
+
 ## Caching
 
 Results are cached per area (with its outline) and refreshed after `CACHE_TTL_DAYS`.

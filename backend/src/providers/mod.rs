@@ -21,17 +21,20 @@ pub struct FoundPlace {
     pub lng: f64,
     pub address: Option<String>,
     pub url: Option<String>,
+    /// `None` for a restaurant whose food is unknown: players say which country's it is.
     pub cuisine: Option<String>,
     /// In OSM `opening_hours` syntax.
     pub opening_hours: Option<String>,
-    /// ISO alpha-2 codes of the countries whose cuisine this place serves.
+    /// ISO alpha-2 codes of the countries whose cuisine this place serves. Empty when
+    /// `cuisine` is `None`.
     pub countries: Vec<&'static str>,
 }
 
 #[async_trait]
 pub trait PlacesProvider: Send + Sync {
     fn name(&self) -> &'static str;
-    /// All places serving a national cuisine inside the area's outline. `on_next_server` is
+    /// All places serving a national cuisine inside the area's outline, plus restaurants
+    /// whose food is unknown (no `cuisine`, no countries). `on_next_server` is
     /// called when the provider starts asking another server, for the progress wheel.
     async fn search(
         &self,
@@ -61,7 +64,8 @@ pub trait PlacesProvider: Send + Sync {
 #[derive(Debug, Clone, PartialEq)]
 pub enum Lookup {
     Found(FoundPlace),
-    /// Deleted, closed, no longer a restaurant, or its cuisine maps to no country.
+    /// Deleted, closed, no longer a restaurant, or its cuisine maps to no country. A
+    /// restaurant with no cuisine at all is found, with no countries.
     Gone,
 }
 

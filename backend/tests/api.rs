@@ -2646,3 +2646,215 @@ async fn monthly_quests_pay_once_and_the_streak_shows() {
         .sum();
     assert!(quest_xp >= 50 && xp >= quest_xp + 2 * 10);
 }
+
+/// Countries with places in the user's Leuven, as `/api/discover` lists them.
+async fn leuven_countries(app: &Router, token: &str) -> Vec<String> {
+    let (status, body) = call(app, "GET", &format!("/api/discover?{HERE}"), Some(token), None).await;
+    assert_eq!(status, StatusCode::OK);
+    body["countries"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|c| c["places"].as_u64().unwrap() > 0)
+        .map(|c| c["code"].as_str().unwrap().to_string())
+        .collect()
+}
+
+async fn unknown(app: &Router, token: &str) -> Vec<String> {
+    let (status, body) =
+        call(app, "GET", &format!("/api/places/unknown?{HERE}"), Some(token), None).await;
+    assert_eq!(status, StatusCode::OK);
+    body.as_array()
+        .unwrap()
+        .iter()
+        .map(|p| p["id"].as_str().unwrap().to_string())
+        .collect()
+}
+
+#[tokio::test]
+async fn players_say_what_a_place_without_a_cuisine_serves() {
+    let app = app().await;
+    let (alice, bob, carol) = (session(&app).await, session(&app).await, session(&app).await);
+
+    // Leuven's demo places without a cuisine: listed apart, nearest first, counting for nothing.
+    let (status, list) = call(
+        &app,
+        "GET",
+        &format!("/api/places/unknown?{HERE}&lat=50.8798&lng=4.7005"),
+        Some(&alice),
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    let list = list.as_array().unwrap();
+    assert_eq!(list.len(), 3);
+    assert!(list.iter().all(|p| p["countries"] == serde_json::json!([]) && p["cuisine"].is_null()));
+    let distances: Vec<u64> = list.iter().map(|p| p["distance_m"].as_u64().unwrap()).collect();
+    assert!(distances.windows(2).all(|w| w[0] <= w[1]), "{distances:?}");
+    let (_, places) = call(&app, "GET", &format!("/api/places?{HERE}"), Some(&alice), None).await;
+    assert!(places.as_array().unwrap().iter().all(|p| !p["id"].as_str().unwrap().contains("unknown")));
+
+    // A country Leuven has no place of yet.
+    let before = leuven_countries(&app, &alice).await;
+    let (_, catalog) = call(&app, "GET", "/api/countries", None, None).await;
+    let new = catalog["countries"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|c| !c["cuisine"].is_null() && !before.contains(&c["code"].as_str().unwrap().to_string()))
+        .unwrap()["code"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    let (first, second, third) = (
+        list[0]["id"].as_str().unwrap().to_string(),
+        list[1]["id"].as_str().unwrap().to_string(),
+        list[2]["id"].as_str().unwrap().to_string(),
+    );
+    let say = |place: &str, body: String| {
+        let (app, uri) = (app.clone(), format!("/api/places/{place}/cuisine"));
+        async move {
+            let token = body.split('|').next().unwrap().to_string();
+            let json = body.split('|').nth(1).unwrap().to_string();
+            call(&app, "POST", &uri, Some(&token), Some(&json)).await
+        }
+    };
+    let country = |token: &str, code: &str| format!(r#"{token}|{{"country":"{code}"}}"#);
+    let nothing = |token: &str| format!(r#"{token}|{{"country":null}}"#);
+
+    // Alice names it: it counts for her at once, for nobody else yet.
+    let (status, body) = say(&first, country(&alice, &new.to_lowercase())).await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert_eq!(body["place"]["countries"], serde_json::json!([new]));
+    assert_eq!(body["agreed"], false);
+    assert!(leuven_countries(&app, &alice).await.contains(&new));
+    assert!(!leuven_countries(&app, &bob).await.contains(&new));
+    assert_eq!(unknown(&app, &alice).await, [second.clone(), third.clone()]);
+    assert_eq!(unknown(&app, &bob).await.len(), 3);
+    let (status, body) = say(&first, country(&alice, "IT")).await;
+    assert_eq!((status, body["code"].as_str()), (StatusCode::CONFLICT, Some("conflict")));
+
+    // Her check-in there counts the country for her.
+    let (status, visit) = call(&app, "POST", &format!("/api/places/{first}/visits"), Some(&alice), None).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(visit["profile"]["countries"], 1);
+
+    // Bob agrees: now it counts for everyone and leaves the list.
+    let (status, body) = say(&first, country(&bob, &new)).await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert_eq!(body["agreed"], true);
+    assert!(leuven_countries(&app, &carol).await.contains(&new));
+    assert!(!unknown(&app, &carol).await.contains(&first));
+    let (status, _) = say(&first, country(&carol, "IT")).await;
+    assert_eq!(status, StatusCode::CONFLICT);
+
+    // "Nothing specific": gone from the list for whoever said it, for everyone after two.
+    let (status, body) = say(&second, nothing(&alice)).await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert_eq!((body["agreed"].as_bool(), body["place"]["countries"].as_array().unwrap().len()), (Some(false), 0));
+    assert_eq!(unknown(&app, &alice).await, std::slice::from_ref(&third));
+    assert_eq!(unknown(&app, &carol).await, [second.clone(), third.clone()]);
+    let (_, body) = say(&second, nothing(&bob)).await;
+    assert_eq!(body["agreed"], true);
+    assert_eq!(unknown(&app, &carol).await, std::slice::from_ref(&third));
+
+    // The country must be one with a cuisine, and saying nothing is not "nothing specific".
+    for bad in [country(&carol, "XX"), country(&carol, "AQ"), format!("{carol}|{{}}")] {
+        let (status, body) = say(&third, bad.clone()).await;
+        assert!(status.is_client_error() && status != StatusCode::CONFLICT, "{bad}: {status} {body}");
+    }
+    let (status, _) = say("nope", country(&carol, "IT")).await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+    let (status, _) = call(&app, "POST", &format!("/api/places/{third}/cuisine"), None, Some(r#"{"country":"IT"}"#)).await;
+    assert_eq!(status, StatusCode::UNAUTHORIZED);
+}
+
+#[tokio::test]
+async fn a_player_names_the_food_of_at_most_5_places_a_day() {
+    let (app, clock) = app_with_clock().await;
+    let alice = session(&app).await;
+    let mut places = Vec::new();
+    for area in ["demo-leuven", "demo-ghent"] {
+        let (_, list) = call(&app, "GET", &format!("/api/places/unknown?area={area}"), Some(&alice), None).await;
+        places.extend(list.as_array().unwrap().iter().map(|p| p["id"].as_str().unwrap().to_string()));
+    }
+    assert_eq!(places.len(), 6);
+    let say = |place: &str, json: &'static str| {
+        let (app, uri, alice) = (app.clone(), format!("/api/places/{place}/cuisine"), alice.clone());
+        async move { call(&app, "POST", &uri, Some(&alice), Some(json)).await.0 }
+    };
+    for place in &places[..5] {
+        assert_eq!(say(place, r#"{"country":"PE"}"#).await, StatusCode::OK);
+    }
+    assert_eq!(say(&places[5], r#"{"country":"PE"}"#).await, StatusCode::TOO_MANY_REQUESTS);
+    // "Nothing specific" posts no note, so it isn't limited.
+    assert_eq!(say(&places[5], r#"{"country":null}"#).await, StatusCode::OK);
+    clock.fetch_add(DAY, Ordering::Relaxed);
+    let (_, list) = call(&app, "GET", "/api/places/unknown?area=demo-brussels", Some(&alice), None).await;
+    let tomorrow = list[0]["id"].as_str().unwrap().to_string();
+    assert_eq!(say(&tomorrow, r#"{"country":"PE"}"#).await, StatusCode::OK);
+}
+
+#[tokio::test]
+async fn the_first_to_name_an_osm_place_s_food_sends_mappers_a_note_until_osm_has_it() {
+    use mangiamundo::geo::{Bbox, Shape};
+    use mangiamundo::providers::{AreaInfo, AreaKind, Boundary, FoundPlace};
+    let (url, notes) = fake_osm_notes().await;
+    let db = store::connect("sqlite::memory:").await.unwrap();
+    let mut place = FoundPlace {
+        id: "osm-node-42".into(),
+        name: "Chez Nous".into(),
+        lat: 50.8798,
+        lng: 4.7005,
+        address: None,
+        url: None,
+        cuisine: None,
+        opening_hours: None,
+        countries: vec![],
+    };
+    let area = store::Area {
+        boundary: Boundary {
+            info: AreaInfo {
+                id: "demo-leuven".into(),
+                name: "Leuven".into(),
+                kind: AreaKind::City,
+                detail: None,
+                lat: 50.88,
+                lng: 4.7,
+            },
+            shape: Shape::rect(Bbox { south: 50.8, west: 4.6, north: 50.95, east: 4.8 }),
+        },
+        provider: "demo".into(),
+        fetched_at: START,
+    };
+    store::save_area(&db, &area, std::slice::from_ref(&place)).await.unwrap();
+    let (app, _) = app_with(db.clone(), Some(url), START).await;
+    let (alice, bob, carol) = (session(&app).await, session(&app).await, session(&app).await);
+    let say = |token: &str, json: &'static str| {
+        let (app, token) = (app.clone(), token.to_string());
+        async move { call(&app, "POST", "/api/places/osm-node-42/cuisine", Some(&token), Some(json)).await }
+    };
+    assert_eq!(say(&alice, r#"{"country":"ET"}"#).await.0, StatusCode::OK);
+    assert_eq!(say(&bob, r#"{"country":"ET"}"#).await.0, StatusCode::OK);
+    // A refresh of the area keeps what players agreed on.
+    store::save_area(&db, &area, std::slice::from_ref(&place)).await.unwrap();
+    assert!(leuven_countries(&app, &carol).await.contains(&"ET".to_string()));
+    assert_eq!(say(&carol, r#"{"country":null}"#).await.0, StatusCode::CONFLICT);
+
+    tokio::time::sleep(std::time::Duration::from_millis(200)).await;
+    {
+        let notes = notes.lock().unwrap();
+        assert_eq!(notes.len(), 1, "only the first to name it: {notes:?}");
+        assert!(notes[0].contains("cuisine%3Dethiopian"), "{}", notes[0]);
+        assert!(notes[0].contains("Ethiopian+food"), "{}", notes[0]);
+        assert!(notes[0].contains("openstreetmap.org%2Fnode%2F42"), "{}", notes[0]);
+    }
+
+    // OpenStreetMap gets a cuisine: it wins over what players said.
+    place.cuisine = Some("eritrean".into());
+    place.countries = vec!["ER"];
+    store::save_area(&db, &area, std::slice::from_ref(&place)).await.unwrap();
+    let countries = leuven_countries(&app, &alice).await;
+    assert!(countries.contains(&"ER".to_string()) && !countries.contains(&"ET".to_string()), "{countries:?}");
+    assert!(unknown(&app, &carol).await.is_empty());
+}

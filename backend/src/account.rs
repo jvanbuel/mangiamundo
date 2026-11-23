@@ -392,6 +392,9 @@ async fn merge(tx: &mut sqlx::SqliteConnection, from: &str, into: &str) -> sqlx:
         "UPDATE OR IGNORE public_profiles SET user_id = ?1 WHERE user_id = ?2",
         "UPDATE identities SET user_id = ?1 WHERE user_id = ?2",
         "UPDATE OR IGNORE quest_rewards SET user_id = ?1 WHERE user_id = ?2",
+        // Where both said what the same place serves, `into`'s answer stays.
+        "UPDATE OR IGNORE cuisine_suggestions SET user_id = ?1 WHERE user_id = ?2",
+        "UPDATE place_countries SET suggested_by = ?1 WHERE suggested_by = ?2",
         // Other devices of the merged account keep working, now as the restored one.
         "UPDATE sessions SET user_id = ?1 WHERE user_id = ?2",
     ] {

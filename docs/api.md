@@ -26,6 +26,7 @@ for people and may change; clients that react to a specific case check `code`:
 | `unauthorized` | 401 | Missing or unknown session token |
 | `not_found` | 404 | Unknown place, area or `/api` path |
 | `method_not_allowed` | 405 | The path exists, but not with this method |
+| `conflict` | 409 | Already done and final, such as saying twice what a place serves |
 | `upstream` | 502 | The places or areas provider failed |
 | `internal` | 500 | Anything else, such as a database error |
 

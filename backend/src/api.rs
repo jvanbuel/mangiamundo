@@ -76,6 +76,8 @@ fn api_router() -> (Router<AppState>, utoipa::openapi::OpenApi) {
         .routes(routes!(countries))
         .routes(routes!(discover))
         .routes(routes!(places, add_place))
+        .routes(routes!(unknown_places))
+        .routes(routes!(suggest_cuisine))
         .routes(routes!(refresh_place))
         .routes(routes!(refresh_nearby))
         .routes(routes!(additions))
@@ -179,6 +181,7 @@ enum ErrorCode {
     Unauthorized,
     NotFound,
     MethodNotAllowed,
+    Conflict,
     NothingOpen,
     NothingLeft,
     TooManyRequests,
@@ -200,6 +203,8 @@ pub enum ApiError {
     Unauthorized,
     #[error("{0} not found")]
     NotFound(&'static str),
+    #[error("{0}")]
+    Conflict(&'static str),
     #[error("{0}")]
     TooManyRequests(&'static str),
     #[error("no unvisited place is open now")]
@@ -224,6 +229,7 @@ impl IntoResponse for ApiError {
             }
             ApiError::Unauthorized => (StatusCode::UNAUTHORIZED, ErrorCode::Unauthorized),
             ApiError::NotFound(_) => (StatusCode::NOT_FOUND, ErrorCode::NotFound),
+            ApiError::Conflict(_) => (StatusCode::CONFLICT, ErrorCode::Conflict),
             ApiError::NothingOpen => (StatusCode::NOT_FOUND, ErrorCode::NothingOpen),
             ApiError::NothingLeft => (StatusCode::NOT_FOUND, ErrorCode::NothingLeft),
             ApiError::TooManyRequests(_) => {
@@ -1511,6 +1517,150 @@ async fn mark_additions_seen(
     Ok(StatusCode::NO_CONTENT)
 }
 
+/// At most this many places come back from `/api/places/unknown`.
+const UNKNOWN_PLACES_MAX: usize = 100;
+
+/// Restaurants in the area whose food is unknown: OpenStreetMap has no `cuisine` for them,
+/// so they count for nothing until players say which country's food they serve. Nearest
+/// first, at most 100. Places the user already answered for, and those players agreed on,
+/// aren't listed. `countries` is always empty.
+#[utoipa::path(
+    get, path = "/api/places/unknown", tag = "game", params(UnknownQuery),
+    security((), ("token" = [])),
+    responses((status = 200, body = Vec<PlaceView>), (status = "default", description = "An error", body = ErrorBody)),
+)]
+async fn unknown_places(
+    State(state): State<AppState>,
+    MaybeUser(user): MaybeUser,
+    Query(query): Query<UnknownQuery>,
+) -> ApiResult<Vec<PlaceView>> {
+    let area = resolve_area(&state, &query.area).await?;
+    let mut places = store::unknown_places(&state.db, area.id(), user.as_deref()).await?;
+    let info = &area.boundary.info;
+    let (from_lat, from_lng) = (query.lat.unwrap_or(info.lat), query.lng.unwrap_or(info.lng));
+    let now = state.now();
+    for place in &mut places {
+        complete(place, from_lat, from_lng, now);
+    }
+    places.sort_by(|a, b| a.distance_m.cmp(&b.distance_m).then_with(|| a.name.cmp(&b.name)));
+    places.truncate(UNKNOWN_PLACES_MAX);
+    Ok(Json(places))
+}
+
+#[derive(Deserialize, IntoParams)]
+#[into_params(parameter_in = Query)]
+struct UnknownQuery {
+    /// As for `/api/discover`.
+    area: String,
+    /// As for `/api/places`: where the user is, for distances and the order.
+    lat: Option<f64>,
+    lng: Option<f64>,
+}
+
+/// What a player says a place without a cuisine serves.
+#[derive(Deserialize, ToSchema)]
+struct CuisineSuggestion {
+    /// The country whose food it serves (ISO 3166-1 alpha-2), one from `/api/countries` with
+    /// a cuisine; `null` when it serves no particular country's food, like a snack bar.
+    /// Required, also when `null`.
+    #[serde(deserialize_with = "Option::deserialize")]
+    #[schema(required = true)]
+    country: Option<String>,
+}
+
+/// The place after a player said what it serves.
+#[derive(Serialize, ToSchema)]
+struct CuisineResult {
+    /// As the user now sees it: with the country they said in `countries`.
+    place: PlaceView,
+    /// Enough players said the same: it now counts for everyone (or, for "nothing
+    /// specific", it is no longer listed as unknown for anyone).
+    agreed: bool,
+}
+
+/// Says which country's food a place from `/api/places/unknown` serves. The country counts
+/// for the user straight away, and for everyone once two players said the same; the first
+/// to name a country also has an OpenStreetMap note ask mappers to add the `cuisine` tag.
+/// With `country: null` (no particular country's food) the place is no longer listed for the
+/// user, and for nobody after two such answers; no note is posted. An answer is final: a
+/// second one is a 409 `conflict`, as is one for a place whose food is already known. At
+/// most 5 countries a day.
+#[utoipa::path(
+    post, path = "/api/places/{place_id}/cuisine", tag = "game",
+    params(("place_id" = String, Path, description = "A place id from `/api/places/unknown`."), PlaceQuery),
+    request_body = CuisineSuggestion,
+    security(("token" = [])),
+    responses((status = 200, body = CuisineResult), (status = "default", description = "An error", body = ErrorBody)),
+)]
+async fn suggest_cuisine(
+    State(state): State<AppState>,
+    User(user): User,
+    Path(place_id): Path<String>,
+    Query(query): Query<PlaceQuery>,
+    JsonBody(body): JsonBody<CuisineSuggestion>,
+) -> ApiResult<CuisineResult> {
+    let (name, lat, lng) = store::place_summary(&state.db, &place_id, &user)
+        .await?
+        .ok_or(ApiError::NotFound("place"))?;
+    let country = match body.country {
+        None => None,
+        Some(code) => {
+            let code = code.to_uppercase();
+            let (country, cuisine) = catalog::country(&code)
+                .zip(catalog::cuisine_tag(&code))
+                .ok_or(ApiError::BadRequest("unknown country".into()))?;
+            Some((country.code.clone(), cuisine))
+        }
+    };
+    let now = state.now();
+    let code = country.as_ref().map(|(code, _)| code.as_str());
+    let outcome =
+        store::suggest_cuisine(&state.db, &user, &place_id, code, now, PLACES_PER_DAY).await?;
+    let (first, agreed) = match outcome {
+        store::Suggested::Saved { first, agreed } => (first, agreed),
+        store::Suggested::Known => {
+            return Err(ApiError::Conflict("this place's food is already known"))
+        }
+        store::Suggested::Already => {
+            return Err(ApiError::Conflict("you already said what this place serves"))
+        }
+        store::Suggested::TooMany => {
+            return Err(ApiError::TooManyRequests(
+                "you named the food of 5 places today; try again tomorrow",
+            ))
+        }
+    };
+    if let (true, Some((code, cuisine)), Some(url), Some(osm)) =
+        (first, &country, &state.osm_notes_url, osm_link(&place_id))
+    {
+        let text = cuisine_note(&name, &osm, code, cuisine);
+        tokio::spawn(post_osm_note(
+            url.clone(),
+            state.osm_notes_token.clone(),
+            lat,
+            lng,
+            text,
+        ));
+    }
+    let mut place = store::place(&state.db, &place_id, Some(&user))
+        .await?
+        .ok_or(ApiError::NotFound("place"))?;
+    let (from_lat, from_lng) = (query.lat.unwrap_or(lat), query.lng.unwrap_or(lng));
+    complete(&mut place, from_lat, from_lng, now);
+    Ok(Json(CuisineResult { place, agreed }))
+}
+
+/// An OSM note asking for the `cuisine` tag a player says a place lacks.
+fn cuisine_note(name: &str, osm: &str, country: &str, cuisine: &str) -> String {
+    let food = catalog::cuisine_adjective(country)
+        .or_else(|| catalog::country(country).map(|c| c.name.clone()))
+        .unwrap_or_else(|| country.to_string());
+    format!(
+        "A Mangiamundo user who knows this place says \"{name}\" ({osm}) serves {food} food, \
+         but it has no cuisine tag:\n\ncuisine={cuisine}\n\nCould someone check and add it?"
+    )
+}
+
 /// An OSM note mappers can act on: the tags to add, ready to copy.
 fn missing_place_note(place: &store::NewPlace) -> String {
     let mut text = format!(
@@ -1645,7 +1795,11 @@ async fn refresh_nearby(
     let (new, matched) = store::add_nearby(&state.db, &found, now).await?;
     let mut added = Vec::new();
     for id in new {
-        if let Some(mut place) = store::place(&state.db, &id, Some(&user)).await? {
+        // Places whose food is unknown go to `/api/places/unknown`, not here.
+        if let Some(mut place) = store::place(&state.db, &id, Some(&user))
+            .await?
+            .filter(|p| !p.countries.is_empty())
+        {
             complete(&mut place, lat, lng, now);
             added.push(place);
         }

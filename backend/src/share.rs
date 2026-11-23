@@ -87,7 +87,7 @@ pub struct SharedVisit {
 
 pub async fn find_visit(db: &SqlitePool, slug: &str) -> sqlx::Result<Option<SharedVisit>> {
     let Some(row) = sqlx::query(
-        "SELECT p.id, p.name, v.local_date FROM shared_visits s
+        "SELECT p.id, p.name, v.local_date, v.user_id FROM shared_visits s
          JOIN visits v ON v.id = s.visit_id JOIN places p ON p.id = v.place_id
          WHERE s.slug = ?",
     )
@@ -98,8 +98,13 @@ pub async fn find_visit(db: &SqlitePool, slug: &str) -> sqlx::Result<Option<Shar
         return Ok(None);
     };
     let place_id: String = row.get("id");
-    let countries = sqlx::query_scalar("SELECT country FROM place_countries WHERE place_id = ? ORDER BY country")
+    // Countries only the visitor said the place serves count on their page too.
+    let countries = sqlx::query_scalar(
+        "SELECT country FROM place_countries WHERE place_id = ?
+         AND (suggested_by IS NULL OR suggested_by = ?) ORDER BY country",
+    )
         .bind(&place_id)
+        .bind(row.get::<String, _>("user_id"))
         .fetch_all(db)
         .await?;
     Ok(Some(SharedVisit {

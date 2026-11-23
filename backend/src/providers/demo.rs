@@ -232,9 +232,27 @@ impl City {
                 });
             }
         }
+        // A few places whose food OpenStreetMap doesn't know, for players to identify.
+        let mut rng = Rng(self.slug.len() as u64);
+        for (n, name) in UNKNOWN_FOOD.iter().enumerate() {
+            places.push(FoundPlace {
+                id: format!("demo-{}-unknown-{n}", self.slug),
+                name: name.to_string(),
+                lat: b.south + rng.unit() * (b.north - b.south),
+                lng: b.west + rng.unit() * (b.east - b.west),
+                address: Some(format!("{} Demo Street", 1 + rng.next() % 200)),
+                url: None,
+                cuisine: None,
+                opening_hours: None,
+                countries: vec![],
+            });
+        }
         places
     }
 }
+
+/// Places in every city whose food is unknown.
+const UNKNOWN_FOOD: &[&str] = &["Corner Kitchen", "Snack Express", "The Blue Door"];
 
 fn city_of(id: &str) -> Option<&'static City> {
     CITIES

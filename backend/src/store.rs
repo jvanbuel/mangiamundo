@@ -186,6 +186,37 @@ async fn upsert_place(
             .execute(&mut *tx)
             .await?;
     }
+    if place.countries.is_empty() {
+        // Food unknown to the source: what players said it serves.
+        suggested_countries(tx, &place.id).await?;
+    } else {
+        // The source knows its food now, and wins over what players said.
+        sqlx::query("DELETE FROM cuisine_suggestions WHERE place_id = ?")
+            .bind(&place.id)
+            .execute(&mut *tx)
+            .await?;
+    }
+    Ok(())
+}
+
+/// Sets the countries of a place without a cuisine from what players said it serves: a
+/// country two or more agree on counts for everyone, one only one player said counts just
+/// for them. Suggestions are final, so a country never stops counting for everyone.
+async fn suggested_countries(tx: &mut sqlx::SqliteConnection, place_id: &str) -> sqlx::Result<()> {
+    sqlx::query("DELETE FROM place_countries WHERE place_id = ?")
+        .bind(place_id)
+        .execute(&mut *tx)
+        .await?;
+    sqlx::query(
+        "INSERT INTO place_countries (place_id, country, suggested_by)
+         SELECT place_id, country, CASE WHEN COUNT(*) >= ? THEN NULL ELSE MIN(user_id) END
+         FROM cuisine_suggestions WHERE place_id = ? AND country IS NOT NULL
+         GROUP BY country",
+    )
+    .bind(AGREE)
+    .bind(place_id)
+    .execute(&mut *tx)
+    .await?;
     Ok(())
 }
 
@@ -206,6 +237,12 @@ const VISIBLE: &str = "(p.added_by IS NULL OR p.added_by = ?1)
            AND NOT EXISTS (SELECT 1 FROM closed_reports WHERE place_id = p.id AND user_id = ?1)
            AND (SELECT COUNT(*) FROM closed_reports WHERE place_id = p.id) < 2";
 
+/// The countries `pc` a user sees: everyone's, plus the ones only they suggested. `user` is
+/// the SQL for the user's id.
+fn seen_by(pc: &str, user: &str) -> String {
+    format!("({pc}.suggested_by IS NULL OR {pc}.suggested_by = {user})")
+}
+
 pub async fn area_rows(
     db: &SqlitePool,
     area_id: &str,
@@ -217,7 +254,8 @@ pub async fn area_rows(
          FROM area_places ap
          JOIN places p ON p.id = ap.place_id
          JOIN place_countries pc ON pc.place_id = p.id
-         WHERE ap.area_id = ?2 AND {VISIBLE}"
+         WHERE ap.area_id = ?2 AND {VISIBLE} AND {}",
+        seen_by("pc", "?1")
     );
     let rows = sqlx::query(&sql)
         .bind(user)
@@ -244,10 +282,11 @@ pub async fn lifetime(db: &SqlitePool, user: &str, today: NaiveDate) -> sqlx::Re
     .bind(user)
     .fetch_one(db)
     .await?;
-    let countries: i64 = sqlx::query_scalar(
+    let countries: i64 = sqlx::query_scalar(&format!(
         "SELECT COUNT(DISTINCT pc.country) FROM visits v
-         JOIN place_countries pc ON pc.place_id = v.place_id WHERE v.user_id = ?",
-    )
+         JOIN place_countries pc ON pc.place_id = v.place_id WHERE v.user_id = ? AND {}",
+        seen_by("pc", "v.user_id")
+    ))
     .bind(user)
     .fetch_one(db)
     .await?;
@@ -286,11 +325,12 @@ pub async fn lifetime(db: &SqlitePool, user: &str, today: NaiveDate) -> sqlx::Re
 /// Every place the user checked in at, any area, per country it serves, with the local days
 /// of the first and latest check-in.
 pub async fn tasted(db: &SqlitePool, user: &str) -> sqlx::Result<Vec<Tasted>> {
-    let rows: Vec<(String, String, String, String)> = sqlx::query_as(
+    let rows: Vec<(String, String, String, String)> = sqlx::query_as(&format!(
         "SELECT pc.place_id, pc.country, MIN(v.local_date), MAX(v.local_date) FROM visits v
          JOIN place_countries pc ON pc.place_id = v.place_id
-         WHERE v.user_id = ? GROUP BY pc.place_id, pc.country",
-    )
+         WHERE v.user_id = ? AND {} GROUP BY pc.place_id, pc.country",
+        seen_by("pc", "v.user_id")
+    ))
     .bind(user)
     .fetch_all(db)
     .await?;
@@ -386,9 +426,11 @@ pub struct PlaceView {
     pub osm_url: Option<String>,
 }
 
+/// The user's id must be `?1`, for the countries they see.
 const PLACE_COLUMNS: &str =
     "p.id, p.name, p.lat, p.lng, p.address, p.url, p.cuisine, p.opening_hours,
-    (SELECT group_concat(country) FROM place_countries WHERE place_id = p.id) AS countries";
+    (SELECT group_concat(country) FROM place_countries pc
+     WHERE pc.place_id = p.id AND (pc.suggested_by IS NULL OR pc.suggested_by = ?1)) AS countries";
 
 /// A place from a row with [`PLACE_COLUMNS`], without status, distance or visits.
 fn place_view(r: &sqlx::sqlite::SqliteRow) -> PlaceView {
@@ -417,8 +459,8 @@ fn place_view(r: &sqlx::sqlite::SqliteRow) -> PlaceView {
     }
 }
 
-/// Places of an area, optionally restricted to one country, each with the user's latest
-/// visit. `distance_m` and the hours status are left empty.
+/// Places of an area serving a country the user sees, optionally one country, each with the
+/// user's latest visit. `distance_m` and the hours status are left empty.
 pub async fn area_places(
     db: &SqlitePool,
     area_id: &str,
@@ -433,9 +475,11 @@ pub async fn area_places(
              SELECT id FROM visits WHERE user_id = ?1 AND place_id = p.id
              ORDER BY visited_at DESC, id DESC LIMIT 1)
          WHERE ap.area_id = ?2
-           AND (?3 IS NULL OR EXISTS (
-                SELECT 1 FROM place_countries WHERE place_id = p.id AND country = ?3))
-           AND {VISIBLE}"
+           AND EXISTS (
+                SELECT 1 FROM place_countries pc WHERE pc.place_id = p.id
+                AND (?3 IS NULL OR pc.country = ?3) AND {})
+           AND {VISIBLE}",
+        seen_by("pc", "?1")
     );
     let rows = sqlx::query(&sql)
         .bind(user)
@@ -469,11 +513,12 @@ pub async fn place(
     place_id: &str,
     user: Option<&str>,
 ) -> sqlx::Result<Option<PlaceView>> {
-    let sql =
-        format!("SELECT {PLACE_COLUMNS} FROM places p WHERE p.id = ? AND {NOT_SOMEONE_ELSES}");
+    let sql = format!(
+        "SELECT {PLACE_COLUMNS} FROM places p WHERE p.id = ?2 AND (p.added_by IS NULL OR p.added_by = ?1)"
+    );
     let Some(row) = sqlx::query(&sql)
-        .bind(place_id)
         .bind(user)
+        .bind(place_id)
         .fetch_optional(db)
         .await?
     else {
@@ -514,7 +559,9 @@ pub async fn visits_between(
     let sql = format!(
         "SELECT COUNT(DISTINCT v.place_id) FROM visits v
          JOIN place_countries pc ON pc.place_id = v.place_id
-         WHERE v.user_id = ? AND v.local_date BETWEEN ? AND ? AND pc.country IN ({marks})"
+         WHERE v.user_id = ? AND v.local_date BETWEEN ? AND ? AND pc.country IN ({marks})
+           AND {}",
+        seen_by("pc", "v.user_id")
     );
     let mut query = sqlx::query_scalar::<_, i64>(&sql)
         .bind(user)
@@ -713,9 +760,11 @@ pub async fn forget_countries(
 
 /// Every country the user has checked in at a place of.
 pub async fn visited_countries(db: &SqlitePool, user: &str) -> sqlx::Result<Vec<String>> {
-    sqlx::query_scalar(
-        "SELECT DISTINCT pc.country FROM visits v JOIN place_countries pc ON pc.place_id = v.place_id WHERE v.user_id = ?",
-    )
+    sqlx::query_scalar(&format!(
+        "SELECT DISTINCT pc.country FROM visits v JOIN place_countries pc ON pc.place_id = v.place_id
+         WHERE v.user_id = ? AND {}",
+        seen_by("pc", "v.user_id")
+    ))
     .bind(user)
     .fetch_all(db)
     .await
@@ -829,7 +878,7 @@ pub async fn add_place(
                 "SELECT DISTINCT pc.country FROM area_places ap
                  JOIN places p ON p.id = ap.place_id
                  JOIN place_countries pc ON pc.place_id = p.id
-                 WHERE ap.area_id = ? AND p.added_by IS NULL
+                 WHERE ap.area_id = ? AND p.added_by IS NULL AND pc.suggested_by IS NULL
                    AND (SELECT COUNT(*) FROM closed_reports WHERE place_id = p.id) < 2",
             )
             .bind(area_id)
@@ -898,6 +947,117 @@ pub async fn place_summary(
     Ok(row.map(|r| (r.get("name"), r.get("lat"), r.get("lng"))))
 }
 
+/// How many players must agree on what a place without a cuisine serves before it counts
+/// for everyone: the same as for closed reports.
+const AGREE: i64 = 2;
+
+/// Restaurants in an area whose food nobody knows yet, as far as `user` is concerned: no
+/// cuisine on OpenStreetMap, no country players agreed on, nothing said by this user, and
+/// not called "nothing specific" by two players. `distance_m` and hours status are left
+/// empty, and `countries` is empty.
+pub async fn unknown_places(
+    db: &SqlitePool,
+    area_id: &str,
+    user: Option<&str>,
+) -> sqlx::Result<Vec<PlaceView>> {
+    let sql = format!(
+        "SELECT {PLACE_COLUMNS} FROM area_places ap
+         JOIN places p ON p.id = ap.place_id
+         WHERE ap.area_id = ?2 AND p.cuisine IS NULL AND p.added_by IS NULL
+           AND NOT EXISTS (SELECT 1 FROM place_countries WHERE place_id = p.id AND suggested_by IS NULL)
+           AND NOT EXISTS (SELECT 1 FROM cuisine_suggestions WHERE place_id = p.id AND user_id = ?1)
+           AND (SELECT COUNT(*) FROM cuisine_suggestions WHERE place_id = p.id AND country IS NULL) < ?3
+           AND {VISIBLE}"
+    );
+    let rows = sqlx::query(&sql)
+        .bind(user)
+        .bind(area_id)
+        .bind(AGREE)
+        .fetch_all(db)
+        .await?;
+    Ok(rows.iter().map(place_view).collect())
+}
+
+/// What became of a player saying what a place serves.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Suggested {
+    /// Saved. `first` when nobody had said that country for the place before (also for
+    /// "nothing specific"), and `agreed` when it now counts for everyone.
+    Saved { first: bool, agreed: bool },
+    /// The place has a known cuisine, or players already agreed on one.
+    Known,
+    /// The user already said what it serves: an answer is final.
+    Already,
+    /// The user reached the daily limit of countries said.
+    TooMany,
+}
+
+/// Records that `user` says a place without a cuisine serves `country`'s food, or no
+/// particular country's (`None`). A country counts for them at once, and for everyone once
+/// [`AGREE`] players said the same. At most `limit` countries a day; "nothing specific"
+/// isn't limited, as it never posts a note. The place must be one `user` can see.
+pub async fn suggest_cuisine(
+    db: &SqlitePool,
+    user: &str,
+    place_id: &str,
+    country: Option<&str>,
+    at: i64,
+    limit: i64,
+) -> sqlx::Result<Suggested> {
+    let mut tx = db.begin().await?;
+    let known: bool = sqlx::query_scalar(
+        "SELECT cuisine IS NOT NULL OR added_by IS NOT NULL
+             OR EXISTS (SELECT 1 FROM place_countries WHERE place_id = ?1 AND suggested_by IS NULL)
+         FROM places WHERE id = ?1",
+    )
+    .bind(place_id)
+    .fetch_optional(&mut *tx)
+    .await?
+    .unwrap_or(true);
+    if known {
+        return Ok(Suggested::Known);
+    }
+    let already: bool = sqlx::query_scalar(
+        "SELECT EXISTS (SELECT 1 FROM cuisine_suggestions WHERE place_id = ? AND user_id = ?)",
+    )
+    .bind(place_id)
+    .bind(user)
+    .fetch_one(&mut *tx)
+    .await?;
+    if already {
+        return Ok(Suggested::Already);
+    }
+    let saved = sqlx::query(
+        "INSERT INTO cuisine_suggestions (place_id, user_id, country, suggested_at)
+         SELECT ?1, ?2, ?3, ?4
+         WHERE ?3 IS NULL OR (SELECT COUNT(*) FROM cuisine_suggestions
+                              WHERE user_id = ?2 AND country IS NOT NULL AND suggested_at > ?4 - 86400) < ?5",
+    )
+    .bind(place_id)
+    .bind(user)
+    .bind(country)
+    .bind(at)
+    .bind(limit)
+    .execute(&mut *tx)
+    .await?;
+    if saved.rows_affected() == 0 {
+        return Ok(Suggested::TooMany);
+    }
+    let same: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM cuisine_suggestions WHERE place_id = ? AND country IS ?",
+    )
+    .bind(place_id)
+    .bind(country)
+    .fetch_one(&mut *tx)
+    .await?;
+    suggested_countries(&mut tx, place_id).await?;
+    tx.commit().await?;
+    Ok(Suggested::Saved {
+        first: same == 1,
+        agreed: same >= AGREE,
+    })
+}
+
 /// Replaces the imported OpenStreetMap places in `bbox`, and marks the cached areas centred
 /// in it as stale so their next request rebuilds them from the new copy. Pending places
 /// that the import now has are swapped for it; returns how many.
@@ -930,9 +1090,6 @@ pub async fn replace_imported(
 
 /// Saves a place in the local copy of OpenStreetMap, so the next area rebuild uses it.
 async fn keep_imported(tx: &mut sqlx::SqliteConnection, place: &FoundPlace) -> sqlx::Result<()> {
-    let Some(cuisine) = &place.cuisine else {
-        return Ok(());
-    };
     sqlx::query(
         "INSERT OR REPLACE INTO osm_places (id, name, lat, lng, address, url, cuisine, opening_hours)
          VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
@@ -943,7 +1100,7 @@ async fn keep_imported(tx: &mut sqlx::SqliteConnection, place: &FoundPlace) -> s
     .bind(place.lng)
     .bind(&place.address)
     .bind(&place.url)
-    .bind(cuisine)
+    .bind(&place.cuisine)
     .bind(&place.opening_hours)
     .execute(&mut *tx)
     .await?;
@@ -1336,18 +1493,21 @@ fn similar_names(a: &str, b: &str) -> bool {
     within(&a, &b) || within(&b, &a)
 }
 
-/// An `osm_places` row, or `None` when its cuisine maps to no country.
+/// An `osm_places` row, or `None` when its cuisine maps to no country. A row without a
+/// cuisine is a restaurant whose food players can identify: kept, with no countries.
 fn found(r: sqlx::sqlite::SqliteRow) -> Option<FoundPlace> {
-    let cuisine: String = r.get("cuisine");
-    let countries = catalog::countries_for_cuisine_tag(&cuisine);
-    (!countries.is_empty()).then(|| FoundPlace {
+    let cuisine: Option<String> = r.get("cuisine");
+    let countries = cuisine
+        .as_deref()
+        .map_or_else(Vec::new, catalog::countries_for_cuisine_tag);
+    (cuisine.is_none() || !countries.is_empty()).then(|| FoundPlace {
         id: r.get("id"),
         name: r.get("name"),
         lat: r.get("lat"),
         lng: r.get("lng"),
         address: r.get("address"),
         url: r.get("url"),
-        cuisine: Some(cuisine),
+        cuisine,
         opening_hours: r.get("opening_hours"),
         countries,
     })
@@ -1400,6 +1560,10 @@ mod tests {
                 place("in", 50.88, 4.70, "greek"),
                 place("out", 51.2, 4.4, "greek"),
                 place("odd", 50.88, 4.70, "burger"),
+                FoundPlace {
+                    cuisine: None,
+                    ..place("unknown", 50.88, 4.70, "")
+                },
             ],
         )
         .await
@@ -1415,9 +1579,12 @@ mod tests {
         )
         .await
         .unwrap();
-        assert_eq!(found.len(), 1);
-        assert_eq!(found[0].id, "in");
+        // A cuisine that maps to no country is dropped; no cuisine at all is kept, for
+        // players to identify.
+        let ids: Vec<&str> = found.iter().map(|p| p.id.as_str()).collect();
+        assert_eq!(ids, ["in", "unknown"]);
         assert_eq!(found[0].countries, vec!["GR"]);
+        assert!(found[1].countries.is_empty() && found[1].cuisine.is_none());
     }
 
     #[test]

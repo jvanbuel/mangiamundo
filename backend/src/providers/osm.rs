@@ -164,19 +164,22 @@ fn element_query(id: &str) -> Option<String> {
         .then(|| format!("[out:json][timeout:25];{kind}(id:{n}){AMENITIES};out center tags;"))
 }
 
+/// The kinds of place kept without a `cuisine`, for players to say what they serve. Cafés,
+/// pubs and bars without one are nearly always about drinks, so they'd only crowd the list.
+const UNKNOWN_FOOD_AMENITIES: &[&str] = &["restaurant", "fast_food"];
+
 /// Restaurants in the area's bounding box; [`Overpass::search`] keeps the ones inside the
 /// outline. A box query works for every area, also postal codes Overpass has no area for.
+/// Named restaurants and fast food without a `cuisine` come along too.
 fn query(b: Bbox, timeout_secs: u64) -> String {
+    // Full precision: rounding could cut off a place just inside an edge.
+    let bbox = format!("({},{},{},{})", b.south, b.west, b.north, b.east);
+    let unknown = UNKNOWN_FOOD_AMENITIES.join("|");
     format!(
         "[out:json][timeout:{timeout_secs}];\
-         nwr{AMENITIES}[\"cuisine\"][\"name\"]\
-         ({},{},{},{});\
-         out center tags;",
-        // Full precision: rounding could cut off a place just inside an edge.
-        b.south,
-        b.west,
-        b.north,
-        b.east
+         (nwr{AMENITIES}[\"cuisine\"][\"name\"]{bbox};\
+          nwr[\"amenity\"~\"^({unknown})$\"][!\"cuisine\"][\"name\"]{bbox};);\
+         out center tags;"
     )
 }
 
@@ -218,20 +221,28 @@ fn parse(body: &str) -> anyhow::Result<Vec<FoundPlace>> {
     Ok(places(response.elements))
 }
 
-/// The places among OSM elements: named, open, and serving a national cuisine.
+/// The places among OSM elements: named, open, and serving a national cuisine. Named
+/// restaurants and fast food without any `cuisine` are kept too, with no countries, for
+/// players to say what they serve.
 fn places(elements: Vec<Element>) -> Vec<FoundPlace> {
     let today = chrono::Utc::now().format("%Y-%m-%d").to_string();
     let mut places = Vec::new();
     let mut dropped: HashMap<String, usize> = HashMap::new();
     for el in elements {
-        let (Some(name), Some(cuisine)) = (el.tags.get("name"), el.tags.get("cuisine")) else {
+        let Some(name) = el.tags.get("name") else {
             continue;
         };
-        if is_closed(&el.tags, &today) {
+        let cuisine = el.tags.get("cuisine").filter(|c| !c.trim().is_empty());
+        let unknown_food = cuisine.is_none()
+            && el
+                .tags
+                .get("amenity")
+                .is_some_and(|a| UNKNOWN_FOOD_AMENITIES.contains(&a.as_str()));
+        if (cuisine.is_none() && !unknown_food) || is_closed(&el.tags, &today) {
             continue;
         }
-        let countries = catalog::countries_for_cuisine_tag(cuisine);
-        if countries.is_empty() {
+        let countries = cuisine.map_or_else(Vec::new, |c| catalog::countries_for_cuisine_tag(c));
+        if let Some(cuisine) = cuisine.filter(|_| countries.is_empty()) {
             // Only tags that cost us the whole place: the extra `pizza` in `italian;pizza`
             // loses nothing and would crowd out the ones that do.
             for tag in cuisine.split([';', ',']) {
@@ -270,7 +281,7 @@ fn places(elements: Vec<Element>) -> Vec<FoundPlace> {
                 .get("website")
                 .or_else(|| el.tags.get("contact:website"))
                 .cloned(),
-            cuisine: Some(cuisine.clone()),
+            cuisine: cuisine.cloned(),
             opening_hours: el.tags.get("opening_hours").cloned(),
             countries,
         });
@@ -981,6 +992,33 @@ mod tests {
         assert_eq!(places[1].countries, vec!["VN", "TH"]);
         assert_eq!((places[1].lat, places[1].lng), (50.87, 4.71));
         assert_eq!(places[1].address, None);
+    }
+
+    #[test]
+    fn keeps_restaurants_without_a_cuisine_for_players_to_identify() {
+        let body = r#"{"elements":[
+            {"type":"node","id":1,"lat":50.88,"lon":4.70,"tags":{"amenity":"restaurant","name":"Chez Nous"}},
+            {"type":"node","id":2,"lat":50.88,"lon":4.70,"tags":{"amenity":"fast_food","name":"Snack 2000","cuisine":""}},
+            {"type":"node","id":3,"lat":50.88,"lon":4.70,"tags":{"amenity":"pub","name":"De Kroeg"}},
+            {"type":"node","id":4,"lat":50.88,"lon":4.70,"tags":{"amenity":"restaurant"}},
+            {"type":"node","id":5,"lat":50.88,"lon":4.70,"tags":{"amenity":"restaurant","name":"Gone","disused":"yes"}}
+        ]}"#;
+        let places = parse(body).unwrap();
+        let ids: Vec<&str> = places.iter().map(|p| p.id.as_str()).collect();
+        assert_eq!(ids, ["osm-node-1", "osm-node-2"]);
+        assert!(places
+            .iter()
+            .all(|p| p.cuisine.is_none() && p.countries.is_empty()));
+    }
+
+    #[test]
+    fn area_queries_ask_for_restaurants_without_a_cuisine_too() {
+        let q = query(IMPORT_BBOX, 60);
+        assert!(q.contains(r#"["cuisine"]["name"](49.4,2.4,51.6,6.5)"#), "{q}");
+        assert!(
+            q.contains(r#"["amenity"~"^(restaurant|fast_food)$"][!"cuisine"]["name"](49.4,2.4,51.6,6.5)"#),
+            "{q}"
+        );
     }
 
     #[test]
