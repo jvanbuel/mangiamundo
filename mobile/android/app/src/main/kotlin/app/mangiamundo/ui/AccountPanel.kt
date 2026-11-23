@@ -106,15 +106,7 @@ fun AccountSection(vm: AppViewModel) {
             )
             ChunkyButton(
                 "Continue with Google",
-                onClick = {
-                    scope.launch {
-                        try {
-                            googleIdToken(context)?.let(vm::signInWithGoogle)
-                        } catch (e: Exception) {
-                            vm.announce("Google sign-in did not work: ${e.message}")
-                        }
-                    }
-                },
+                onClick = { vm.signInWithGoogle { googleIdToken(context) } },
                 enabled = !vm.accountBusy,
                 face = Color.White,
                 content = Color(0xFF1F1F1F),

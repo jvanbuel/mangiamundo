@@ -37,6 +37,7 @@ import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.receiveAsFlow
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlin.math.abs
@@ -754,10 +755,13 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch {
             try {
                 work()
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
                 messageChannel.trySend("That did not work: ${e.message}")
+            } finally {
+                accountBusy = false
             }
-            accountBusy = false
         }
     }
 
@@ -858,18 +862,19 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    fun signInWithGoogle(idToken: String) = accountAction {
+    /**
+     * Signs in with the ID token `getToken` gets from Google's account picker (null when the
+     * user closes it). The picker counts as part of the account action, so no other one can
+     * start meanwhile, and it runs in this model's scope, so leaving the screen doesn't cut it off.
+     */
+    fun signInWithGoogle(getToken: suspend () -> String?) = accountAction {
+        val idToken = getToken() ?: return@accountAction
         api.signInWithGoogle(idToken)
         codeSentTo = null
         recoveryCode = null
         linkCode = null
         messageChannel.trySend("Signed in. Your progress now follows you to every device you sign in on.")
         accountChanged()
-    }
-
-    /** For failures that happen before the server is asked, such as in Google's sign-in sheet. */
-    fun announce(text: String) {
-        messageChannel.trySend(text)
     }
 
     fun signOut() = accountAction {
