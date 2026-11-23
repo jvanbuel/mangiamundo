@@ -67,6 +67,7 @@ fun AppScreen(vm: AppViewModel = viewModel()) {
     var pickerOpen by rememberSaveable { mutableStateOf(false) }
     var settingsOpen by rememberSaveable { mutableStateOf(false) }
     var addOpen by rememberSaveable { mutableStateOf(false) }
+    var unknownOpen by rememberSaveable { mutableStateOf(false) }
 
     LaunchedEffect(Unit) {
         vm.messages.collect { snackbar.showSnackbar(it) }
@@ -148,6 +149,7 @@ fun AppScreen(vm: AppViewModel = viewModel()) {
     }
 
     BackHandler(enabled = vm.selected != null) { vm.select(null) }
+    LaunchedEffect(vm.location?.area?.id) { vm.loadUnknownPlaces() }
 
     val discover = vm.discover
     val selected = discover?.countries?.firstOrNull { it.code == vm.selected }
@@ -262,6 +264,17 @@ fun AppScreen(vm: AppViewModel = viewModel()) {
                                             CountryRow(progress, vm.country(progress.code)) { vm.select(progress.code) }
                                         }
                                     }
+                                    if (vm.unknownPlaces.isNotEmpty()) item(key = "unknown") {
+                                        val n = vm.unknownPlaces.size
+                                        Box(Modifier.fillMaxWidth().padding(top = 16.dp), contentAlignment = Alignment.Center) {
+                                            ChunkyButton(
+                                                if (n == 1) "1 restaurant doesn't say what food it serves" else "$n restaurants don't say what food they serve",
+                                                onClick = { unknownOpen = true },
+                                                face = colors.panelRaised,
+                                                content = colors.text,
+                                            )
+                                        }
+                                    }
                                     item(key = "add") { addLink() }
                                 } else {
                                     item(key = "badges") { BadgeGrid(discover.badges, discover.events, discover.quests) }
@@ -328,6 +341,19 @@ fun AppScreen(vm: AppViewModel = viewModel()) {
                             addOpen = false
                             if (!note) context.addInEditorApp(name, lat, lng)
                         }
+                    }
+                }
+                SnackbarHost(snackbar, Modifier.align(Alignment.TopCenter))
+            }
+        }
+    }
+
+    if (unknownOpen) {
+        ModalBottomSheet(onDismissRequest = { unknownOpen = false }, containerColor = colors.panel) {
+            Box {
+                Column(Modifier.verticalScroll(rememberScrollState()).padding(start = 16.dp, end = 16.dp, bottom = 24.dp)) {
+                    UnknownFoodSheet(vm.unknownPlaces, vm.catalog?.countries.orEmpty(), vm.answering) { place, country ->
+                        vm.answerUnknown(place, country) { unknownOpen = false }
                     }
                 }
                 SnackbarHost(snackbar, Modifier.align(Alignment.TopCenter))

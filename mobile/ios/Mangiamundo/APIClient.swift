@@ -123,6 +123,23 @@ actor APIClient {
         return try decode(await authed("POST", "/api/places", body: data))
     }
 
+    /// Restaurants in the area OpenStreetMap gives no cuisine, nearest to `from` first.
+    func unknownPlaces(areaID: String, from: (lat: Double, lng: Double)?) async throws -> [UnknownPlace] {
+        let position = from.map { "&lat=\($0.lat)&lng=\($0.lng)" } ?? ""
+        return try decode(await authed("GET", "/api/unknown-places?\(area(areaID))\(position)"))
+    }
+
+    /// "It serves food from …": like adding a place, only this user sees it until OSM has the cuisine.
+    func suggestCuisine(placeID: String, country: String) async throws -> AddedPlace {
+        let data = try JSONSerialization.data(withJSONObject: ["country": country])
+        return try decode(await authed("POST", "/api/unknown-places/\(encode(placeID))/cuisine", body: data))
+    }
+
+    /// "It serves no particular country's food": hides it for this user, and for everyone after two.
+    func noCuisine(placeID: String) async throws {
+        _ = try await authed("PUT", "/api/unknown-places/\(encode(placeID))/no-cuisine")
+    }
+
     /// Reads a place again from OpenStreetMap, for an edit made there since the daily import.
     func refreshPlace(id: String, from: (lat: Double, lng: Double)?) async throws -> RefreshResult {
         let position = from.map { "?lat=\($0.lat)&lng=\($0.lng)" } ?? ""

@@ -115,6 +115,8 @@ final class ContractTests: XCTestCase {
         XCTAssertTrue(places.allSatisfy { $0.hours?.week == nil })
         XCTAssertFalse(try decode([Area].self, "areas").isEmpty)
         XCTAssertEqual(try decode(Located.self, "located").options.count, 2)
+        let unknown = try decode([UnknownPlace].self, "unknown-places")
+        XCTAssertEqual(unknown.first?.distanceM, 96)
         let added = try decode(AddedPlace.self, "added")
         XCTAssertEqual(added.place.name, "Kiwi")
         XCTAssertEqual(added.reward, Reward(xp: 380, bonus: .continent, areaName: "Leuven"))

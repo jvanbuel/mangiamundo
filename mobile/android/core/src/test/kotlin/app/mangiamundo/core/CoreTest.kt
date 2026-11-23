@@ -122,6 +122,7 @@ class CoreTest {
         assertTrue(places.all { it.hours?.week == null })
         assertTrue(json.decodeFromString<List<Area>>(fixture("areas")).isNotEmpty())
         assertEquals(2, json.decodeFromString<Located>(fixture("located")).options.size)
+        assertEquals(96, json.decodeFromString<List<UnknownPlace>>(fixture("unknown-places")).first().distanceM)
         assertEquals("area not found", json.decodeFromString<ErrorBody>(fixture("error")).error)
         val added = client.decodeAdded(fixture("added"))
         assertEquals("Kiwi", added.place.name)

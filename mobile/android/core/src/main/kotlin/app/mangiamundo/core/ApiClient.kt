@@ -114,6 +114,21 @@ class ApiClient(private val baseUrl: String, private val tokens: TokenStore, pri
     internal fun decodeAdded(text: String): AddedPlace =
         AddedPlace(json.decodeFromString<Place>(text), json.decodeFromString<RewardOnly>(text).reward)
 
+    /** Restaurants in the area OpenStreetMap gives no cuisine, nearest to `from` first. */
+    suspend fun unknownPlaces(areaId: String, from: Pair<Double, Double>?): List<UnknownPlace> {
+        val position = from?.let { "&lat=${it.first}&lng=${it.second}" }.orEmpty()
+        return json.decodeFromString(authed("GET", "/api/unknown-places?${area(areaId)}$position"))
+    }
+
+    /** "It serves food from …": like adding a place, only this user sees it until OSM has the cuisine. */
+    suspend fun suggestCuisine(placeId: String, country: String): AddedPlace =
+        decodeAdded(authed("POST", "/api/unknown-places/${encode(placeId)}/cuisine", jsonObject(mapOf("country" to country))))
+
+    /** "It serves no particular country's food": hides it for this user, and for everyone after two. */
+    suspend fun noCuisine(placeId: String) {
+        authed("PUT", "/api/unknown-places/${encode(placeId)}/no-cuisine")
+    }
+
     /** Reads a place again from OpenStreetMap, for an edit made there since the daily import. */
     suspend fun refreshPlace(placeId: String, from: Pair<Double, Double>?): RefreshResult {
         val position = from?.let { "?lat=${it.first}&lng=${it.second}" }.orEmpty()

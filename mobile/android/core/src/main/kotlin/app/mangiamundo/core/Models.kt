@@ -397,6 +397,17 @@ internal data class RewardOnly(val reward: Reward)
 
 data class AddedPlace(val place: Place, val reward: Reward)
 
+/** A named restaurant OpenStreetMap gives no cuisine, so it isn't on the map yet. */
+@Serializable
+data class UnknownPlace(
+    val id: String,
+    val name: String,
+    val lat: Double,
+    val lng: Double,
+    val address: String? = null,
+    @SerialName("distance_m") val distanceM: Int,
+)
+
 @Serializable
 enum class AdditionStatus {
     @SerialName("pending") PENDING,

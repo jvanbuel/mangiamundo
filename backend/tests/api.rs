@@ -1400,7 +1400,17 @@ async fn writes_contract_fixtures() {
         )
         .unwrap();
     };
-    let app = app().await;
+    let db = store::connect("sqlite::memory:").await.unwrap();
+    let unknown = store::UnknownPlace {
+        id: "osm-node-1".into(),
+        name: "Lalibela".into(),
+        lat: 50.879,
+        lng: 4.701,
+        address: Some("Naamsestraat 12, Leuven".into()),
+        distance_m: 0,
+    };
+    store::replace_unknown(&db, &[unknown]).await.unwrap();
+    let (app, _) = app_with(db, None, START).await;
     let token = session(&app).await;
     let get = |uri: String| {
         let (app, token) = (&app, &token);
@@ -1455,6 +1465,10 @@ async fn writes_contract_fixtures() {
         .await,
     );
     write("areas", &get("/api/areas?q=leuv".into()).await);
+    write(
+        "unknown-places",
+        &get(format!("/api/unknown-places?{HERE}&lat=50.8798&lng=4.7005")).await,
+    );
     write(
         "located",
         &get("/api/areas/locate?lat=50.8798&lng=4.71".into()).await,

@@ -9,6 +9,7 @@ import androidx.lifecycle.viewModelScope
 import app.mangiamundo.core.Account
 import app.mangiamundo.core.ApiClient
 import app.mangiamundo.core.ApiException
+import app.mangiamundo.core.UnknownPlace
 import app.mangiamundo.core.LinkCode
 import app.mangiamundo.core.ShareLink
 import app.mangiamundo.ui.shareLink
@@ -675,16 +676,59 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
                 )
                 onAdded()
                 openPlace(place)
-                // It counts towards its country, for this user, if it lies in the area.
-                // Applied only if no refresh (such as a change of area) started meanwhile.
-                val refresh = refreshes
-                location?.let { here ->
-                    runCatching { api.discover(here.area.id) }.onSuccess { if (refresh == refreshes) discover = it }
-                }
+                countIn()
             } catch (e: Exception) {
                 messageChannel.trySend("Could not add the restaurant: ${e.message}")
             }
             addingPlace = false
+        }
+    }
+
+    /** Refreshes the progress after a pending place was added: it counts towards its country,
+     * for this user, if it lies in the area. Applied only if no refresh (such as a change of
+     * area) started meanwhile. */
+    private suspend fun countIn() {
+        val refresh = refreshes
+        location?.let { here ->
+            runCatching { api.discover(here.area.id) }.onSuccess { if (refresh == refreshes) discover = it }
+        }
+    }
+
+    /** Restaurants in the area with unknown food, nearest to the user first. */
+    var unknownPlaces by mutableStateOf<List<UnknownPlace>>(emptyList()); private set
+    /** The unknown place whose answer is being saved. One at a time. */
+    var answering by mutableStateOf<String?>(null); private set
+
+    /** Loads [unknownPlaces] for the current area. A failure leaves the list empty. */
+    fun loadUnknownPlaces() {
+        val here = location ?: return
+        viewModelScope.launch {
+            val found = runCatching { api.unknownPlaces(here.area.id, userPosition()) }.getOrDefault(emptyList())
+            if (location?.area?.id == here.area.id) unknownPlaces = found
+        }
+    }
+
+    /** "It serves food from …" (or, with a null `country`, "nothing specific") for a restaurant
+     * with unknown food. A suggestion opens the place it adds, after `onAdded`. */
+    fun answerUnknown(unknown: UnknownPlace, country: String?, onAdded: () -> Unit) {
+        if (answering != null) return
+        answering = unknown.id
+        viewModelScope.launch {
+            try {
+                if (country == null) {
+                    api.noCuisine(unknown.id)
+                } else {
+                    val (place, reward) = api.suggestCuisine(unknown.id, country)
+                    messageChannel.trySend("${place.name} added. You see it right away. ${reward.pendingText(country.uppercase(), catalog)}")
+                    onAdded()
+                    openPlace(place)
+                }
+                unknownPlaces = unknownPlaces.filter { it.id != unknown.id }
+                if (country != null) countIn()
+            } catch (e: Exception) {
+                messageChannel.trySend("Could not save that: ${e.message}")
+            }
+            answering = null
         }
     }
 
