@@ -1,4 +1,4 @@
-import type { Account, AuthProviders, AddPlace, AddedPlace, Addition, NearbyResult, RefreshResult, Area, AreaProgress, Catalog, Celebration, Discover, Health, Located, Place, ShareLink, Suggestion, VisitResult } from './types';
+import type { Account, AuthProviders, AddPlace, AddedPlace, Addition, NearbyResult, RefreshResult, Area, AreaProgress, Catalog, Celebration, Discover, Health, Located, Place, ShareLink, Suggestion, UnknownPlace, VisitResult } from './types';
 
 const BASE = import.meta.env.VITE_API_BASE ?? '';
 const TOKEN_KEY = 'mangiamundo.token';
@@ -129,6 +129,18 @@ export const reportClosed = (placeId: string) =>
 
 /** Adds a restaurant OpenStreetMap lacks. Only this user sees it until OSM has it. */
 export const addPlace = (place: AddPlace) => authed<AddedPlace>('POST', '/api/places', place);
+
+/** Restaurants in the area OpenStreetMap gives no cuisine, nearest to `from` first. */
+export const unknownPlaces = (areaId: string, from: { lat: number; lng: number } | null) =>
+	authed<UnknownPlace[]>('GET', `/api/unknown-places?${area(areaId)}${from ? `&lat=${from.lat}&lng=${from.lng}` : ''}`);
+
+/** "It serves food from …": like adding a place, only this user sees it until OSM has the cuisine. */
+export const suggestCuisine = (placeId: string, country: string) =>
+	authed<AddedPlace>('POST', `/api/unknown-places/${encodeURIComponent(placeId)}/cuisine`, { country });
+
+/** "It serves no particular country's food": hides it for this user, and for everyone after two. */
+export const noCuisine = (placeId: string) =>
+	authed<void>('PUT', `/api/unknown-places/${encodeURIComponent(placeId)}/no-cuisine`);
 
 /** Reads a place again from OpenStreetMap, for an edit made there since the daily import. */
 export const refreshPlace = (placeId: string, from: { lat: number; lng: number } | null) =>

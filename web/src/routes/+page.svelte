@@ -12,6 +12,7 @@
 	import PlaceDetail from '#lib/PlaceDetail.svelte';
 	import ProgressWheel from '#lib/ProgressWheel.svelte';
 	import Toasts from '#lib/Toasts.svelte';
+	import UnknownFood from '#lib/UnknownFood.svelte';
 	import WorldMap from '#lib/WorldMap.svelte';
 	import MapPin from '@lucide/svelte/icons/map-pin';
 	import Dices from '@lucide/svelte/icons/dices';
@@ -198,6 +199,7 @@
 				</div>
 				{#if app.tab === 'countries'}
 					<CountryList discover={app.discover} onselect={select} />
+					{#if !adding}<UnknownFood areaId={app.location.area.id} />{/if}
 					{@render addEntry()}
 				{:else}
 					<Badges badges={app.discover.badges} events={app.discover.events} quests={app.discover.quests} />

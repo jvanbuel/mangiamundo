@@ -1567,6 +1567,19 @@
         ],
         "type": "object"
       },
+      "SuggestCuisine": {
+        "description": "The food a restaurant with unknown food serves.",
+        "properties": {
+          "country": {
+            "description": "As for `POST /api/places`.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "country"
+        ],
+        "type": "object"
+      },
       "Suggestion": {
         "description": "One restaurant to try and the country the globe lands on.",
         "properties": {
@@ -1629,6 +1642,46 @@
           "places_visited",
           "badges",
           "profile"
+        ],
+        "type": "object"
+      },
+      "UnknownPlace": {
+        "description": "A named restaurant OpenStreetMap gives no cuisine, so it isn't on the map yet.",
+        "properties": {
+          "address": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "distance_m": {
+            "format": "int32",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "id": {
+            "description": "An OpenStreetMap place id, like the ones of other places.",
+            "type": "string"
+          },
+          "lat": {
+            "format": "double",
+            "type": "number"
+          },
+          "lng": {
+            "format": "double",
+            "type": "number"
+          },
+          "name": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "lat",
+          "lng",
+          "address",
+          "distance_m"
         ],
         "type": "object"
       },
@@ -3327,6 +3380,169 @@
           }
         ],
         "summary": "A random place in the area the user hasn't checked in at, open now unless `open=false`.\nCountries not tasted yet and nearer places are more likely. A 404 with code\n`nothing_open` or `nothing_left` when nothing qualifies.",
+        "tags": [
+          "game"
+        ]
+      }
+    },
+    "/api/unknown-places": {
+      "get": {
+        "operationId": "unknown_places",
+        "parameters": [
+          {
+            "description": "As for `/api/discover`.",
+            "in": "query",
+            "name": "area",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "As for `/api/places`.",
+            "in": "query",
+            "name": "lat",
+            "required": false,
+            "schema": {
+              "format": "double",
+              "type": "number"
+            }
+          },
+          {
+            "in": "query",
+            "name": "lng",
+            "required": false,
+            "schema": {
+              "format": "double",
+              "type": "number"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/UnknownPlace"
+                  },
+                  "type": "array"
+                }
+              }
+            }
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "An error"
+          }
+        },
+        "security": [
+          {},
+          {
+            "token": []
+          }
+        ],
+        "summary": "Named restaurants in the area that OpenStreetMap gives no cuisine, nearest first, at most\n30. Only where the daily import reaches (Belgium and its border towns); elsewhere the list\nis empty. Leaves out the ones the user already answered for, and the ones two users said\nserve nothing specific.",
+        "tags": [
+          "game"
+        ]
+      }
+    },
+    "/api/unknown-places/{place_id}/cuisine": {
+      "post": {
+        "operationId": "suggest_cuisine",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "place_id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SuggestCuisine"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AddedPlace"
+                }
+              }
+            }
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "An error"
+          }
+        },
+        "security": [
+          {
+            "token": []
+          }
+        ],
+        "summary": "Says which country's food a restaurant from `/api/unknown-places` serves. Like adding a\nplace: it shows up right away for this user only, an OpenStreetMap note asks mappers to\ntag its cuisine, it counts towards the 5 a day, and it earns its reward once\nOpenStreetMap has that cuisine. If OpenStreetMap tags another cuisine, that wins: the\nplace keeps the user's visits and earns nothing.",
+        "tags": [
+          "game"
+        ]
+      }
+    },
+    "/api/unknown-places/{place_id}/no-cuisine": {
+      "put": {
+        "operationId": "no_cuisine",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "place_id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Recorded"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "An error"
+          }
+        },
+        "security": [
+          {
+            "token": []
+          }
+        ],
+        "summary": "Says a restaurant from `/api/unknown-places` serves no particular country's food, such\nas a snack bar or a Belgian brasserie. It leaves this user's list, and everyone's once\ntwo users said so. Nothing is sent to OpenStreetMap, which has no tag for that.",
         "tags": [
           "game"
         ]
