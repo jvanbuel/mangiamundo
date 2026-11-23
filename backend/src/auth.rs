@@ -96,6 +96,9 @@ pub struct Verified {
     pub subject: String,
     /// Only when the provider vouches for it.
     pub email: Option<String>,
+    /// Google's `profile` scope: the person's name and a photo link. Apple shares neither.
+    pub name: Option<String>,
+    pub picture: Option<String>,
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -114,6 +117,8 @@ struct Claims {
     email: Option<String>,
     /// A bool from Google, a "true"/"false" string from Apple.
     email_verified: Option<serde_json::Value>,
+    name: Option<String>,
+    picture: Option<String>,
 }
 
 impl Auth {
@@ -162,6 +167,9 @@ impl Auth {
         Ok(Verified {
             subject: claims.sub,
             email: claims.email.filter(|_| verified).map(|e| e.to_lowercase()),
+            name: claims.name.map(|n| n.chars().take(100).collect()),
+            // Only a secure link, shown as an image in the app.
+            picture: claims.picture.filter(|p| p.starts_with("https://") && p.len() <= 1000),
         })
     }
 

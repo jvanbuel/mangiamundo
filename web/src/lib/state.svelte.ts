@@ -4,6 +4,7 @@ import * as api from './api';
 import * as push from './push';
 import { hideSplash } from './splash';
 import {
+	type Account,
 	type AddPlace,
 	type AddedPlace,
 	type Bonus,
@@ -91,6 +92,8 @@ export const app = $state({
 	reminders: 'off' as 'on' | 'off' | 'unsupported' | 'install',
 	remindersBusy: false,
 	toasts: [] as Toast[],
+	/** This device's account, for showing whether and how it is signed in. */
+	account: null as Account | null,
 	/** Goes up whenever the public link is made or turned off, for whatever shows it. */
 	publicLink: 0,
 	/** Areas used lately, newest first, for switching back quickly. */
@@ -142,6 +145,7 @@ export async function init() {
 		return;
 	}
 	void checkReminders();
+	void loadAccount();
 	const stored = await storedLocation();
 	if (stored) {
 		app.location = stored;
@@ -565,7 +569,16 @@ export async function select(code: string | null) {
 
 /** After this device changes account: the open list and details show the new account's visits. */
 export async function accountChanged() {
-	await Promise.all([refresh(), loadPlaces(app.selected), app.placeId && loadPlace(app.placeId)]);
+	await Promise.all([refresh(), loadPlaces(app.selected), app.placeId && loadPlace(app.placeId), loadAccount()]);
+}
+
+/** Loads the account; a failure only means the header can't say whether it's signed in. */
+export async function loadAccount() {
+	try {
+		app.account = await api.account();
+	} catch {
+		app.account = null;
+	}
 }
 
 /** Counts list loads, so only the latest one shows its result. */

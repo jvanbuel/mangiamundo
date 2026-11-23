@@ -26,7 +26,7 @@
 <main>
 <p><a href="/">← Mangiamundo</a></p>
 <h1>Privacy</h1>
-<p class="muted">Last updated 22 November 2026</p>
+<p class="muted">Last updated 23 November 2026</p>
 
 <div class="card">
   <p><strong>In short:</strong> Mangiamundo works without an account or any personal details. It keeps
@@ -57,8 +57,8 @@ question about your data, or to have it deleted, write to
   address, your area and your time zone, to send celebration reminders and news about new food nearby.
   The apps schedule reminders on your phone instead.</li>
   <li><strong>Signing in (optional).</strong> If you sign in with Apple or Google, we store the account
-  id they give us and the email address they share (with Apple this can be a private relay address).
-  If you sign in with a code by email, we store your email address; the code itself is kept only as a
+  id they give us and the email address they share (with Apple this can be a private relay address),
+  and from Google also your name and profile picture, which only you see, in the app. If you sign in with a code by email, we store your email address; the code itself is kept only as a
   hash, for 10 minutes.</li>
   <li><strong>Recovery and link codes.</strong> Kept only as hashes, so we can't read them.</li>
   <li><strong>Sharing (optional).</strong> When you share your map or a check-in, we make a public page
@@ -79,12 +79,13 @@ This is how Mangiamundo handles the Google user data it receives:</p>
   <li><strong>Data accessed:</strong> your Google account id, your email address and whether Google has
   verified it, and, as part of the <code>profile</code> scope, your name and profile picture. We
   request no other Google data: not your contacts, Gmail, Drive, calendar or anything else.</li>
-  <li><strong>Data use:</strong> the account id and email address are used only to sign you in, so the
-  same Mangiamundo account opens on every device where you sign in, and to show in Settings which
-  Google account you're signed in with. Your name and profile picture are not used.</li>
-  <li><strong>Data storage:</strong> we store only the Google account id and email address, with your
-  Mangiamundo account, in our database at Fly.io in Frankfurt. Your name and profile picture are
-  not stored.</li>
+  <li><strong>Data use:</strong> the account id and email address are used to sign you in, so the
+  same Mangiamundo account opens on every device where you sign in. Your name, email address and
+  profile picture are shown to you, in the app, to make clear which account you're signed in with.
+  They're never shown to anyone else, and not on your public profile page.</li>
+  <li><strong>Data storage:</strong> we store the Google account id, email address, name and the link
+  to your profile picture with your Mangiamundo account, in our database at Fly.io in Frankfurt.
+  The name and picture are updated each time you sign in with Google.</li>
   <li><strong>Data sharing:</strong> we don't sell, rent or share Google user data with anyone, don't
   transfer or disclose it to third parties, and don't use it for advertising, credit decisions or any
   purpose other than signing you in.</li>

@@ -113,6 +113,7 @@ fn id_token(aud: &str, iss: &str, sub: &str, exp_in: i64) -> String {
         "iss": iss, "aud": aud, "sub": sub,
         "exp": store::now() + exp_in, "iat": store::now(),
         "email": "Jan@Example.com", "email_verified": "true",
+        "name": "Jan", "picture": "https://lh3.googleusercontent.com/a/photo",
     });
     encode(&header, &claims, &EncodingKey::from_rsa_pem(SIGNING_KEY.as_bytes()).unwrap()).unwrap()
 }
@@ -145,7 +146,7 @@ async fn an_emailed_code_signs_in_and_brings_progress_to_another_device() {
     let phone = body["token"].as_str().unwrap().to_string();
     assert_eq!(visited(&app, &phone).await, 1);
     let (_, account) = call(&app, "GET", "/api/account", Some(&phone), None).await;
-    assert_eq!(account["identities"], json!([{"provider": "email", "email": "jan@example.com"}]));
+    assert_eq!(account["identities"], json!([{"provider": "email", "email": "jan@example.com", "name": null, "picture": null}]));
 
     // A code works once.
     let (status, _) = call(&app, "POST", "/api/auth/email", None, Some(json!({"email": "jan@example.com", "code": code}))).await;
@@ -216,6 +217,8 @@ async fn apple_and_google_tokens_are_checked_and_sign_in() {
     let (_, account) = call(&app, "GET", "/api/account", Some(&device), None).await;
     let providers: Vec<&str> = account["identities"].as_array().unwrap().iter().map(|i| i["provider"].as_str().unwrap()).collect();
     assert_eq!(providers, ["apple", "google"]);
+    let identity = &account["identities"][1];
+    assert_eq!((identity["name"].as_str(), identity["picture"].as_str()), (Some("Jan"), Some("https://lh3.googleusercontent.com/a/photo")));
 
     let (_, body) = call(&app, "POST", "/api/auth/google", None, Some(json!({"id_token": google, "device": "Pixel"}))).await;
     let fresh = body["token"].as_str().unwrap();

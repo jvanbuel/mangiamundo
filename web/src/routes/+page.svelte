@@ -18,10 +18,22 @@
 	import Dices from '@lucide/svelte/icons/dices';
 	import Navigation from '@lucide/svelte/icons/navigation';
 	import Settings from '@lucide/svelte/icons/settings';
+	import LogIn from '@lucide/svelte/icons/log-in';
 	import { app, init, lookAgainNearby, refresh, select, setProjection, setTheme, spin, toast, type Theme } from '#lib/state.svelte.ts';
 
 	let pickerOpen = $state(false);
 	let settingsOpen = $state(false);
+	/** Who the header shows as signed in: a name or address, and a photo when Google gave one. */
+	const signedIn = $derived.by(() => {
+		const ids = app.account?.identities ?? [];
+		if (!ids.length) return null;
+		const label =
+			ids.find((i) => i.name)?.name ??
+			ids.find((i) => i.email)?.email ??
+			({ apple: 'Apple', google: 'Google', email: 'Email' } as Record<string, string>)[ids[0].provider] ??
+			'Signed in';
+		return { label, picture: ids.find((i) => i.picture)?.picture ?? null, initial: label.trim().charAt(0).toUpperCase() };
+	});
 	let adding = $state(false);
 
 	const selected = $derived(app.discover?.countries.find((c) => c.code === app.selected) ?? null);
@@ -109,6 +121,26 @@
 		<header>
 			<h1>
 				<img src="/icon.svg" alt="" width="32" height="32" />Mangiamundo
+				{#if app.account}
+					<!-- Whether this device is signed in, always in view; opens the account settings. -->
+					<button
+						class="who"
+						class:signed={signedIn}
+						onclick={() => (settingsOpen = true)}
+						title={signedIn ? `Signed in as ${signedIn.label}` : 'Sign in to keep your progress on all your devices'}
+						aria-label={signedIn ? `Signed in as ${signedIn.label}. Account settings` : 'Sign in'}
+					>
+						{#if signedIn}
+							{#if signedIn.picture}
+								<img class="avatar" src={signedIn.picture} alt="" width="30" height="30" referrerpolicy="no-referrer" />
+							{:else}
+								<span class="avatar initial" aria-hidden="true">{signedIn.initial}</span>
+							{/if}
+						{:else}
+							<LogIn size={14} strokeWidth={2.5} aria-hidden="true" /><span class="label">Sign in</span>
+						{/if}
+					</button>
+				{/if}
 				<button class="gear" aria-label="Settings" aria-expanded={settingsOpen} onclick={() => (settingsOpen = !settingsOpen)}>
 					<Settings size={20} aria-hidden="true" />
 				</button>
@@ -347,8 +379,53 @@
 	}
 
 	/* 44px to tap, without pushing the heading around. */
+	.who {
+		margin-left: auto;
+		display: inline-flex;
+		align-items: center;
+		gap: 5px;
+		max-width: 170px;
+		padding: 5px 10px;
+		border-radius: 999px;
+		border: 1px solid var(--line);
+		background: var(--panel);
+		color: var(--accent-text);
+		font-size: var(--text-xs);
+		font-weight: 700;
+	}
+
+	.who .label {
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+	}
+
+	/* Signed in: just the round avatar, as most apps show it. */
+	.who.signed {
+		padding: 2px;
+		border: 2px solid var(--accent);
+		background: var(--panel);
+	}
+
+	.avatar {
+		flex: none;
+		width: 30px;
+		height: 30px;
+		border-radius: 50%;
+		object-fit: cover;
+	}
+
+	.avatar.initial {
+		display: grid;
+		place-items: center;
+		background: var(--accent);
+		color: var(--on-accent);
+		font-size: 14px;
+		font-weight: 800;
+	}
+
 	.gear {
-		margin: -12px -12px -12px auto;
+		margin: -12px -12px -12px 4px;
 		display: flex;
 		padding: 12px;
 		color: var(--muted);
