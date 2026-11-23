@@ -379,23 +379,30 @@ pub async fn sign_in_with(
     Ok(token)
 }
 
+/// Tables whose rows stay behind in a merge, and so go with the merged user: a link code
+/// made for that account no longer signs anyone in.
+const NOT_MERGED: &[&str] = &["link_codes"];
+
 /// Moves everything of user `from` to user `into`, then deletes `from`. Where both have the
-/// same row (a visit on the same day, a closed report of the same place) `into`'s stays.
+/// same row (a visit on the same day, a closed report of the same place, a public page)
+/// `into`'s stays.
+///
+/// What a user has is read from the schema: every column that refers to `users`. A new
+/// table of theirs is merged without being listed here.
 async fn merge(tx: &mut sqlx::SqliteConnection, from: &str, into: &str) -> sqlx::Result<()> {
-    for statement in [
-        "UPDATE OR IGNORE visits SET user_id = ?1 WHERE user_id = ?2",
-        "UPDATE OR IGNORE closed_reports SET user_id = ?1 WHERE user_id = ?2",
-        "UPDATE push_subscriptions SET user_id = ?1 WHERE user_id = ?2",
-        "UPDATE places SET added_by = ?1 WHERE added_by = ?2",
-        "UPDATE additions SET user_id = ?1 WHERE user_id = ?2",
-        // The restored account's own page wins; otherwise the merged one's moves over.
-        "UPDATE OR IGNORE public_profiles SET user_id = ?1 WHERE user_id = ?2",
-        "UPDATE identities SET user_id = ?1 WHERE user_id = ?2",
-        "UPDATE OR IGNORE quest_rewards SET user_id = ?1 WHERE user_id = ?2",
-        // Other devices of the merged account keep working, now as the restored one.
-        "UPDATE sessions SET user_id = ?1 WHERE user_id = ?2",
-    ] {
-        sqlx::query(statement)
+    let owned: Vec<(String, String)> = sqlx::query_as(
+        r#"SELECT m.name, f."from" FROM sqlite_master m, pragma_foreign_key_list(m.name) f
+           WHERE m.type = 'table' AND f."table" = 'users' ORDER BY m.name"#,
+    )
+    .fetch_all(&mut *tx)
+    .await?;
+    for (table, column) in owned {
+        if NOT_MERGED.contains(&table.as_str()) {
+            continue;
+        }
+        let statement =
+            format!(r#"UPDATE OR IGNORE "{table}" SET "{column}" = ?1 WHERE "{column}" = ?2"#);
+        sqlx::query(&statement)
             .bind(into)
             .bind(from)
             .execute(&mut *tx)
@@ -453,5 +460,41 @@ mod tests {
             device_name(Some(&"x".repeat(100))).unwrap().len(),
             MAX_DEVICE_NAME
         );
+    }
+
+    /// Every table that refers to a user, with a row of the merged user's in it.
+    #[tokio::test]
+    async fn a_merge_moves_every_table_of_the_user() {
+        let db = crate::store::connect("sqlite::memory:").await.unwrap();
+        let from = create_user(&db, None, 0).await.unwrap();
+        let from = session_for_token(&db, &from, 0).await.unwrap().unwrap().user;
+        let into = create_user(&db, None, 0).await.unwrap();
+        let into = session_for_token(&db, &into, 0).await.unwrap().unwrap().user;
+        sqlx::query("INSERT INTO no_cuisine_reports (place_id, user_id, reported_at) VALUES ('osm-node-1', ?, 0)")
+            .bind(&from)
+            .execute(&db)
+            .await
+            .unwrap();
+        new_link_code(&db, &from, 0).await.unwrap();
+
+        let mut tx = db.begin().await.unwrap();
+        merge(&mut tx, &from, &into).await.unwrap();
+        tx.commit().await.unwrap();
+
+        let reports: Vec<String> = sqlx::query_scalar("SELECT user_id FROM no_cuisine_reports")
+            .fetch_all(&db)
+            .await
+            .unwrap();
+        assert_eq!(reports, [into.clone()]);
+        let sessions: Vec<String> = sqlx::query_scalar("SELECT DISTINCT user_id FROM sessions")
+            .fetch_all(&db)
+            .await
+            .unwrap();
+        assert_eq!(sessions, [into]);
+        let codes: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM link_codes")
+            .fetch_one(&db)
+            .await
+            .unwrap();
+        assert_eq!(codes, 0);
     }
 }
