@@ -20,7 +20,7 @@ use web_push::{
 };
 
 use crate::game::PlaceRow;
-use crate::{calendar, catalog, providers::osm, store, AppState};
+use crate::{areas, calendar, catalog, progress, store, AppState};
 
 /// Reminders are sent from this local hour until the end of the evening.
 const FIRST_HOUR: u32 = 10;
@@ -175,13 +175,13 @@ fn places(n: u32) -> String {
 /// The apps use the same text for the notifications they schedule themselves.
 pub fn celebration_notification(
     celebration: &calendar::Celebration,
-    counts: &HashMap<String, u32>,
+    counts: &HashMap<&str, u32>,
 ) -> Option<Notification> {
     let nearby: Vec<&str> = celebration
         .countries
         .iter()
         .map(String::as_str)
-        .filter(|c| counts.get(*c).copied().unwrap_or(0) > 0)
+        .filter(|c| counts.get(c).copied().unwrap_or(0) > 0)
         .collect();
     let first = *nearby.first()?;
     let total: u32 = nearby.iter().map(|c| counts[*c]).sum();
@@ -260,14 +260,12 @@ async fn due(
     day: NaiveDate,
     area_id: &str,
     rows: &[PlaceRow],
-    counts: &HashMap<String, u32>,
+    counts: &HashMap<&str, u32>,
 ) -> anyhow::Result<Vec<(String, Notification)>> {
     let mut out = Vec::new();
     if day.day() == 1 {
         // ponytail: this also books quests already finished on the 1st; harmless, they pay once.
-        let monthly = crate::api::monthly_quests(state, Some(user), area_id, day, rows)
-            .await
-            .map_err(|e| anyhow::anyhow!("{e:?}"))?;
+        let monthly = progress::monthly_quests(state, Some(user), area_id, day, rows).await?;
         out.push((
             format!("quests:{}", monthly.month),
             quests_notification(&monthly),
@@ -286,7 +284,7 @@ async fn due(
         let nearby: u32 = event
             .countries
             .iter()
-            .map(|c| counts.get(c).copied().unwrap_or(0))
+            .map(|c| counts.get(c.as_str()).copied().unwrap_or(0))
             .sum();
         if nearby == 0 {
             continue;
@@ -322,85 +320,87 @@ async fn due(
     Ok(out)
 }
 
-/// One pass over all subscriptions. Returns how many notifications were sent.
+/// One pass over all subscriptions. Returns how many notifications were sent. A subscriber
+/// whose reminders fail is logged and tried again on the next pass; the others still get theirs.
 pub async fn run_once(state: &AppState, pusher: &Pusher) -> anyhow::Result<usize> {
-    let now = chrono::DateTime::from_timestamp(state.now(), 0).unwrap_or_default();
     let mut sent = 0;
     for (user, sub) in store::push_subscriptions(&state.db).await? {
-        let zone: chrono_tz::Tz = sub.timezone.parse().unwrap_or(chrono_tz::UTC);
-        let local = now.with_timezone(&zone);
-        if !(FIRST_HOUR..=LAST_HOUR).contains(&local.hour()) {
-            continue;
+        match remind(state, pusher, &user, &sub).await {
+            Ok(n) => sent += n,
+            Err(error) => tracing::warn!(
+                error = format!("{error:#}"),
+                user,
+                "reminders failed for a subscriber"
+            ),
         }
-        // Only look at areas already in the cache, and refresh a stale one from the local
-        // OpenStreetMap copy at most: never call a provider from here.
-        let Some(area_id) = &sub.area_id else {
-            continue;
-        };
-        let Some(area) = store::find_area(&state.db, area_id).await? else {
-            continue;
-        };
-        if state.now() - area.fetched_at >= state.cache_ttl_secs {
-            if let Some(found) = osm::from_import(&state.db, &area.boundary).await? {
-                store::save_area(
-                    &state.db,
-                    &store::Area {
-                        fetched_at: state.now(),
-                        ..area.clone()
-                    },
-                    &found,
-                )
-                .await?;
-            }
-        }
-        let rows = store::area_rows(&state.db, area_id, None).await?;
-        let mut counts: HashMap<String, u32> = HashMap::new();
-        for row in &rows {
-            *counts.entry(row.country.clone()).or_default() += 1;
-        }
+    }
+    Ok(sent)
+}
 
-        let mut gone = false;
-        for (dedupe, notification) in
-            due(state, &user, local.date_naive(), area_id, &rows, &counts).await?
+/// Sends one subscriber what is due now. Returns how many notifications were sent.
+async fn remind(
+    state: &AppState,
+    pusher: &Pusher,
+    user: &str,
+    sub: &Subscription,
+) -> anyhow::Result<usize> {
+    let now = chrono::DateTime::from_timestamp(state.now(), 0).unwrap_or_default();
+    let zone: chrono_tz::Tz = sub.timezone.parse().unwrap_or(chrono_tz::UTC);
+    let local = now.with_timezone(&zone);
+    if !(FIRST_HOUR..=LAST_HOUR).contains(&local.hour()) {
+        return Ok(0);
+    }
+    let Some(area_id) = &sub.area_id else {
+        return Ok(0);
+    };
+    // Only areas already in the cache: never wait on a provider from here.
+    let Some(area) = areas::cached(state, area_id).await? else {
+        return Ok(0);
+    };
+    let rows = store::area_rows(&state.db, area_id, None).await?;
+    let counts = progress::places_per_country(&rows);
+
+    let mut sent = 0;
+    let mut gone = false;
+    for (dedupe, notification) in
+        due(state, user, local.date_naive(), area_id, &rows, &counts).await?
+    {
+        if !store::mark_push_sent(&state.db, &sub.endpoint, &dedupe, state.now()).await? {
+            continue;
+        }
+        match deliver(pusher, sub, &notification).await {
+            Some(Delivery::Sent) => sent += 1,
+            Some(Delivery::Gone) => {
+                gone = true;
+                break;
+            }
+            None => store::unmark_push_sent(&state.db, &sub.endpoint, &dedupe).await?,
+        }
+    }
+
+    if !gone {
+        let mut present: Vec<String> = counts.keys().map(|c| c.to_string()).collect();
+        present.sort();
+        // Read before marking, so a failure here leaves the countries for the next pass.
+        let visited = store::visited_countries(&state.db, user).await?;
+        let new = store::take_new_countries(&state.db, &sub.endpoint, area_id, &present).await?;
+        let untried: Vec<&str> = new
+            .iter()
+            .filter(|c| !visited.contains(c))
+            .map(String::as_str)
+            .collect();
+        if let Some(notification) =
+            new_food_notification(&untried, &rows, &area.boundary.info.name)
         {
-            if !store::mark_push_sent(&state.db, &sub.endpoint, &dedupe, state.now()).await? {
-                continue;
-            }
-            match deliver(pusher, &sub, &notification).await {
+            match deliver(pusher, sub, &notification).await {
                 Some(Delivery::Sent) => sent += 1,
-                Some(Delivery::Gone) => {
-                    gone = true;
-                    break;
-                }
-                None => store::unmark_push_sent(&state.db, &sub.endpoint, &dedupe).await?,
+                Some(Delivery::Gone) => gone = true,
+                None => store::forget_countries(&state.db, &sub.endpoint, &new).await?,
             }
         }
-
-        if !gone {
-            let mut present: Vec<String> = counts.keys().cloned().collect();
-            present.sort();
-            // Read before marking, so a failure here leaves the countries for the next pass.
-            let visited = store::visited_countries(&state.db, &user).await?;
-            let new =
-                store::take_new_countries(&state.db, &sub.endpoint, area_id, &present).await?;
-            let untried: Vec<&str> = new
-                .iter()
-                .filter(|c| !visited.contains(c))
-                .map(String::as_str)
-                .collect();
-            if let Some(notification) =
-                new_food_notification(&untried, &rows, &area.boundary.info.name)
-            {
-                match deliver(pusher, &sub, &notification).await {
-                    Some(Delivery::Sent) => sent += 1,
-                    Some(Delivery::Gone) => gone = true,
-                    None => store::forget_countries(&state.db, &sub.endpoint, &new).await?,
-                }
-            }
-        }
-        if gone {
-            store::remove_push_subscription(&state.db, &sub.endpoint).await?;
-        }
+    }
+    if gone {
+        store::remove_push_subscription(&state.db, &sub.endpoint).await?;
     }
     Ok(sent)
 }

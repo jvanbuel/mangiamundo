@@ -624,27 +624,16 @@
       "Discover": {
         "allOf": [
           {
-            "$ref": "#/components/schemas/Summary"
+            "$ref": "#/components/schemas/Progress"
           },
           {
             "properties": {
               "area": {
                 "$ref": "#/components/schemas/AreaView"
-              },
-              "events": {
-                "items": {
-                  "$ref": "#/components/schemas/EventProgress"
-                },
-                "type": "array"
-              },
-              "quests": {
-                "$ref": "#/components/schemas/MonthlyQuests"
               }
             },
             "required": [
-              "area",
-              "events",
-              "quests"
+              "area"
             ],
             "type": "object"
           }
@@ -1299,6 +1288,32 @@
         ],
         "type": "object"
       },
+      "Progress": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/Summary"
+          },
+          {
+            "properties": {
+              "events": {
+                "items": {
+                  "$ref": "#/components/schemas/EventProgress"
+                },
+                "type": "array"
+              },
+              "quests": {
+                "$ref": "#/components/schemas/MonthlyQuests"
+              }
+            },
+            "required": [
+              "events",
+              "quests"
+            ],
+            "type": "object"
+          }
+        ],
+        "description": "Everything the game shows about one area for one player, or for nobody in particular."
+      },
       "PushKey": {
         "properties": {
           "public_key": {
@@ -1685,6 +1700,66 @@
         ],
         "type": "object"
       },
+      "Unlocked": {
+        "description": "One thing a check-in unlocked, with the words to announce it.",
+        "properties": {
+          "badge": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/BadgeKind",
+                "description": "For `badge`: which medal to show."
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "country": {
+            "description": "For `country`: its code, to show its flag.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "kind": {
+            "$ref": "#/components/schemas/UnlockedKind"
+          },
+          "level": {
+            "description": "For `level`: the level reached.",
+            "format": "int32",
+            "minimum": 0,
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "text": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "kind",
+          "country",
+          "badge",
+          "level",
+          "title",
+          "text"
+        ],
+        "type": "object"
+      },
+      "UnlockedKind": {
+        "description": "What a check-in unlocked, announced to the player.",
+        "enum": [
+          "country",
+          "badge",
+          "event",
+          "level"
+        ],
+        "type": "string"
+      },
       "UnsubscribeBody": {
         "properties": {
           "endpoint": {
@@ -1725,13 +1800,33 @@
           "profile": {
             "$ref": "#/components/schemas/Profile"
           },
+          "progress": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/Progress",
+                "description": "The progress in `area` after the check-in; `null` without `area`."
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "unlocked": {
+            "description": "What the check-in unlocked in `area`, in the order to announce it. Empty without\n`area`, and for a second check-in at a place.",
+            "items": {
+              "$ref": "#/components/schemas/Unlocked"
+            },
+            "type": "array"
+          },
           "visit": {
             "$ref": "#/components/schemas/Visit"
           }
         },
         "required": [
           "visit",
-          "profile"
+          "profile",
+          "progress",
+          "unlocked"
         ],
         "type": "object"
       }
@@ -2952,6 +3047,15 @@
             "description": "As for `/api/discover`: the check-in counts for events by its date in this zone.",
             "in": "query",
             "name": "tz",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "The area the user is playing in. With it, the answer has the progress there after\nthe check-in and what it unlocked, so there is no need to ask `/api/discover` again.",
+            "in": "query",
+            "name": "area",
             "required": false,
             "schema": {
               "type": "string"

@@ -1391,6 +1391,78 @@ async fn an_added_place_shows_up_for_whoever_added_it_and_is_sent_to_osm() {
 /// Writes real responses to `contract/`, where the Android and iOS tests decode them.
 /// CI fails when the checked-in files differ, so an API change shows up in the diff.
 #[tokio::test]
+async fn a_check_in_says_what_it_unlocked_in_the_area() {
+    let app = app().await;
+    let token = session(&app).await;
+    let discover = |token: String| {
+        let app = &app;
+        async move {
+            let uri = format!("/api/discover?{HERE}");
+            call(app, "GET", &uri, Some(&token), None).await.1
+        }
+    };
+    let before = discover(token.clone()).await;
+    let busy = before["countries"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|c| c["places"].as_u64().unwrap() >= 3)
+        .unwrap();
+    let country = busy["code"].as_str().unwrap();
+    let uri = format!("/api/places?{HERE}&country={country}");
+    let (_, places) = call(&app, "GET", &uri, Some(&token), None).await;
+    let (first, second) = (&places[0], &places[1]);
+    let in_area = |place: &Value| format!("{}?{HERE}", visits_uri(place));
+
+    // An area that doesn't exist: an error, and no visit is kept.
+    let uri = format!("{}?area=demo-nowhere", visits_uri(first));
+    let (status, _) = call(&app, "POST", &uri, Some(&token), None).await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+    assert_eq!(discover(token.clone()).await["places_visited"], 0);
+
+    // The first check-in: the country turns gold and the first badge is earned.
+    let (status, result) = call(&app, "POST", &in_area(first), Some(&token), None).await;
+    assert_eq!(status, StatusCode::OK);
+    let unlocked = result["unlocked"].as_array().unwrap();
+    assert_eq!(unlocked[0]["kind"], "country");
+    assert_eq!(unlocked[0]["country"], country);
+    assert!(unlocked[0]["title"].as_str().unwrap().ends_with(": gold"));
+    let more = busy["goal"].as_u64().unwrap() - 1;
+    assert_eq!(unlocked[0]["text"], format!("{more} more for diamond."));
+    let first_bite = badge(&before, "first-bite");
+    let earned = unlocked.iter().find(|u| u["kind"] == "badge").unwrap();
+    assert_eq!(earned["badge"], first_bite["kind"]);
+    assert_eq!(
+        earned["title"],
+        format!("Badge earned: {}", first_bite["title"].as_str().unwrap())
+    );
+    assert_eq!(earned["text"], first_bite["description"]);
+    // The progress is what discover says next, so clients need not ask.
+    let after = discover(token.clone()).await;
+    for part in ["countries", "badges", "profile", "events", "quests", "world"] {
+        assert_eq!(result["progress"][part], after[part], "{part}");
+    }
+    assert_eq!(result["profile"], after["profile"]);
+
+    // Again the same day, or at another place of a country that stays gold: nothing new
+    // for the country.
+    let (_, again) = call(&app, "POST", &in_area(first), Some(&token), None).await;
+    assert_eq!(again["unlocked"], serde_json::json!([]));
+    let (_, next) = call(&app, "POST", &in_area(second), Some(&token), None).await;
+    assert!(next["unlocked"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .all(|u| u["kind"] != "country"));
+
+    // Without an area there is nothing to compare.
+    let other = session(&app).await;
+    let (_, plain) = call(&app, "POST", &visits_uri(first), Some(&other), None).await;
+    assert_eq!(plain["progress"], Value::Null);
+    assert_eq!(plain["unlocked"], serde_json::json!([]));
+}
+
+#[tokio::test]
 async fn writes_contract_fixtures() {
     let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../contract");
     let write = |name: &str, value: &Value| {
@@ -1436,7 +1508,7 @@ async fn writes_contract_fixtures() {
     let (status, visit) = call(
         &app,
         "POST",
-        &visits_uri(first),
+        &format!("{}?{HERE}", visits_uri(first)),
         Some(&token),
         Some(&at(first)),
     )

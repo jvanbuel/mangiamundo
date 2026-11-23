@@ -22,16 +22,16 @@ use utoipa_axum::routes;
 
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
-use std::time::Instant;
 
 use chrono::NaiveDate;
 use chrono_tz::Tz;
 
 use crate::calendar::{self, Celebration};
-use crate::game::{self, Lifetime, PlaceRow, Summary};
+use crate::game::{self, Summary};
 use crate::providers::{AreaInfo, Located, Lookup};
 use crate::store::{self, Area, HoursStatus, PlaceView, Visit};
-use crate::{account, auth, catalog, geo, hours, share, AppState};
+use crate::progress::{self, Progress};
+use crate::{account, areas, auth, catalog, geo, hours, share, AppState};
 
 /// A check-in counts as verified when made within this distance of the place.
 const VERIFY_DISTANCE_M: f64 = 250.0;
@@ -253,6 +253,19 @@ impl IntoResponse for ApiError {
             }),
         )
             .into_response()
+    }
+}
+
+impl From<areas::Error> for ApiError {
+    fn from(error: areas::Error) -> Self {
+        match error {
+            areas::Error::Invalid | areas::Error::TooLarge(_) => {
+                ApiError::BadRequest(error.to_string())
+            }
+            areas::Error::NotFound => ApiError::NotFound("area"),
+            areas::Error::Upstream(error) => ApiError::Upstream(error),
+            areas::Error::Database(error) => ApiError::Database(error),
+        }
     }
 }
 
@@ -723,10 +736,6 @@ async fn countries() -> Json<Catalog> {
     })
 }
 
-/// The largest area served, in degrees of latitude and longitude: a big city fits, a
-/// region or a country (which would make for a huge Overpass query) doesn't.
-const MAX_AREA_DEGREES: f64 = 1.5;
-
 #[derive(Deserialize, IntoParams)]
 #[into_params(parameter_in = Query)]
 struct AreaQuery {
@@ -747,31 +756,6 @@ fn zone(tz: Option<&str>) -> Tz {
             Tz::UTC
         }),
     }
-}
-
-fn valid_area_id(id: &str) -> bool {
-    !id.is_empty()
-        && id.len() <= 100
-        && id
-            .bytes()
-            .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'-')
-}
-
-/// The step an area's fetch is in: it runs from `from` to `to` percent and should take
-/// about `expected_secs`.
-struct LoadStep {
-    from: f64,
-    to: f64,
-    text: &'static str,
-    started: Instant,
-    expected_secs: f64,
-}
-
-/// An area being fetched: how many requests are fetching it, and the latest step.
-#[derive(Default)]
-struct Load {
-    running: usize,
-    step: Option<LoadStep>,
 }
 
 /// Recent requests per user and kind, for rate limits. In memory: the server runs as one
@@ -798,142 +782,6 @@ impl Limits {
     }
 }
 
-/// Areas being fetched right now, by area id. In memory: the server runs as one machine.
-#[derive(Clone, Default)]
-pub struct Loads(Arc<Mutex<HashMap<String, Load>>>);
-
-impl Loads {
-    /// Counts a fetch of the area until the returned guard drops, also on an error.
-    fn begin<'a>(&'a self, id: &'a str) -> LoadDone<'a> {
-        self.0
-            .lock()
-            .unwrap()
-            .entry(id.to_string())
-            .or_default()
-            .running += 1;
-        LoadDone(self, id)
-    }
-
-    fn step(&self, id: &str, from: f64, to: f64, text: &'static str, expected_secs: f64) {
-        if let Some(load) = self.0.lock().unwrap().get_mut(id) {
-            load.step = Some(LoadStep {
-                from,
-                to,
-                text,
-                started: Instant::now(),
-                expected_secs,
-            });
-        }
-    }
-
-    /// Starts a new stretch of the current step from where it is now, with a new text.
-    fn restart(&self, id: &str, text: &'static str, expected_secs: f64) {
-        if let Some((percent, _)) = self.progress(id) {
-            self.step(id, f64::from(percent), 95.0, text, expected_secs);
-        }
-    }
-
-    /// The percentage and what is happening, or None when the area isn't loading.
-    fn progress(&self, id: &str) -> Option<(u8, &'static str)> {
-        let loads = self.0.lock().unwrap();
-        let step = loads.get(id)?.step.as_ref()?;
-        let percent = estimate(
-            step.from,
-            step.to,
-            step.started.elapsed().as_secs_f64(),
-            step.expected_secs,
-        );
-        Some((percent as u8, step.text))
-    }
-}
-
-/// Ends one fetch of an area; the progress goes when the last concurrent fetch ends.
-struct LoadDone<'a>(&'a Loads, &'a str);
-
-impl Drop for LoadDone<'_> {
-    fn drop(&mut self) {
-        let mut loads = self.0 .0.lock().unwrap();
-        if let Some(load) = loads.get_mut(self.1) {
-            load.running -= 1;
-            if load.running == 0 {
-                loads.remove(self.1);
-            }
-        }
-    }
-}
-
-/// Progress within a step that reports none: 63% of the way after the expected time, 95%
-/// after three times that, and never the end, which only the next step reaches.
-fn estimate(from: f64, to: f64, elapsed_secs: f64, expected_secs: f64) -> f64 {
-    from + (to - from) * (1.0 - (-elapsed_secs / expected_secs.max(0.1)).exp())
-}
-
-/// Returns the cached area, asking the provider when the cache is missing or stale. A
-/// stale cache is still used when the provider is down.
-async fn resolve_area(state: &AppState, id: &str) -> Result<Area, ApiError> {
-    if !valid_area_id(id) {
-        return Err(ApiError::BadRequest("invalid area".into()));
-    }
-    let cached = store::find_area(&state.db, id).await?;
-    if let Some(area) = &cached {
-        if state.now() - area.fetched_at < state.cache_ttl_secs {
-            return Ok(area.clone());
-        }
-    }
-
-    let _done = state.loads.begin(id);
-    let boundary = match &cached {
-        // The outline rarely changes; keep it for refreshes.
-        Some(area) => area.boundary.clone(),
-        None => {
-            state.loads.step(id, 0.0, 15.0, "Finding the area", 2.0);
-            let boundary = state
-                .areas
-                .boundary(id)
-                .await
-                .map_err(ApiError::Upstream)?
-                .ok_or(ApiError::NotFound("area"))?;
-            let b = boundary.shape.bbox();
-            if b.north - b.south > MAX_AREA_DEGREES || b.east - b.west > MAX_AREA_DEGREES {
-                return Err(ApiError::BadRequest(format!(
-                    "{} is too large; pick a postal code or a smaller town",
-                    boundary.info.name
-                )));
-            }
-            boundary
-        }
-    };
-    let expected = state.places.expected_secs(&boundary);
-    state
-        .loads
-        .step(id, 15.0, 95.0, "Looking for restaurants", expected);
-    // Another server starts the estimate over from where the wheel is.
-    let next_server = || state.loads.restart(id, "Trying another server", expected);
-    match state.places.search(&boundary, &next_server).await {
-        Ok(found) => {
-            state.loads.step(id, 95.0, 100.0, "Counting countries", 0.5);
-            let area = Area {
-                boundary,
-                provider: state.places.name().into(),
-                fetched_at: state.now(),
-            };
-            store::save_area(&state.db, &area, &found).await?;
-            tracing::info!(area = area.id(), places = found.len(), "area refreshed");
-            Ok(area)
-        }
-        Err(error) => match cached {
-            Some(area) => {
-                tracing::warn!(
-                    error = format!("{error:#}"),
-                    "provider failed, serving stale area"
-                );
-                Ok(area)
-            }
-            None => Err(ApiError::Upstream(error)),
-        },
-    }
-}
-
 /// An area as clients see it.
 #[derive(Serialize, ToSchema)]
 struct AreaView {
@@ -955,113 +803,7 @@ impl From<&Area> for AreaView {
 struct Discover {
     area: AreaView,
     #[serde(flatten)]
-    summary: Summary,
-    events: Vec<EventProgress>,
-    quests: game::MonthlyQuests,
-}
-
-#[derive(Serialize, PartialEq, Debug, ToSchema)]
-#[serde(rename_all = "snake_case")]
-enum EventStatus {
-    Upcoming,
-    Active,
-    Ended,
-}
-
-/// A time-limited challenge and how far the user got.
-#[derive(Serialize, ToSchema)]
-struct EventProgress {
-    #[serde(flatten)]
-    event: calendar::Event,
-    status: EventStatus,
-    progress: u32,
-    earned: bool,
-    /// Places in the area that count towards the event.
-    places_nearby: u32,
-}
-
-/// How many places each country has in an area.
-fn places_per_country(rows: &[PlaceRow]) -> HashMap<&str, u32> {
-    let mut counts = HashMap::new();
-    for row in rows {
-        *counts.entry(row.country.as_str()).or_default() += 1;
-    }
-    counts
-}
-
-/// Events to show: upcoming within a month, running, or finished and earned.
-async fn event_progress(
-    state: &AppState,
-    user: Option<&str>,
-    rows: &[PlaceRow],
-    zone: Tz,
-) -> Result<Vec<EventProgress>, ApiError> {
-    let today = state.today(zone);
-    let counts = places_per_country(rows);
-    let mut out = Vec::new();
-    for event in calendar::relevant_events(today, 30) {
-        let progress = match user {
-            Some(user) => {
-                store::visits_between(&state.db, user, &event.countries, event.starts, event.ends)
-                    .await?
-            }
-            None => 0,
-        };
-        let earned = progress >= event.target;
-        let status = if today < event.starts {
-            EventStatus::Upcoming
-        } else if today <= event.ends {
-            EventStatus::Active
-        } else {
-            EventStatus::Ended
-        };
-        if status == EventStatus::Ended && !earned {
-            continue;
-        }
-        out.push(EventProgress {
-            places_nearby: event
-                .countries
-                .iter()
-                .map(|c| counts.get(c.as_str()).copied().unwrap_or(0))
-                .sum(),
-            event: event.clone(),
-            status,
-            progress: progress.min(event.target),
-            earned,
-        });
-    }
-    Ok(out)
-}
-
-/// This month's quests in the area, keeping the XP of the ones the user finished.
-pub(crate) async fn monthly_quests(
-    state: &AppState,
-    user: Option<&str>,
-    area_id: &str,
-    today: NaiveDate,
-    rows: &[PlaceRow],
-) -> Result<game::MonthlyQuests, ApiError> {
-    let tasted = match user {
-        Some(user) => store::tasted(&state.db, user).await?,
-        None => Vec::new(),
-    };
-    let first = game::month_start(today);
-    let days = (first + chrono::Months::new(1) - first).num_days() - 1;
-    let celebrating: Vec<String> = calendar::upcoming(first, days)
-        .into_iter()
-        .flat_map(|c| c.countries)
-        .collect();
-    let monthly = game::monthly_quests(area_id, today, rows, &tasted, &celebrating);
-    if let Some(user) = user {
-        let done: Vec<(&str, u32)> = monthly
-            .quests
-            .iter()
-            .filter(|q| q.done)
-            .map(|q| (q.id.as_str(), q.xp))
-            .collect();
-        store::reward_quests(&state.db, user, &monthly.month, &done).await?;
-    }
-    Ok(monthly)
+    progress: Progress,
 }
 
 /// Countries available in the area, progress, badges, profile, events and monthly quests.
@@ -1077,22 +819,12 @@ async fn discover(
     MaybeUser(user): MaybeUser,
     Query(query): Query<AreaQuery>,
 ) -> ApiResult<Discover> {
+    let area = areas::resolve(&state, &query.area).await?;
     let zone = zone(query.tz.as_deref());
-    let today = state.today(zone);
-    let area = resolve_area(&state, &query.area).await?;
-    let rows = store::area_rows(&state.db, area.id(), user.as_deref()).await?;
-    let quests = monthly_quests(&state, user.as_deref(), area.id(), today, &rows).await?;
-    // After the rewards, so finished quests count in the profile.
-    let lifetime = match &user {
-        Some(user) => store::lifetime(&state.db, user, today).await?,
-        None => Lifetime::default(),
-    };
-    let events = event_progress(&state, user.as_deref(), &rows, zone).await?;
+    let progress = progress::load(&state, user.as_deref(), area.id(), zone).await?;
     Ok(Json(Discover {
-        summary: game::summarize(&rows, lifetime),
         area: (&area).into(),
-        events,
-        quests,
+        progress,
     }))
 }
 
@@ -1134,9 +866,9 @@ async fn celebrations(
     Query(query): Query<CelebrationsQuery>,
 ) -> ApiResult<Vec<CelebrationView>> {
     let zone = zone(query.tz.as_deref());
-    let area = resolve_area(&state, &query.area).await?;
+    let area = areas::resolve(&state, &query.area).await?;
     let rows = store::area_rows(&state.db, area.id(), None).await?;
-    let counts = places_per_country(&rows);
+    let counts = progress::places_per_country(&rows);
     let days = query.days.unwrap_or(60).clamp(0, 366);
     Ok(Json(nearby_celebrations(state.today(zone), days, &counts)))
 }
@@ -1159,9 +891,7 @@ fn nearby_celebrations(
                     })
                 })
                 .collect();
-            let owned: HashMap<String, u32> =
-                nearby.iter().map(|n| (n.code.clone(), n.places)).collect();
-            let reminder = crate::push::celebration_notification(&celebration, &owned)?;
+            let reminder = crate::push::celebration_notification(&celebration, counts)?;
             Some(CelebrationView {
                 celebration,
                 nearby,
@@ -1195,7 +925,7 @@ async fn places(
     MaybeUser(user): MaybeUser,
     Query(query): Query<PlacesQuery>,
 ) -> ApiResult<Vec<PlaceView>> {
-    let area = resolve_area(&state, &query.area).await?;
+    let area = areas::resolve(&state, &query.area).await?;
     let country = query.country.map(|c| c.to_uppercase());
     let mut places =
         store::area_places(&state.db, area.id(), country.as_deref(), user.as_deref()).await?;
@@ -1267,7 +997,7 @@ async fn suggestion(
     MaybeUser(user): MaybeUser,
     Query(query): Query<SuggestionQuery>,
 ) -> ApiResult<Suggestion> {
-    let area = resolve_area(&state, &query.area).await?;
+    let area = areas::resolve(&state, &query.area).await?;
     let exclude = query.exclude.unwrap_or_default();
     let exclude: Vec<&str> = exclude.split(',').collect();
     let tasted = match &user {
@@ -1509,7 +1239,7 @@ async fn unknown_places(
     MaybeUser(user): MaybeUser,
     Query(query): Query<UnknownQuery>,
 ) -> ApiResult<Vec<store::UnknownPlace>> {
-    let area = resolve_area(&state, &query.area).await?;
+    let area = areas::resolve(&state, &query.area).await?;
     let shape = &area.boundary.shape;
     let info = &area.boundary.info;
     let (lat, lng) = (query.lat.unwrap_or(info.lat), query.lng.unwrap_or(info.lng));
@@ -1845,12 +1575,21 @@ struct CheckIn {
 struct VisitQuery {
     /// As for `/api/discover`: the check-in counts for events by its date in this zone.
     tz: Option<String>,
+    /// The area the user is playing in. With it, the answer has the progress there after
+    /// the check-in and what it unlocked, so there is no need to ask `/api/discover` again.
+    area: Option<String>,
 }
 
 #[derive(Serialize, ToSchema)]
 struct VisitResult {
     visit: Visit,
     profile: game::Profile,
+    /// The progress in `area` after the check-in; `null` without `area`.
+    #[schema(required = true)]
+    progress: Option<Progress>,
+    /// What the check-in unlocked in `area`, in the order to announce it. Empty without
+    /// `area`, and for a second check-in at a place.
+    unlocked: Vec<progress::Unlocked>,
 }
 
 /// Checks in at a place. There is at most one visit per place per day: checking in again the
@@ -1875,22 +1614,39 @@ async fn add_visit(
     let (_, plat, plng) = store::place_summary(&state.db, &place_id, &user)
         .await?
         .ok_or(ApiError::NotFound("place"))?;
+    let zone = zone(query.tz.as_deref());
+    let today = state.today(zone);
+    // Before anything is written, so a wrong area leaves no visit behind.
+    let before = match &query.area {
+        Some(id) => {
+            let area = areas::resolve(&state, id).await?;
+            let progress = progress::load(&state, Some(&user), area.id(), zone).await?;
+            Some((area, progress))
+        }
+        None => None,
+    };
     let check_in = body.map(|JsonBody(b)| b).unwrap_or_default();
     let verified = check_in
         .position
         .is_some_and(|p| geo::distance_m(p.lat, p.lng, plat, plng) <= VERIFY_DISTANCE_M);
-    let visit = store::add_visit(
-        &state.db,
-        &user,
-        &place_id,
-        verified,
-        state.now(),
-        state.today(zone(query.tz.as_deref())),
-    )
-    .await?;
-    let today = state.today(zone(query.tz.as_deref()));
+    let visit =
+        store::add_visit(&state.db, &user, &place_id, verified, state.now(), today).await?;
+    let (progress, unlocked) = match before {
+        Some((area, before)) => {
+            let after = progress::load(&state, Some(&user), area.id(), zone).await?;
+            let unlocked = progress::unlocked(&before, &after, &area.boundary.info.name);
+            (Some(after), unlocked)
+        }
+        None => (None, Vec::new()),
+    };
+    // After the progress, which books the XP of quests this check-in finished.
     let profile = game::profile(store::lifetime(&state.db, &user, today).await?);
-    Ok(Json(VisitResult { visit, profile }))
+    Ok(Json(VisitResult {
+        visit,
+        profile,
+        progress,
+        unlocked,
+    }))
 }
 
 /// Removes one visit. The place stays visited while the user has other visits to it.
@@ -1950,7 +1706,7 @@ async fn share_profile(
     headers: header::HeaderMap,
     Query(query): Query<AreaQuery>,
 ) -> ApiResult<ShareLink> {
-    let area = resolve_area(&state, &query.area).await?;
+    let area = areas::resolve(&state, &query.area).await?;
     let slug = share::publish_profile(&state.db, &user, area.id(), state.now()).await?;
     let rows = store::area_rows(&state.db, area.id(), Some(&user)).await?;
     let today = state.today(zone(query.tz.as_deref()));
@@ -2230,7 +1986,7 @@ async fn subscribe(
         endpoint: body.endpoint,
         p256dh: body.keys.p256dh,
         auth: body.keys.auth,
-        area_id: Some(resolve_area(&state, &body.area).await?.id().to_string()),
+        area_id: Some(areas::resolve(&state, &body.area).await?.id().to_string()),
         timezone: body.timezone,
     };
     store::save_push_subscription(&state.db, &user, &subscription, state.now()).await?;
@@ -2406,32 +2162,4 @@ mod tests {
         assert!((0.0..1.0).contains(&r));
     }
 
-    use super::*;
-
-    #[test]
-    fn the_estimate_slows_down_and_never_reaches_the_end_of_its_step() {
-        assert_eq!(estimate(15.0, 95.0, 0.0, 20.0), 15.0);
-        let after_expected = estimate(15.0, 95.0, 20.0, 20.0);
-        assert!((65.0..66.0).contains(&after_expected), "{after_expected}");
-        assert!(estimate(15.0, 95.0, 600.0, 20.0) < 95.0);
-    }
-
-    #[test]
-    fn progress_stays_until_the_last_concurrent_fetch_ends() {
-        let loads = Loads::default();
-        let first = loads.begin("leuven");
-        let second = loads.begin("leuven");
-        loads.step("leuven", 15.0, 95.0, "Looking for restaurants", 20.0);
-        assert_eq!(
-            loads.progress("leuven"),
-            Some((15, "Looking for restaurants"))
-        );
-        drop(first);
-        assert_eq!(
-            loads.progress("leuven"),
-            Some((15, "Looking for restaurants"))
-        );
-        drop(second);
-        assert_eq!(loads.progress("leuven"), None);
-    }
 }

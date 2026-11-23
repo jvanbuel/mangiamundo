@@ -273,7 +273,11 @@ async fn tells_subscribers_once_about_new_food_from_the_import() {
         loads: Default::default(),
         limits: Default::default(),
         db: db.clone(),
-        places: Arc::new(Demo),
+        // As in production: the daily import's copy answers before the live provider.
+        places: Arc::new(mangiamundo::providers::osm::WithImport::new(
+            db.clone(),
+            Arc::new(Demo),
+        )),
         areas: Arc::new(Demo),
         cache_ttl_secs: 365 * 86_400,
         clock: Arc::new(|| START),
