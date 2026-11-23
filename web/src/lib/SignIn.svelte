@@ -54,7 +54,7 @@
 		const slot = googleButton;
 		const clientId = providers?.google;
 		if (!slot || !clientId) return;
-		googleScript ??= load('https://accounts.google.com/gsi/client');
+		googleScript ??= load('https://accounts.google.com/gsi/client?hl=en') // hl: the placeholder drawn before the iframe loads is in the browser's language otherwise;
 		void googleScript.then(() => {
 			const google = (window as any).google;
 			google.accounts.id.initialize({
