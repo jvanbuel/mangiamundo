@@ -1084,6 +1084,10 @@ export interface components {
         Identity: {
             /** @description The address it goes with, when known. Apple may give a private relay address. */
             email: string | null;
+            /** @description The person's name, from Google; `null` for Apple and email. */
+            name: string | null;
+            /** @description A link to their profile photo, from Google; `null` for Apple and email. */
+            picture: string | null;
             /** @description `apple`, `google` or `email`. */
             provider: string;
         };

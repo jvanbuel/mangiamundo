@@ -66,6 +66,20 @@ pub struct Identity {
     /// The address it goes with, when known. Apple may give a private relay address.
     #[schema(required = true)]
     pub email: Option<String>,
+    /// The person's name, from Google; `null` for Apple and email.
+    #[schema(required = true)]
+    pub name: Option<String>,
+    /// A link to their profile photo, from Google; `null` for Apple and email.
+    #[schema(required = true)]
+    pub picture: Option<String>,
+}
+
+/// What an identity says about the person, as far as its provider shares it.
+#[derive(Debug, Default)]
+pub struct Profile<'a> {
+    pub email: Option<&'a str>,
+    pub name: Option<&'a str>,
+    pub picture: Option<&'a str>,
 }
 
 pub(crate) fn random_code(len: usize) -> String {
@@ -214,12 +228,12 @@ pub async fn account(db: &SqlitePool, session: &Session) -> sqlx::Result<Account
         recovery_code_created_at: row.get("recovery_created_at"),
         devices,
         public_profile: crate::share::profile_slug(db, &session.user).await?.map(|slug| format!("/p/{slug}")),
-        identities: sqlx::query("SELECT provider, email FROM identities WHERE user_id = ? ORDER BY created_at, provider")
+        identities: sqlx::query("SELECT provider, email, name, picture FROM identities WHERE user_id = ? ORDER BY created_at, provider")
             .bind(&session.user)
             .fetch_all(db)
             .await?
             .into_iter()
-            .map(|r| Identity { provider: r.get("provider"), email: r.get("email") })
+            .map(|r| Identity { provider: r.get("provider"), email: r.get("email"), name: r.get("name"), picture: r.get("picture") })
             .collect(),
     })
 }
@@ -326,7 +340,7 @@ pub async fn sign_in_with(
     db: &SqlitePool,
     provider: &str,
     subject: &str,
-    email: Option<&str>,
+    profile: &Profile<'_>,
     current: Option<&Session>,
     device: Option<&str>,
     now: i64,
@@ -340,15 +354,19 @@ pub async fn sign_in_with(
             .await?;
     let user = match owner {
         Some(user) => {
-            // Apple sends the address only the first time; keep the one we have then.
-            if email.is_some() {
-                sqlx::query("UPDATE identities SET email = ? WHERE provider = ? AND subject = ?")
-                    .bind(email)
-                    .bind(provider)
-                    .bind(subject)
-                    .execute(&mut *tx)
-                    .await?;
-            }
+            // Apple sends the address only the first time; keep what we have when a value is
+            // missing, and take Google's latest name and photo.
+            sqlx::query(
+                "UPDATE identities SET email = COALESCE(?, email), name = COALESCE(?, name),
+                 picture = COALESCE(?, picture) WHERE provider = ? AND subject = ?",
+            )
+            .bind(profile.email)
+            .bind(profile.name)
+            .bind(profile.picture)
+            .bind(provider)
+            .bind(subject)
+            .execute(&mut *tx)
+            .await?;
             user
         }
         None => {
@@ -363,11 +381,13 @@ pub async fn sign_in_with(
                 Some(user) => user,
                 None => insert_user(&mut *tx, now).await?,
             };
-            sqlx::query("INSERT INTO identities (provider, subject, user_id, email, created_at) VALUES (?, ?, ?, ?, ?)")
+            sqlx::query("INSERT INTO identities (provider, subject, user_id, email, name, picture, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)")
                 .bind(provider)
                 .bind(subject)
                 .bind(&user)
-                .bind(email)
+                .bind(profile.email)
+                .bind(profile.name)
+                .bind(profile.picture)
                 .bind(now)
                 .execute(&mut *tx)
                 .await?;

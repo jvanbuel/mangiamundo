@@ -946,6 +946,20 @@
               "null"
             ]
           },
+          "name": {
+            "description": "The person's name, from Google; `null` for Apple and email.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "picture": {
+            "description": "A link to their profile photo, from Google; `null` for Apple and email.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
           "provider": {
             "description": "`apple`, `google` or `email`.",
             "type": "string"
@@ -953,7 +967,9 @@
         },
         "required": [
           "provider",
-          "email"
+          "email",
+          "name",
+          "picture"
         ],
         "type": "object"
       },

@@ -26,6 +26,7 @@
 			const loaded = await api.account();
 			if (mine !== loads) return;
 			account = loaded;
+			app.account = loaded;
 			error = null;
 		} catch (e) {
 			if (mine === loads) error = message(e);

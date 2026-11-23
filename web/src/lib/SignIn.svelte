@@ -97,9 +97,23 @@
 
 <h3>Account</h3>
 {#if signedIn.length}
+	{@const name = signedIn.find((i) => i.name)?.name}
+	{@const address = signedIn.find((i) => i.email)?.email}
+	{@const picture = signedIn.find((i) => i.picture)?.picture}
+	<div class="me">
+		{#if picture}
+			<img class="avatar" src={picture} alt="" width="40" height="40" referrerpolicy="no-referrer" />
+		{:else}
+			<span class="avatar initial" aria-hidden="true">{(name ?? address ?? '?').trim().charAt(0).toUpperCase()}</span>
+		{/if}
+		<span>
+			<strong>{name ?? address ?? 'Signed in'}</strong>
+			{#if name && address}<span class="note">{address}</span>{/if}
+		</span>
+	</div>
 	<p class="note">
-		Signed in with {signedIn.map((i) => (i.email ? `${names[i.provider] ?? i.provider} (${i.email})` : names[i.provider] ?? i.provider)).join(', ')}.
-		Your progress follows you to every device you sign in on.
+		Signed in with {signedIn.map((i) => names[i.provider] ?? i.provider).join(' and ')}. Your progress follows you to every
+		device you sign in on.
 	</p>
 	<button class="secondary" disabled={busy} onclick={signOut}>Sign out of this device</button>
 {:else}
@@ -147,6 +161,39 @@
 {/if}
 
 <style>
+	.me {
+		display: flex;
+		align-items: center;
+		gap: 10px;
+	}
+
+	.me > span {
+		display: grid;
+		min-width: 0;
+	}
+
+	.me strong {
+		overflow: hidden;
+		text-overflow: ellipsis;
+	}
+
+	.avatar {
+		flex: none;
+		width: 40px;
+		height: 40px;
+		border-radius: 50%;
+		object-fit: cover;
+	}
+
+	.avatar.initial {
+		display: grid;
+		place-items: center;
+		background: var(--accent);
+		color: var(--on-accent);
+		font-size: 17px;
+		font-weight: 800;
+	}
+
 	/* Both providers' buttons full width and the same height, Google's own and Apple's. */
 	.providers {
 		display: grid;

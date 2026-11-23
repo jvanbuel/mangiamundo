@@ -504,7 +504,7 @@ async fn sign_in_provider(
         &state.db,
         provider.name(),
         &who.subject,
-        who.email.as_deref(),
+        &account::Profile { email: who.email.as_deref(), name: who.name.as_deref(), picture: who.picture.as_deref() },
         current.as_ref(),
         body.device.as_deref(),
         state.now(),
@@ -602,7 +602,8 @@ async fn sign_in_email(
     if !auth::take_code(&state.db, &email, &body.code, state.now()).await? {
         return Err(ApiError::NotFound("code"));
     }
-    let token = account::sign_in_with(&state.db, "email", &email, Some(&email), current.as_ref(), body.device.as_deref(), state.now()).await?;
+    let profile = account::Profile { email: Some(&email), ..Default::default() };
+    let token = account::sign_in_with(&state.db, "email", &email, &profile, current.as_ref(), body.device.as_deref(), state.now()).await?;
     Ok(Json(Session { token }))
 }
 
