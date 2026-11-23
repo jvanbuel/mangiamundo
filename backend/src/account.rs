@@ -498,29 +498,71 @@ mod tests {
         assert_eq!(codes, 0);
     }
 
-    /// `merge` finds a user's rows through foreign keys to `users`. A column that names a
-    /// user without one would be left behind, so there may be none.
+    /// A row in every table with a column that names a user, found here by the column's
+    /// name and not the way `merge` finds them: after a merge each row is the other user's,
+    /// or its table is one that says it stays behind.
     #[tokio::test]
-    async fn every_column_naming_a_user_refers_to_users() {
+    async fn a_merge_leaves_no_row_of_the_user_behind() {
         let db = crate::store::connect("sqlite::memory:").await.unwrap();
+        let mut conn = db.acquire().await.unwrap();
+        // The rows are made up: what they refer to isn't there, and a value may be one a
+        // column doesn't allow.
+        for pragma in ["foreign_keys = OFF", "ignore_check_constraints = ON"] {
+            sqlx::query(&format!("PRAGMA {pragma}"))
+                .execute(&mut *conn)
+                .await
+                .unwrap();
+        }
         let named: Vec<(String, String)> = sqlx::query_as(
             "SELECT m.name, c.name FROM sqlite_master m, pragma_table_info(m.name) c
              WHERE m.type = 'table' AND c.name IN ('user_id', 'added_by') ORDER BY m.name",
         )
-        .fetch_all(&db)
+        .fetch_all(&mut *conn)
         .await
         .unwrap();
         assert!(named.len() >= 10, "{named:?}");
-        for (table, column) in named {
-            let refers: i64 = sqlx::query_scalar(
-                r#"SELECT COUNT(*) FROM pragma_foreign_key_list(?) WHERE "table" = 'users' AND "from" = ?"#,
-            )
-            .bind(&table)
-            .bind(&column)
-            .fetch_one(&db)
-            .await
-            .unwrap();
-            assert_eq!(refers, 1, "{table}.{column} has no foreign key to users");
+        for id in ["from", "into"] {
+            sqlx::query("INSERT INTO users (id, token, created_at) VALUES (?, ?, 0)")
+                .bind(id)
+                .bind(id)
+                .execute(&mut *conn)
+                .await
+                .unwrap();
+        }
+        for (table, user_column) in &named {
+            let columns: Vec<(String, String)> =
+                sqlx::query_as("SELECT name, type FROM pragma_table_info(?)")
+                    .bind(table)
+                    .fetch_all(&mut *conn)
+                    .await
+                    .unwrap();
+            let names: Vec<String> = columns.iter().map(|(n, _)| format!(r#""{n}""#)).collect();
+            let values: Vec<&str> = columns
+                .iter()
+                .map(|(name, kind)| match (name == user_column, kind.as_str()) {
+                    (true, _) => "'from'",
+                    (false, "TEXT") => "'x'",
+                    (false, _) => "1",
+                })
+                .collect();
+            let insert = format!(
+                r#"INSERT INTO "{table}" ({}) VALUES ({})"#,
+                names.join(", "),
+                values.join(", ")
+            );
+            sqlx::query(&insert).execute(&mut *conn).await.unwrap();
+        }
+
+        merge(&mut conn, "from", "into").await.unwrap();
+
+        for (table, column) in &named {
+            let owners: Vec<String> = sqlx::query_scalar(&format!(r#"SELECT "{column}" FROM "{table}""#))
+                .fetch_all(&mut *conn)
+                .await
+                .unwrap();
+            // Named here again on purpose: leaving a table out of a merge is a decision.
+            let expected = if table == "link_codes" { "from" } else { "into" };
+            assert_eq!(owners, [expected], "{table}.{column}");
         }
     }
 }
