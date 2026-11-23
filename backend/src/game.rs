@@ -1,8 +1,9 @@
 //! Gamification: turns "which places exist here and which did the user visit" into
 //! per-country and per-continent progress, badges, XP and a level.
 
-use std::collections::{BTreeMap, HashSet};
+use std::collections::{BTreeMap, BTreeSet, HashSet};
 
+use chrono::{Datelike, Duration, NaiveDate};
 use serde::Serialize;
 
 use crate::catalog::{self, CONTINENTS};
@@ -27,6 +28,11 @@ pub struct Lifetime {
     pub added: u32,
     pub country_bonuses: u32,
     pub continent_bonuses: u32,
+    /// XP from finished monthly quests.
+    pub quest_xp: u32,
+    /// Months in a row with a check-in, see [`streaks`].
+    pub streak: u32,
+    pub best_streak: u32,
 }
 
 /// What a restaurant the user adds brings to their area, decided when they add it.
@@ -136,6 +142,8 @@ pub enum BadgeKind {
     Everything,
     /// Brought a new country to the area by adding a restaurant.
     Pioneer,
+    /// Checked in so many months in a row.
+    Streak,
 }
 
 #[derive(Debug, Serialize, PartialEq, utoipa::ToSchema)]
@@ -160,6 +168,10 @@ pub struct Profile {
     pub countries: u32,
     /// Restaurants the user added that OpenStreetMap now has.
     pub added: u32,
+    /// Months in a row with at least one check-in, up to this one. A month without one yet
+    /// doesn't break it until the month is over.
+    pub streak: u32,
+    pub best_streak: u32,
 }
 
 #[derive(Debug, Serialize, PartialEq, utoipa::ToSchema)]
@@ -190,7 +202,8 @@ pub fn profile(lifetime: Lifetime) -> Profile {
         + lifetime.countries * XP_PER_COUNTRY
         + lifetime.added * XP_PER_ADDITION
         + lifetime.country_bonuses * XP_NEW_COUNTRY
-        + lifetime.continent_bonuses * XP_NEW_CONTINENT;
+        + lifetime.continent_bonuses * XP_NEW_CONTINENT
+        + lifetime.quest_xp;
     // Level n starts at 100 * (n - 1)^2 XP: 0, 100, 400, 900, ...
     let level = (xp as f64 / 100.0).sqrt().floor() as u32 + 1;
     Profile {
@@ -201,6 +214,8 @@ pub fn profile(lifetime: Lifetime) -> Profile {
         visits: lifetime.visits,
         countries: lifetime.countries,
         added: lifetime.added,
+        streak: lifetime.streak,
+        best_streak: lifetime.best_streak,
     }
 }
 
@@ -332,6 +347,16 @@ pub fn summarize(rows: &[PlaceRow], lifetime: Lifetime) -> Summary {
             1,
         ),
     ];
+    for months in STREAK_BADGES {
+        badges.push(badge(
+            format!("streak-{months}"),
+            Streak,
+            format!("{months} months in a row"),
+            format!("Check in somewhere every month for {months} months."),
+            lifetime.best_streak,
+            months,
+        ));
+    }
     for continent in continents.iter().filter(|c| c.available > 0) {
         badges.push(badge(
             format!("continent-{}", continent.code),
@@ -370,6 +395,254 @@ pub fn summarize(rows: &[PlaceRow], lifetime: Lifetime) -> Summary {
     }
 }
 
+const STREAK_BADGES: [u32; 3] = [3, 6, 12];
+
+/// The first day of `day`'s month.
+pub fn month_start(day: NaiveDate) -> NaiveDate {
+    day.with_day(1).expect("every month has a first day")
+}
+
+/// The first day of the month before `day`'s.
+fn previous_month(day: NaiveDate) -> NaiveDate {
+    month_start(month_start(day) - Duration::days(1))
+}
+
+/// The current streak and the longest one, from the local days the user checked in. The
+/// current one counts back from this month, or from last month while this one has none yet.
+pub fn streaks(days: &[NaiveDate], today: NaiveDate) -> (u32, u32) {
+    let months: BTreeSet<NaiveDate> = days.iter().map(|d| month_start(*d)).collect();
+    let (mut run, mut best, mut last) = (0, 0, None);
+    for &month in &months {
+        run = if last == Some(previous_month(month)) {
+            run + 1
+        } else {
+            1
+        };
+        best = best.max(run);
+        last = Some(month);
+    }
+    let alive = last.is_some_and(|m| m >= previous_month(today));
+    (if alive { run } else { 0 }, best)
+}
+
+/// A place the user checked in at, with the local days of the first and latest check-in.
+#[derive(Debug, Clone)]
+pub struct Tasted {
+    pub place_id: String,
+    pub country: String,
+    pub first: NaiveDate,
+    pub last: NaiveDate,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, PartialEq, Eq, utoipa::ToSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum QuestKind {
+    /// Eat a country's food for the first time.
+    NewCountry,
+    /// Eat from two continents.
+    Continents,
+    /// Visit places of a country with a celebration this month.
+    Celebration,
+    /// Raise a country you already tried to its next level (gold, platinum, diamond).
+    LevelUp,
+    /// Check in at two places. Always on, so there is always something to do.
+    CheckIns,
+}
+
+impl QuestKind {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            QuestKind::NewCountry => "new-country",
+            QuestKind::Continents => "continents",
+            QuestKind::Celebration => "celebration",
+            QuestKind::LevelUp => "level-up",
+            QuestKind::CheckIns => "check-ins",
+        }
+    }
+
+    pub fn xp(self) -> u32 {
+        match self {
+            QuestKind::NewCountry | QuestKind::LevelUp => 100,
+            QuestKind::Continents | QuestKind::Celebration => 75,
+            QuestKind::CheckIns => 50,
+        }
+    }
+}
+
+#[derive(Debug, Serialize, PartialEq, utoipa::ToSchema)]
+pub struct Quest {
+    /// Stable within the month, e.g. `new-country`.
+    pub id: String,
+    pub kind: QuestKind,
+    pub title: String,
+    pub description: String,
+    /// The countries that count, for quests about particular ones; empty otherwise.
+    pub countries: Vec<String>,
+    pub progress: u32,
+    pub target: u32,
+    pub done: bool,
+    pub xp: u32,
+}
+
+#[derive(Debug, Serialize, PartialEq, utoipa::ToSchema)]
+pub struct MonthlyQuests {
+    /// e.g. `2026-11`.
+    pub month: String,
+    /// First and last day, inclusive.
+    pub starts: NaiveDate,
+    pub ends: NaiveDate,
+    pub quests: Vec<Quest>,
+}
+
+/// How many of the area-specific quests run each month, besides check-ins.
+const QUESTS_PER_MONTH: usize = 2;
+
+/// This month's quests in the area. Which ones run depends on the area and the month, and
+/// on what the area has and what the user had done before the month began, so they don't
+/// change during the month and can always be done. `tasted` is all of the user's history,
+/// any area; `celebrating` the countries with a celebration on some day this month.
+pub fn monthly_quests(
+    area_id: &str,
+    today: NaiveDate,
+    rows: &[PlaceRow],
+    tasted: &[Tasted],
+    celebrating: &[String],
+) -> MonthlyQuests {
+    let first = month_start(today);
+    let before: Vec<&Tasted> = tasted.iter().filter(|t| t.first < first).collect();
+    let this_month: Vec<&Tasted> = tasted.iter().filter(|t| t.last >= first).collect();
+    let tried: HashSet<&str> = before.iter().map(|t| t.country.as_str()).collect();
+    let continent = |code: &str| catalog::country(code).map(|c| c.continent.as_str());
+
+    // Places per country in the area, and how many of them the user had before this month and has now.
+    let mut by_country: BTreeMap<&str, (u32, u32, u32)> = BTreeMap::new();
+    let before_places: HashSet<(&str, &str)> = before
+        .iter()
+        .map(|t| (t.place_id.as_str(), t.country.as_str()))
+        .collect();
+    for row in rows {
+        let e = by_country.entry(row.country.as_str()).or_default();
+        e.0 += 1;
+        e.1 += before_places.contains(&(row.place_id.as_str(), row.country.as_str())) as u32;
+        e.2 += row.visited as u32;
+    }
+
+    let quest =
+        |kind: QuestKind, title: &str, description: &str, countries, progress, target| Quest {
+            id: kind.as_str().to_string(),
+            kind,
+            title: title.to_string(),
+            description: description.to_string(),
+            countries,
+            progress: u32::min(progress, target),
+            target,
+            done: progress >= target,
+            xp: kind.xp(),
+        };
+    let mut candidates = Vec::new();
+    let untried: Vec<String> = by_country
+        .keys()
+        .filter(|c| !tried.contains(*c))
+        .map(|c| c.to_string())
+        .collect();
+    if !untried.is_empty() {
+        let new: HashSet<&str> = this_month
+            .iter()
+            .map(|t| t.country.as_str())
+            .filter(|c| !tried.contains(c))
+            .collect();
+        candidates.push(quest(
+            QuestKind::NewCountry,
+            "Taste a new country",
+            "Eat the food of a country you haven't tried yet.",
+            Vec::new(),
+            new.len() as u32,
+            1,
+        ));
+    }
+    let continents: HashSet<&str> = by_country.keys().filter_map(|c| continent(c)).collect();
+    if continents.len() >= 2 {
+        let eaten: HashSet<&str> = this_month
+            .iter()
+            .filter_map(|t| continent(&t.country))
+            .collect();
+        candidates.push(quest(
+            QuestKind::Continents,
+            "Two continents",
+            "Eat from two different continents this month.",
+            Vec::new(),
+            eaten.len() as u32,
+            2,
+        ));
+    }
+    let festive: Vec<String> = celebrating
+        .iter()
+        .filter(|c| by_country.contains_key(c.as_str()))
+        .cloned()
+        .collect();
+    if !festive.is_empty() {
+        let places: u32 = festive.iter().map(|c| by_country[c.as_str()].0).sum();
+        let visited: HashSet<&str> = this_month
+            .iter()
+            .filter(|t| festive.contains(&t.country))
+            .map(|t| t.place_id.as_str())
+            .collect();
+        candidates.push(quest(
+            QuestKind::Celebration,
+            "Join the celebration",
+            "Visit places of a country celebrating this month.",
+            festive,
+            visited.len() as u32,
+            places.min(2),
+        ));
+    }
+    let growing: Vec<(&str, &(u32, u32, u32))> = by_country
+        .iter()
+        .filter(|(_, (places, before, _))| {
+            *before > 0 && Status::of(*places, *before) != Status::Completed
+        })
+        .map(|(c, e)| (*c, e))
+        .collect();
+    if !growing.is_empty() {
+        let raised = growing.iter().any(|(_, (places, before, now))| {
+            Status::of(*places, *now) > Status::of(*places, *before)
+        });
+        candidates.push(quest(
+            QuestKind::LevelUp,
+            "Level up a country",
+            "Go back to a country you tried and reach its next level.",
+            growing.iter().map(|(c, _)| c.to_string()).collect(),
+            raised as u32,
+            1,
+        ));
+    }
+
+    // ponytail: a byte sum is enough to vary the pick per area; a real hash if it looks samey.
+    let seed = area_id.bytes().map(usize::from).sum::<usize>()
+        + first.month() as usize
+        + first.year() as usize;
+    // Rotate the four kinds (in enum order) by the seed and keep the first that apply.
+    let n = QuestKind::CheckIns as usize;
+    candidates.sort_by_key(|q: &Quest| (q.kind as usize + n - seed % n) % n);
+    candidates.truncate(QUESTS_PER_MONTH);
+    let places_this_month: HashSet<&str> = this_month.iter().map(|t| t.place_id.as_str()).collect();
+    candidates.push(quest(
+        QuestKind::CheckIns,
+        "Two check-ins",
+        "Check in at two places this month.",
+        Vec::new(),
+        places_this_month.len() as u32,
+        2,
+    ));
+
+    MonthlyQuests {
+        month: first.format("%Y-%m").to_string(),
+        starts: first,
+        ends: month_start(first + Duration::days(31)) - Duration::days(1),
+        quests: candidates,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -389,6 +662,173 @@ mod tests {
             .find(|b| b.id == id)
             .unwrap_or_else(|| panic!("no badge {id}"))
             .earned
+    }
+
+    fn day(s: &str) -> NaiveDate {
+        s.parse().unwrap()
+    }
+
+    fn tasted(place: &str, country: &str, first: &str, last: &str) -> Tasted {
+        Tasted {
+            place_id: place.into(),
+            country: country.into(),
+            first: day(first),
+            last: day(last),
+        }
+    }
+
+    fn ids(w: &MonthlyQuests) -> Vec<&str> {
+        w.quests.iter().map(|q| q.id.as_str()).collect()
+    }
+
+    #[test]
+    fn streak_counts_months_in_a_row() {
+        let today = day("2026-11-25");
+        assert_eq!(streaks(&[], today), (0, 0));
+        // This month, last month (twice) and the month before: 3, across a year end too.
+        let days = [
+            day("2026-11-03"),
+            day("2026-10-30"),
+            day("2026-10-01"),
+            day("2026-09-12"),
+        ];
+        assert_eq!(streaks(&days, today), (3, 3));
+        assert_eq!(
+            streaks(&[day("2026-12-31"), day("2027-01-01")], day("2027-01-20")),
+            (2, 2)
+        );
+        // Nothing yet this month doesn't break it.
+        assert_eq!(streaks(&days[1..], today), (2, 2));
+        // A whole month without one does; the best run stays.
+        let old = [day("2026-08-20"), day("2026-07-01"), day("2026-06-30")];
+        assert_eq!(streaks(&old, today), (0, 3));
+        let mixed = [&old[..], &days[..1]].concat();
+        assert_eq!(streaks(&mixed, today), (1, 3));
+    }
+
+    #[test]
+    fn streak_badges_use_the_best_streak() {
+        let s = summarize(
+            &[],
+            Lifetime {
+                streak: 1,
+                best_streak: 4,
+                ..Default::default()
+            },
+        );
+        assert!(earned(&s, "streak-3"));
+        assert!(!earned(&s, "streak-6"));
+        assert_eq!((s.profile.streak, s.profile.best_streak), (1, 4));
+    }
+
+    #[test]
+    fn finished_quests_add_xp() {
+        let p = profile(Lifetime {
+            quest_xp: 150,
+            ..Default::default()
+        });
+        assert_eq!(p.xp, 150);
+    }
+
+    #[test]
+    fn every_area_always_has_a_quest() {
+        let w = monthly_quests("empty", day("2026-11-25"), &[], &[], &[]);
+        assert_eq!(ids(&w), ["check-ins"]);
+        assert_eq!(
+            (w.month.as_str(), w.starts, w.ends),
+            ("2026-11", day("2026-11-01"), day("2026-11-30"))
+        );
+        assert_eq!(
+            monthly_quests("x", day("2028-02-10"), &[], &[], &[]).ends,
+            day("2028-02-29")
+        );
+        // Someone who tried everything in a one-country area still gets one.
+        let rows = [row("a", "IT", true)];
+        let history = [tasted("a", "IT", "2026-01-01", "2026-01-01")];
+        let w = monthly_quests("one", day("2026-11-25"), &rows, &history, &[]);
+        assert!(ids(&w).contains(&"check-ins"));
+        assert!(!ids(&w).contains(&"new-country"));
+    }
+
+    #[test]
+    fn quests_are_fixed_for_the_month_and_vary_by_area_and_month() {
+        let rows = [
+            row("a", "IT", true),
+            row("b", "IT", false),
+            row("c", "JP", false),
+            row("d", "MX", false),
+        ];
+        let before = [tasted("a", "IT", "2026-10-01", "2026-10-01")];
+        let start = monthly_quests("leuven", day("2026-11-01"), &rows, &before, &["MX".into()]);
+        assert_eq!(start.quests.len(), 3);
+        // Checking in during the month changes progress, not which quests run.
+        let mut later = before.to_vec();
+        later.push(tasted("c", "JP", "2026-11-26", "2026-11-26"));
+        let end = monthly_quests("leuven", day("2026-11-30"), &rows, &later, &["MX".into()]);
+        assert_eq!(ids(&start), ids(&end));
+
+        let picks: HashSet<String> = ["leuven", "gent", "brussel", "antwerpen"]
+            .iter()
+            .flat_map(|area| {
+                ["2026-11-10", "2026-12-10"].map(|d| {
+                    ids(&monthly_quests(
+                        area,
+                        day(d),
+                        &rows,
+                        &before,
+                        &["MX".into()],
+                    ))
+                    .join(",")
+                })
+            })
+            .collect();
+        assert!(picks.len() > 1, "always the same quests: {picks:?}");
+    }
+
+    #[test]
+    fn quest_progress() {
+        let rows = [
+            row("a", "IT", true),
+            row("b", "IT", true),
+            row("c", "JP", true),
+            row("d", "MX", true),
+            row("e", "MX", false),
+        ];
+        let history = [
+            tasted("a", "IT", "2026-10-01", "2026-11-24"),
+            tasted("b", "IT", "2026-11-24", "2026-11-24"),
+            tasted("c", "JP", "2026-11-25", "2026-11-25"),
+            tasted("d", "MX", "2026-11-25", "2026-11-25"),
+        ];
+        // Try every area id until each kind showed up once, so the test doesn't depend on the pick.
+        let mut seen = std::collections::HashMap::new();
+        for area in (0..40).map(|i| format!("area-{i}")) {
+            let w = monthly_quests(
+                &area,
+                day("2026-11-26"),
+                &rows,
+                &history,
+                &["MX".into(), "FR".into()],
+            );
+            for q in w.quests {
+                seen.entry(q.id.clone()).or_insert(q);
+            }
+        }
+        let q = |id: &str| seen.get(id).unwrap_or_else(|| panic!("no quest {id}"));
+        // JP and MX are new this month; IT was known.
+        assert_eq!(
+            (q("new-country").progress, q("new-country").done),
+            (1, true)
+        );
+        // Europe, Asia and the Americas.
+        assert!(q("continents").done);
+        // MX celebrates (FR has no places here); one of its two places visited.
+        assert_eq!(q("celebration").countries, ["MX"]);
+        assert_eq!((q("celebration").progress, q("celebration").target), (1, 2));
+        // IT went from 1 of 2 places (gold) to 2 of 2 (diamond).
+        assert_eq!(q("level-up").countries, ["IT"]);
+        assert!(q("level-up").done);
+        assert_eq!((q("check-ins").progress, q("check-ins").done), (2, true));
     }
 
     #[test]

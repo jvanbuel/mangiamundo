@@ -39,6 +39,10 @@
 	<dl class="totals">
 		<div><dt>Places visited</dt><dd>{discover.places_visited} <span class="muted">of {discover.places}</span></dd></div>
 		<div><dt>Diamond countries</dt><dd>{discover.world.completed}</dd></div>
+		<div>
+			<dt>Month streak</dt>
+			<dd>{profile.streak} <span class="muted">{profile.streak === 1 ? 'month' : 'months'} · best {profile.best_streak}</span></dd>
+		</div>
 	</dl>
 
 	<div class="share">

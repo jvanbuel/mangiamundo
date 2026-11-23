@@ -118,7 +118,7 @@ struct GroupProgress: Decodable, Identifiable {
 
 /// What a badge rewards. The app picks the badge's icon and colour from it.
 enum BadgeKind: String, Decodable {
-    case visits, countries, completed, continent, world, everything, pioneer
+    case visits, countries, completed, continent, world, everything, pioneer, streak
     /// A kind from a newer server. Shown with a neutral medal.
     case unknown
 
@@ -146,6 +146,9 @@ struct Profile: Decodable {
     let countries: Int
     /// Restaurants the user added that OpenStreetMap now has. Missing from older servers.
     let added: Int?
+    /// Months in a row with a check-in; a month without one yet doesn't break it until it's over.
+    let streak: Int?
+    let bestStreak: Int?
 }
 
 enum EventStatus: String, Decodable {
@@ -172,6 +175,25 @@ struct EventProgress: Decodable, Identifiable {
     let earned: Bool
     let status: EventStatus
     let placesNearby: Int
+}
+
+/// One of this month's quests.
+struct Quest: Decodable, Identifiable {
+    let id: String
+    let title: String
+    let description: String
+    let progress: Int
+    let target: Int
+    let done: Bool
+    let xp: Int
+}
+
+/// This month's quests, first to last day (YYYY-MM-DD, inclusive).
+struct MonthlyQuests: Decodable {
+    let month: String
+    let starts: String
+    let ends: String
+    let quests: [Quest]
 }
 
 struct NearbyCountry: Decodable {
@@ -207,6 +229,7 @@ struct Discover: Decodable {
     let badges: [Badge]
     let profile: Profile
     let events: [EventProgress]
+    let quests: MonthlyQuests?
 }
 
 /// A place to try from `/api/suggestion`, and the country the globe lands on.

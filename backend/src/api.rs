@@ -954,6 +954,7 @@ struct Discover {
     #[serde(flatten)]
     summary: Summary,
     events: Vec<EventProgress>,
+    quests: game::MonthlyQuests,
 }
 
 #[derive(Serialize, PartialEq, Debug, ToSchema)]
@@ -1029,7 +1030,38 @@ async fn event_progress(
     Ok(out)
 }
 
-/// Countries available in the area, progress, badges, profile and events.
+/// This month's quests in the area, keeping the XP of the ones the user finished.
+pub(crate) async fn monthly_quests(
+    state: &AppState,
+    user: Option<&str>,
+    area_id: &str,
+    today: NaiveDate,
+    rows: &[PlaceRow],
+) -> Result<game::MonthlyQuests, ApiError> {
+    let tasted = match user {
+        Some(user) => store::tasted(&state.db, user).await?,
+        None => Vec::new(),
+    };
+    let first = game::month_start(today);
+    let days = (first + chrono::Months::new(1) - first).num_days() - 1;
+    let celebrating: Vec<String> = calendar::upcoming(first, days)
+        .into_iter()
+        .flat_map(|c| c.countries)
+        .collect();
+    let monthly = game::monthly_quests(area_id, today, rows, &tasted, &celebrating);
+    if let Some(user) = user {
+        let done: Vec<(&str, u32)> = monthly
+            .quests
+            .iter()
+            .filter(|q| q.done)
+            .map(|q| (q.id.as_str(), q.xp))
+            .collect();
+        store::reward_quests(&state.db, user, &monthly.month, &done).await?;
+    }
+    Ok(monthly)
+}
+
+/// Countries available in the area, progress, badges, profile, events and monthly quests.
 #[utoipa::path(
     get, path = "/api/discover", tag = "game",
     params(AreaQuery),
@@ -1043,10 +1075,13 @@ async fn discover(
     Query(query): Query<AreaQuery>,
 ) -> ApiResult<Discover> {
     let zone = zone(query.tz.as_deref());
+    let today = state.today(zone);
     let area = resolve_area(&state, &query.area).await?;
     let rows = store::area_rows(&state.db, area.id(), user.as_deref()).await?;
+    let quests = monthly_quests(&state, user.as_deref(), area.id(), today, &rows).await?;
+    // After the rewards, so finished quests count in the profile.
     let lifetime = match &user {
-        Some(user) => store::lifetime(&state.db, user).await?,
+        Some(user) => store::lifetime(&state.db, user, today).await?,
         None => Lifetime::default(),
     };
     let events = event_progress(&state, user.as_deref(), &rows, zone).await?;
@@ -1054,6 +1089,7 @@ async fn discover(
         summary: game::summarize(&rows, lifetime),
         area: (&area).into(),
         events,
+        quests,
     }))
 }
 
@@ -1724,7 +1760,8 @@ async fn add_visit(
         state.today(zone(query.tz.as_deref())),
     )
     .await?;
-    let profile = game::profile(store::lifetime(&state.db, &user).await?);
+    let today = state.today(zone(query.tz.as_deref()));
+    let profile = game::profile(store::lifetime(&state.db, &user, today).await?);
     Ok(Json(VisitResult { visit, profile }))
 }
 
@@ -1788,7 +1825,8 @@ async fn share_profile(
     let area = resolve_area(&state, &query.area).await?;
     let slug = share::publish_profile(&state.db, &user, area.id(), state.now()).await?;
     let rows = store::area_rows(&state.db, area.id(), Some(&user)).await?;
-    let summary = game::summarize(&rows, store::lifetime(&state.db, &user).await?);
+    let today = state.today(zone(query.tz.as_deref()));
+    let summary = game::summarize(&rows, store::lifetime(&state.db, &user, today).await?);
     let url = format!("{}/p/{slug}", origin(&headers));
     Ok(Json(ShareLink {
         image_url: format!("{url}/card.png"),
@@ -1838,7 +1876,9 @@ async fn public_profile(state: &AppState, slug: &str) -> Result<(Summary, String
     let (user, area_id) = share::find_profile(&state.db, slug).await?.ok_or(ApiError::NotFound("page"))?;
     let area = store::find_area(&state.db, &area_id).await?.ok_or(ApiError::NotFound("page"))?;
     let rows = store::area_rows(&state.db, &area_id, Some(&user)).await?;
-    let summary = game::summarize(&rows, store::lifetime(&state.db, &user).await?);
+    // ponytail: the viewer's zone is unknown here; UTC can be a day off for the streak.
+    let today = state.today(Tz::UTC);
+    let summary = game::summarize(&rows, store::lifetime(&state.db, &user, today).await?);
     Ok((summary, area.boundary.info.name))
 }
 

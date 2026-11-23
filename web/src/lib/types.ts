@@ -11,6 +11,7 @@ export type BadgeKind = Schemas['BadgeKind'];
 export type Badge = Schemas['Badge'];
 export type Profile = Schemas['Profile'];
 export type EventProgress = Schemas['EventProgress'];
+export type MonthlyQuests = Schemas['MonthlyQuests'];
 export type Celebration = Schemas['CelebrationView'];
 export type AreaKind = Schemas['AreaKind'];
 /** A city (every postal code in it) or a single postal code. */

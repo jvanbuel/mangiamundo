@@ -391,6 +391,7 @@ async fn merge(tx: &mut sqlx::SqliteConnection, from: &str, into: &str) -> sqlx:
         // The restored account's own page wins; otherwise the merged one's moves over.
         "UPDATE OR IGNORE public_profiles SET user_id = ?1 WHERE user_id = ?2",
         "UPDATE identities SET user_id = ?1 WHERE user_id = ?2",
+        "UPDATE OR IGNORE quest_rewards SET user_id = ?1 WHERE user_id = ?2",
         // Other devices of the merged account keep working, now as the restored one.
         "UPDATE sessions SET user_id = ?1 WHERE user_id = ?2",
     ] {

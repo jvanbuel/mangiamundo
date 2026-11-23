@@ -2589,3 +2589,60 @@ async fn a_shared_check_in_has_its_own_page_until_it_is_removed() {
     assert_eq!(status, StatusCode::NO_CONTENT);
     assert_eq!(fetch(&app, &page).await.0, StatusCode::NOT_FOUND);
 }
+
+#[tokio::test]
+async fn monthly_quests_pay_once_and_the_streak_shows() {
+    let app = app().await;
+    let token = session(&app).await;
+    let discover = |app: Router, token: String| async move {
+        call(
+            &app,
+            "GET",
+            &format!("/api/discover?{HERE}"),
+            Some(&token),
+            None,
+        )
+        .await
+        .1
+    };
+    let before = discover(app.clone(), token.clone()).await;
+    let check_ins = |d: &Value| {
+        d["quests"]["quests"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|q| q["id"] == "check-ins")
+            .cloned()
+            .expect("check-ins quest")
+    };
+    assert_eq!(before["quests"]["month"], "2026-11");
+    assert_eq!(check_ins(&before)["done"], false);
+    assert_eq!(before["profile"]["streak"], 0);
+
+    let (_, places) = call(
+        &app,
+        "GET",
+        &format!("/api/places?{HERE}"),
+        Some(&token),
+        None,
+    )
+    .await;
+    for place in &places.as_array().unwrap()[..2] {
+        call(&app, "POST", &visits_uri(place), Some(&token), None).await;
+    }
+    let after = discover(app.clone(), token.clone()).await;
+    assert_eq!(check_ins(&after)["done"], true);
+    assert_eq!(after["profile"]["streak"], 1);
+    let xp = after["profile"]["xp"].as_u64().unwrap();
+    // Asking again doesn't pay the quest twice.
+    let again = discover(app, token).await;
+    assert_eq!(again["profile"]["xp"].as_u64().unwrap(), xp);
+    let quest_xp: u64 = after["quests"]["quests"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|q| q["done"] == true)
+        .map(|q| q["xp"].as_u64().unwrap())
+        .sum();
+    assert!(quest_xp >= 50 && xp >= quest_xp + 2 * 10);
+}

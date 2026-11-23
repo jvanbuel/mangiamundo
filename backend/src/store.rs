@@ -9,7 +9,7 @@ use sqlx::sqlite::{SqliteConnectOptions, SqliteJournalMode, SqlitePoolOptions};
 use sqlx::{Row, SqlitePool};
 
 use crate::catalog;
-use crate::game::{Bonus, Lifetime, PlaceRow};
+use crate::game::{self, Bonus, Lifetime, PlaceRow, Tasted};
 use crate::geo::{self, Bbox, Shape};
 use crate::providers::{AreaInfo, AreaKind, Boundary, FoundPlace, Lookup};
 
@@ -234,8 +234,9 @@ pub async fn area_rows(
         .collect())
 }
 
-/// Visits count each place once, however often the user went back.
-pub async fn lifetime(db: &SqlitePool, user: &str) -> sqlx::Result<Lifetime> {
+/// Visits count each place once, however often the user went back. `today` is the user's
+/// local date, for the streak.
+pub async fn lifetime(db: &SqlitePool, user: &str, today: NaiveDate) -> sqlx::Result<Lifetime> {
     let (visits, verified): (i64, i64) = sqlx::query_as(
         "SELECT COUNT(DISTINCT place_id), COUNT(DISTINCT place_id) FILTER (WHERE verified)
          FROM visits WHERE user_id = ?",
@@ -257,6 +258,18 @@ pub async fn lifetime(db: &SqlitePool, user: &str) -> sqlx::Result<Lifetime> {
     .bind(user)
     .fetch_one(db)
     .await?;
+    let quest_xp: i64 =
+        sqlx::query_scalar("SELECT COALESCE(SUM(xp), 0) FROM quest_rewards WHERE user_id = ?")
+            .bind(user)
+            .fetch_one(db)
+            .await?;
+    let days: Vec<String> =
+        sqlx::query_scalar("SELECT DISTINCT local_date FROM visits WHERE user_id = ?")
+            .bind(user)
+            .fetch_all(db)
+            .await?;
+    let days: Vec<NaiveDate> = days.iter().filter_map(|d| d.parse().ok()).collect();
+    let (streak, best_streak) = game::streaks(&days, today);
     Ok(Lifetime {
         visits: visits as u32,
         verified: verified as u32,
@@ -264,7 +277,55 @@ pub async fn lifetime(db: &SqlitePool, user: &str) -> sqlx::Result<Lifetime> {
         added: added as u32,
         country_bonuses: country_bonuses as u32,
         continent_bonuses: continent_bonuses as u32,
+        quest_xp: quest_xp as u32,
+        streak,
+        best_streak,
     })
+}
+
+/// Every place the user checked in at, any area, per country it serves, with the local days
+/// of the first and latest check-in.
+pub async fn tasted(db: &SqlitePool, user: &str) -> sqlx::Result<Vec<Tasted>> {
+    let rows: Vec<(String, String, String, String)> = sqlx::query_as(
+        "SELECT pc.place_id, pc.country, MIN(v.local_date), MAX(v.local_date) FROM visits v
+         JOIN place_countries pc ON pc.place_id = v.place_id
+         WHERE v.user_id = ? GROUP BY pc.place_id, pc.country",
+    )
+    .bind(user)
+    .fetch_all(db)
+    .await?;
+    Ok(rows
+        .into_iter()
+        .filter_map(|(place_id, country, first, last)| {
+            Some(Tasted {
+                place_id,
+                country,
+                first: first.parse().ok()?,
+                last: last.parse().ok()?,
+            })
+        })
+        .collect())
+}
+
+/// Keeps the XP of finished quests. A quest pays once per month, whatever happens after.
+pub async fn reward_quests(
+    db: &SqlitePool,
+    user: &str,
+    month: &str,
+    quests: &[(&str, u32)],
+) -> sqlx::Result<()> {
+    for (quest, xp) in quests {
+        sqlx::query(
+            "INSERT OR IGNORE INTO quest_rewards (user_id, month, quest, xp) VALUES (?, ?, ?, ?)",
+        )
+        .bind(user)
+        .bind(month)
+        .bind(quest)
+        .bind(xp)
+        .execute(db)
+        .await?;
+    }
+    Ok(())
 }
 
 /// One check-in.

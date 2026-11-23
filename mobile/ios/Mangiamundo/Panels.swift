@@ -98,6 +98,7 @@ extension BadgeKind {
         case .world: return "globe.europe.africa.fill"
         case .everything: return "crown.fill"
         case .pioneer: return "mappin.and.ellipse"
+        case .streak: return "flame.fill"
         case .unknown: return "star.fill"
         }
     }
@@ -105,7 +106,7 @@ extension BadgeKind {
     /// Gold for tasting, diamond for finishing, blue for the rest.
     var face: Medal.Face {
         switch self {
-        case .visits, .countries: return .gold
+        case .visits, .countries, .streak: return .gold
         case .completed, .continent, .world, .everything: return .diamond
         case .pioneer, .unknown: return .blue
         }
@@ -213,8 +214,12 @@ private func daysFromToday(_ day: String) -> Int {
 struct BadgeGrid: View {
     let badges: [Badge]
     var events: [EventProgress] = []
+    var quests: MonthlyQuests?
 
     var body: some View {
+        if let quests {
+            ThisMonth(monthly: quests)
+        }
         let running = events.filter { ($0.status == .upcoming || $0.status == .active) && !$0.earned }
         if !running.isEmpty {
             LimitedTime(events: running)
@@ -249,6 +254,44 @@ struct BadgeGrid: View {
         }
         .accessibilityElement(children: .combine)
         .accessibilityHint(hint)
+    }
+}
+
+struct ThisMonth: View {
+    let monthly: MonthlyQuests
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack {
+                Text("This month").font(Theme.font(.headline, .black))
+                Spacer()
+                Text("Until \(shortDate(monthly.ends))").font(Theme.font(.caption, .bold)).foregroundStyle(Theme.muted)
+            }
+            ForEach(monthly.quests) { quest in
+                HStack(alignment: .top, spacing: 12) {
+                    Medal(symbol: "scope", face: .blue, earned: quest.done, size: 52)
+                    VStack(alignment: .leading, spacing: 4) {
+                        HStack {
+                            Text(quest.title).font(Theme.font(.subheadline, .extraBold))
+                            Spacer()
+                            Text(quest.done ? "Done" : "+\(quest.xp) XP")
+                                .font(Theme.font(.caption, .bold))
+                                .foregroundStyle(Theme.muted)
+                        }
+                        Text(quest.description).font(Theme.font(.footnote)).foregroundStyle(Theme.muted)
+                        HStack(spacing: 8) {
+                            Bar(part: quest.progress, whole: quest.target)
+                            Text("\(quest.progress) / \(quest.target)")
+                                .font(Theme.font(.footnote))
+                                .monospacedDigit()
+                                .foregroundStyle(Theme.muted)
+                        }
+                    }
+                }
+                .accessibilityElement(children: .combine)
+            }
+        }
+        .padding(.vertical, 8)
     }
 }
 
@@ -713,6 +756,7 @@ struct Passport: View {
                 HStack(alignment: .top) {
                     stat("Places visited", "\(discover.placesVisited) of \(discover.places)")
                     stat("Diamond countries", "\(discover.world.completed)")
+                    stat("Month streak", "\(profile.streak ?? 0) · best \(profile.bestStreak ?? 0)")
                 }
 
                 if discover.placesVisited > 0 {

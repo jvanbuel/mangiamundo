@@ -68,6 +68,7 @@ enum class BadgeKind {
     @SerialName("world") WORLD,
     @SerialName("everything") EVERYTHING,
     @SerialName("pioneer") PIONEER,
+    @SerialName("streak") STREAK,
 
     /** A kind from a newer server. Shown with a neutral medal. */
     UNKNOWN,
@@ -95,6 +96,9 @@ data class Profile(
     val countries: Int,
     /** Restaurants the user added that OpenStreetMap now has. */
     val added: Int = 0,
+    /** Months in a row with a check-in; a month without one yet doesn't break it until it's over. */
+    val streak: Int = 0,
+    @SerialName("best_streak") val bestStreak: Int = 0,
 )
 
 @Serializable
@@ -124,6 +128,22 @@ data class EventProgress(
     val status: EventStatus = EventStatus.UNKNOWN,
     @SerialName("places_nearby") val placesNearby: Int,
 )
+
+/** One of this month's quests. */
+@Serializable
+data class Quest(
+    val id: String,
+    val title: String,
+    val description: String,
+    val progress: Int,
+    val target: Int,
+    val done: Boolean,
+    val xp: Int,
+)
+
+/** This month's quests, first to last day (YYYY-MM-DD, inclusive). */
+@Serializable
+data class MonthlyQuests(val month: String, val starts: String, val ends: String, val quests: List<Quest> = emptyList())
 
 @Serializable
 data class NearbyCountry(val code: String, val places: Int)
@@ -156,6 +176,7 @@ data class Discover(
     val badges: List<Badge>,
     val profile: Profile,
     val events: List<EventProgress> = emptyList(),
+    val quests: MonthlyQuests? = null,
 )
 
 @Serializable

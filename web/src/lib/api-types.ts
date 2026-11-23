@@ -328,7 +328,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Countries available in the area, progress, badges, profile and events. */
+        /** Countries available in the area, progress, badges, profile, events and monthly quests. */
         get: operations["discover"];
         put?: never;
         post?: never;
@@ -787,7 +787,7 @@ export interface components {
          * @description What a badge rewards. Clients pick the badge's icon and colour from it.
          * @enum {string}
          */
-        BadgeKind: "visits" | "countries" | "completed" | "continent" | "world" | "everything" | "pioneer";
+        BadgeKind: "visits" | "countries" | "completed" | "continent" | "world" | "everything" | "pioneer" | "streak";
         /**
          * @description What a restaurant the user adds brings to their area, decided when they add it.
          * @enum {string}
@@ -895,6 +895,7 @@ export interface components {
         Discover: components["schemas"]["Summary"] & {
             area: components["schemas"]["AreaView"];
             events: components["schemas"]["EventProgress"][];
+            quests: components["schemas"]["MonthlyQuests"];
         };
         EmailCodeRequest: {
             email: string;
@@ -1046,6 +1047,18 @@ export interface components {
             city: components["schemas"]["AreaInfo"] | null;
             postal_code: components["schemas"]["AreaInfo"] | null;
         };
+        MonthlyQuests: {
+            /** Format: date */
+            ends: string;
+            /** @description e.g. `2026-11`. */
+            month: string;
+            quests: components["schemas"]["Quest"][];
+            /**
+             * Format: date
+             * @description First and last day, inclusive.
+             */
+            starts: string;
+        };
         NearbyCountry: {
             code: string;
             /** Format: int32 */
@@ -1109,6 +1122,8 @@ export interface components {
              */
             added: number;
             /** Format: int32 */
+            best_streak: number;
+            /** Format: int32 */
             countries: number;
             /** Format: int32 */
             level: number;
@@ -1119,6 +1134,12 @@ export interface components {
             level_xp: number;
             /** Format: int32 */
             next_level_xp: number;
+            /**
+             * Format: int32
+             * @description Months in a row with at least one check-in, up to this one. A month without one yet
+             *     doesn't break it until the month is over.
+             */
+            streak: number;
             /** Format: int32 */
             visits: number;
             /** Format: int32 */
@@ -1128,6 +1149,24 @@ export interface components {
             /** @description The VAPID public key browsers subscribe with. */
             public_key: string;
         };
+        Quest: {
+            /** @description The countries that count, for quests about particular ones; empty otherwise. */
+            countries: string[];
+            description: string;
+            done: boolean;
+            /** @description Stable within the month, e.g. `new-country`. */
+            id: string;
+            kind: components["schemas"]["QuestKind"];
+            /** Format: int32 */
+            progress: number;
+            /** Format: int32 */
+            target: number;
+            title: string;
+            /** Format: int32 */
+            xp: number;
+        };
+        /** @enum {string} */
+        QuestKind: "new_country" | "continents" | "celebration" | "level_up" | "check_ins";
         RecoveryCode: {
             /** @description `XXXX-XXXX-XXXX-XXXX-XXXX`. Shown this once: the server keeps only a hash. */
             code: string;

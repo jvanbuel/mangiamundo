@@ -220,6 +220,19 @@ mod tests {
     }
 
     #[test]
+    fn moving_dates_are_listed_a_year_ahead() {
+        // Fails a year before the list runs out, instead of celebrations silently vanishing.
+        let next = chrono::Utc::now().year() + 1;
+        for c in celebrations().iter().filter(|c| c.date.is_none()) {
+            assert!(
+                c.start_in(next).is_some(),
+                "{}: add its {next} date to data/celebrations.json",
+                c.id
+            );
+        }
+    }
+
+    #[test]
     fn years_without_a_listed_date_are_skipped() {
         assert!(upcoming(day("2031-01-01"), 400)
             .iter()

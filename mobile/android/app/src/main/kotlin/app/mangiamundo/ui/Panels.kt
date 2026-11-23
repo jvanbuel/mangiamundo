@@ -41,12 +41,14 @@ import androidx.compose.material.icons.rounded.Notifications
 import androidx.compose.material.icons.rounded.NotificationsActive
 import androidx.compose.material.icons.rounded.EmojiEvents
 import androidx.compose.material.icons.rounded.Flag
+import androidx.compose.material.icons.rounded.LocalFireDepartment
 import androidx.compose.material.icons.rounded.Map
 import androidx.compose.material.icons.rounded.NearMe
 import androidx.compose.material.icons.rounded.Place
 import androidx.compose.material.icons.rounded.Public
 import androidx.compose.material.icons.rounded.Restaurant
 import androidx.compose.material.icons.rounded.Settings
+import androidx.compose.material.icons.rounded.TrackChanges
 import androidx.compose.material.icons.rounded.Verified
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
@@ -110,6 +112,7 @@ import app.mangiamundo.core.Badge
 import app.mangiamundo.core.BadgeKind
 import app.mangiamundo.core.Celebration
 import app.mangiamundo.core.EventProgress
+import app.mangiamundo.core.MonthlyQuests
 import app.mangiamundo.core.EventStatus
 import app.mangiamundo.core.Country
 import app.mangiamundo.core.CountryProgress
@@ -520,6 +523,10 @@ fun Passport(discover: Discover, sharing: Boolean = false, onShare: (() -> Unit)
                 Column(Modifier.weight(1f)) {
                     Text("Diamond countries", style = MaterialTheme.typography.bodySmall, color = colors.muted)
                     Text("${discover.world.completed}", style = MaterialTheme.typography.titleSmall, color = colors.text)
+                }
+                Column(Modifier.weight(1f)) {
+                    Text("Month streak", style = MaterialTheme.typography.bodySmall, color = colors.muted)
+                    Text("${profile.streak} · best ${profile.bestStreak}", style = MaterialTheme.typography.titleSmall, color = colors.text)
                 }
             }
             if (onShare != null && discover.placesVisited > 0) {
@@ -945,6 +952,7 @@ private fun BadgeKind.icon(): ImageVector = when (this) {
     BadgeKind.CONTINENT -> Icons.Rounded.Map
     BadgeKind.WORLD -> Icons.Rounded.Public
     BadgeKind.PIONEER -> Icons.Rounded.AddLocationAlt
+    BadgeKind.STREAK -> Icons.Rounded.LocalFireDepartment
     BadgeKind.EVERYTHING, BadgeKind.UNKNOWN -> Icons.Rounded.EmojiEvents
 }
 
@@ -952,7 +960,7 @@ private fun BadgeKind.icon(): ImageVector = when (this) {
 enum class MedalFace { GOLD, DIAMOND, BLUE, EVENT }
 
 private fun BadgeKind.face(): MedalFace = when (this) {
-    BadgeKind.VISITS, BadgeKind.COUNTRIES -> MedalFace.GOLD
+    BadgeKind.VISITS, BadgeKind.COUNTRIES, BadgeKind.STREAK -> MedalFace.GOLD
     BadgeKind.COMPLETED, BadgeKind.CONTINENT, BadgeKind.WORLD, BadgeKind.EVERYTHING -> MedalFace.DIAMOND
     BadgeKind.PIONEER, BadgeKind.UNKNOWN -> MedalFace.BLUE
 }
@@ -1127,12 +1135,45 @@ private fun LimitedTime(events: List<EventProgress>, today: java.time.LocalDate)
     }
 }
 
+@Composable
+private fun ThisMonth(monthly: MonthlyQuests) {
+    val colors = LocalAppColors.current
+    Column(Modifier.padding(top = 12.dp, bottom = 8.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text("This month", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Black, color = colors.text, modifier = Modifier.weight(1f))
+            Text("Until ${parseDay(monthly.ends).format(shortDate)}", style = MaterialTheme.typography.labelMedium, color = colors.muted)
+        }
+        for (q in monthly.quests) {
+            Row(verticalAlignment = Alignment.Top) {
+                MedalFace(Icons.Rounded.TrackChanges, MedalFace.BLUE, q.done, 52.dp)
+                Column(Modifier.padding(start = 12.dp).weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(q.title, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.ExtraBold, color = colors.text, modifier = Modifier.weight(1f))
+                        Text(if (q.done) "Done" else "+${q.xp} XP", style = MaterialTheme.typography.labelMedium, color = colors.muted)
+                    }
+                    Text(q.description, style = MaterialTheme.typography.bodySmall, color = colors.muted)
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Bar(fraction(q.progress, q.target), Modifier.weight(1f))
+                        Text("  ${q.progress} / ${q.target}", style = MaterialTheme.typography.bodySmall, color = colors.muted)
+                    }
+                }
+            }
+        }
+    }
+}
+
 private class Tile(val key: String, val title: String, val detail: String, val medal: @Composable () -> Unit)
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-fun BadgeGrid(badges: List<Badge>, events: List<EventProgress> = emptyList(), today: java.time.LocalDate = java.time.LocalDate.now()) {
+fun BadgeGrid(
+    badges: List<Badge>,
+    events: List<EventProgress> = emptyList(),
+    quests: MonthlyQuests? = null,
+    today: java.time.LocalDate = java.time.LocalDate.now(),
+) {
     val colors = LocalAppColors.current
+    if (quests != null) ThisMonth(quests)
     val running = events.filter { (it.status == EventStatus.UPCOMING || it.status == EventStatus.ACTIVE) && !it.earned }
     if (running.isNotEmpty()) LimitedTime(running, today)
     val tiles = events.filter { it.earned }.map { e ->

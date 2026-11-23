@@ -194,7 +194,7 @@ struct ContentView: View {
                         CountryList(discover: discover)
                         addLink
                     } else {
-                        BadgeGrid(badges: discover.badges, events: discover.events)
+                        BadgeGrid(badges: discover.badges, events: discover.events, quests: discover.quests)
                     }
                 }
             }
