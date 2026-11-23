@@ -192,6 +192,7 @@ struct ContentView: View {
                     .pickerStyle(.segmented)
                     if model.tab == 0 {
                         CountryList(discover: discover)
+                        UnknownFood()
                         addLink
                     } else {
                         BadgeGrid(badges: discover.badges, events: discover.events, quests: discover.quests)

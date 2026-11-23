@@ -391,6 +391,16 @@ struct Reward: Decodable, Equatable {
     }
 }
 
+/// A named restaurant OpenStreetMap gives no cuisine, so it isn't on the map yet.
+struct UnknownPlace: Decodable, Identifiable, Equatable {
+    let id: String
+    let name: String
+    let lat: Double
+    let lng: Double
+    let address: String?
+    let distanceM: Int
+}
+
 /// `POST /api/places` sends the place with its reward next to its fields.
 struct AddedPlace: Decodable {
     let place: Place
