@@ -135,8 +135,10 @@
 					</div>
 				</div>
 				<Account />
-				<p><a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">Map data © OpenStreetMap contributors</a></p>
-				<p class="build">Web {version}{app.server ? ` · Server ${app.server}` : ''} · <a href="/privacy/">Privacy</a></p>
+				<p class="build">
+					<a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">Map data © OpenStreetMap contributors</a> ·
+					<a href="/privacy/">Privacy</a> · Web {version}{app.server ? ` · Server ${app.server}` : ''}
+				</p>
 			</div>
 		{/if}
 
@@ -352,8 +354,15 @@
 
 	.settings p.build {
 		margin: 0;
+		padding-top: 14px;
+		border-top: 1px solid var(--line);
 		font-size: var(--text-xs);
+		line-height: 1.6;
 		color: var(--muted);
+	}
+
+	.settings p.build a {
+		color: inherit;
 	}
 
 	.pad {

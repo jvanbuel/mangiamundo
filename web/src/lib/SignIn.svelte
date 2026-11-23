@@ -61,7 +61,7 @@
 				client_id: clientId,
 				callback: (r: { credential: string }) => act(() => api.signInWith('google', r.credential), 'Signed in with Google')
 			});
-			google.accounts.id.renderButton(slot, { theme: 'outline', size: 'large', text: 'continue_with', shape: 'pill' });
+			google.accounts.id.renderButton(slot, { theme: 'outline', size: 'large', text: 'continue_with', shape: 'pill', locale: 'en', width: Math.min(400, slot.clientWidth) });
 		});
 	});
 
@@ -95,18 +95,27 @@
 		});
 </script>
 
-<h3>Sign in</h3>
+<h3>Account</h3>
 {#if signedIn.length}
-	<p class="muted small">
+	<p class="note">
 		Signed in with {signedIn.map((i) => (i.email ? `${names[i.provider] ?? i.provider} (${i.email})` : names[i.provider] ?? i.provider)).join(', ')}.
+		Your progress follows you to every device you sign in on.
 	</p>
-	<button class="action" disabled={busy} onclick={signOut}>Sign out of this device</button>
+	<button class="secondary" disabled={busy} onclick={signOut}>Sign out of this device</button>
 {:else}
-	<p class="muted small">Optional. Sign in to keep your progress on all your devices; without it, it stays on this one.</p>
-	<div class="providers">
-		{#if providers?.google}<div bind:this={googleButton}></div>{/if}
-		{#if providers?.apple}<button class="apple" disabled={busy} onclick={apple}> Sign in with Apple</button>{/if}
-	</div>
+	<p class="note">Optional. Sign in to keep your progress on all your devices; without it, it stays on this one.</p>
+	{#if providers?.google || providers?.apple}
+		<div class="providers">
+			{#if providers?.google}<div class="google" bind:this={googleButton}></div>{/if}
+			{#if providers?.apple}
+				<button class="apple" disabled={busy} onclick={apple}>
+					<svg viewBox="0 0 17 20" width="14" height="16" aria-hidden="true"><path fill="currentColor" d="M14.2 10.6c0-2.6 2.1-3.8 2.2-3.9-1.2-1.8-3.1-2-3.7-2-1.6-.2-3.1.9-3.9.9-.8 0-2-.9-3.3-.9-1.7 0-3.3 1-4.2 2.5-1.8 3.1-.5 7.7 1.3 10.2.9 1.2 1.9 2.6 3.2 2.6 1.3-.1 1.8-.8 3.3-.8 1.6 0 2 .8 3.3.8 1.4 0 2.3-1.3 3.1-2.5 1-1.4 1.4-2.8 1.4-2.9 0 0-2.7-1-2.7-4zM11.7 3c.7-.8 1.2-2 1-3.1-1 0-2.2.7-2.9 1.5-.6.7-1.2 1.9-1 3 1.1.1 2.2-.6 2.9-1.4z" /></svg>
+					Sign in with Apple
+				</button>
+			{/if}
+		</div>
+		<p class="or note">or</p>
+	{/if}
 	{#if sentTo}
 		<form
 			onsubmit={(e) => {
@@ -116,7 +125,7 @@
 		>
 			<label for="sign-in-code">Enter the code we sent to {sentTo}</label>
 			<div class="row">
-				<input id="sign-in-code" bind:value={code} inputmode="numeric" autocomplete="one-time-code" placeholder="123456" maxlength="7" />
+				<input id="sign-in-code" class="code-input" bind:value={code} inputmode="numeric" autocomplete="one-time-code" placeholder="123456" maxlength="7" />
 				<button class="action" disabled={busy || !code.trim()}>Sign in</button>
 			</div>
 			<button type="button" class="link" onclick={() => (sentTo = null)}>Use another address</button>
@@ -128,7 +137,7 @@
 				if (email.trim()) void sendCode();
 			}}
 		>
-			<label for="sign-in-email">Or get a code by email</label>
+			<label for="sign-in-email">Get a sign-in code by email</label>
 			<div class="row">
 				<input id="sign-in-email" type="email" bind:value={email} autocomplete="email" placeholder="you@example.com" />
 				<button class="action" disabled={busy || !email.trim()}>Send code</button>
@@ -138,29 +147,54 @@
 {/if}
 
 <style>
+	/* Both providers' buttons full width and the same height, Google's own and Apple's. */
 	.providers {
-		display: flex;
-		flex-wrap: wrap;
+		display: grid;
 		gap: 8px;
-		margin: 8px 0;
+		width: 100%;
 	}
 
-	.providers:empty {
-		display: none;
+	.google {
+		min-height: 40px;
 	}
 
 	.apple {
-		padding: 9px 16px;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		gap: 8px;
+		height: 40px;
 		border-radius: 999px;
 		background: #000;
 		color: #fff;
-		font-weight: 700;
+		font-weight: 600;
 		font-size: var(--text-sm);
 	}
 
+	.apple:disabled {
+		opacity: 0.6;
+	}
+
+	/* A thin line either side of "or". */
+	.or {
+		display: flex;
+		align-items: center;
+		gap: 10px;
+		width: 100%;
+	}
+
+	.or::before,
+	.or::after {
+		content: '';
+		flex: 1;
+		border-top: 1px solid var(--line);
+	}
+
 	.link {
+		justify-self: start;
 		color: var(--accent-text);
 		font-size: var(--text-xs);
-		padding: 4px 0;
+		font-weight: 700;
+		padding: 0;
 	}
 </style>

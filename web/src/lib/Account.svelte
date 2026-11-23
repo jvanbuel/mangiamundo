@@ -125,161 +125,168 @@
 </script>
 
 <section class="account">
-	<SignIn {account} onchange={load} />
+	<div class="group"><SignIn {account} onchange={load} /></div>
 
-	<h3>Your progress</h3>
-	{#if account?.identities.length}
-		<p class="muted">A recovery code also gets it back, without signing in.</p>
-	{:else}
-		<p class="muted">It lives on this device. Keep a recovery code to get it back after clearing your browser or on a new phone.</p>
-	{/if}
-
-	{#if recoveryCode}
-		<div class="code" aria-live="polite">
-			<code>{recoveryCode}</code>
-			<button onclick={() => copy(recoveryCode!)}>Copy</button>
-		</div>
-		<p class="muted small">Shown only now. Anyone with this code can use your account.</p>
-	{:else}
-		<button class="action" disabled={busy || !account} onclick={makeRecoveryCode}>
-			{account?.recovery_code_created_at ? 'Make a new recovery code' : 'Make a recovery code'}
-		</button>
-		{#if account?.recovery_code_created_at}
-			<p class="muted small">You made one {ago(account.recovery_code_created_at)}.</p>
+	<div class="group">
+		<h3>{account?.identities.length ? 'Recovery code' : 'Without signing in'}</h3>
+		<p class="note">
+			{account?.identities.length
+				? 'A recovery code also gets your progress back, without signing in.'
+				: 'Your progress lives on this device. A recovery code gets it back after clearing your browser or on a new phone.'}
+		</p>
+		{#if recoveryCode}
+			<div class="code" aria-live="polite">
+				<code>{recoveryCode}</code>
+				<button class="secondary" onclick={() => copy(recoveryCode!)}>Copy</button>
+			</div>
+			<p class="note">Shown only now. Anyone with this code can use your account.</p>
+		{:else}
+			<button class="secondary" disabled={busy || !account} onclick={makeRecoveryCode}>
+				{account?.recovery_code_created_at ? 'Make a new recovery code' : 'Make a recovery code'}
+			</button>
+			{#if account?.recovery_code_created_at}
+				<p class="note">You made one {ago(account.recovery_code_created_at)}.</p>
+			{/if}
 		{/if}
-	{/if}
+	</div>
 
-	<h3>Use it on another device</h3>
-	{#if link}
-		<div class="code" aria-live="polite">
-			<code>{link.code}</code>
-			<button onclick={() => copy(link!.code)}>Copy</button>
-		</div>
-		<p class="muted small">Enter it there under Settings within {linkLeft} {linkLeft === 1 ? 'minute' : 'minutes'}. It works once.</p>
-	{:else}
-		<button class="action" disabled={busy} onclick={makeLinkCode}>Show a link code</button>
-	{/if}
+	<div class="group">
+		<h3>Use it on another device</h3>
+		{#if link}
+			<div class="code" aria-live="polite">
+				<code>{link.code}</code>
+				<button class="secondary" onclick={() => copy(link!.code)}>Copy</button>
+			</div>
+			<p class="note">Enter it there under Settings within {linkLeft} {linkLeft === 1 ? 'minute' : 'minutes'}. It works once.</p>
+		{:else}
+			<p class="note">Show a one-time code here and enter it on the other device.</p>
+			<button class="secondary" disabled={busy} onclick={makeLinkCode}>Show a link code</button>
+		{/if}
 
-	<form
-		onsubmit={(e) => {
-			e.preventDefault();
-			if (entered.trim()) void restore();
-		}}
-	>
-		<label for="restore-code">Have a recovery or link code?</label>
-		<div class="row">
-			<input id="restore-code" bind:value={entered} placeholder="XXXX-XXXX" autocomplete="off" autocapitalize="characters" spellcheck="false" />
-			<button class="action" disabled={busy || !entered.trim()}>Use</button>
-		</div>
-		<p class="muted small">What you did on this device so far is added to that account.</p>
-	</form>
+		<form
+			onsubmit={(e) => {
+				e.preventDefault();
+				if (entered.trim()) void restore();
+			}}
+		>
+			<label for="restore-code">Have a recovery or link code?</label>
+			<div class="row">
+				<input id="restore-code" class="code-input" bind:value={entered} placeholder="XXXX-XXXX" autocomplete="off" autocapitalize="characters" spellcheck="false" />
+				<button class="action" disabled={busy || !entered.trim()}>Use</button>
+			</div>
+			<p class="note">What you did on this device so far is added to that account.</p>
+		</form>
+	</div>
 
 	{#if error}
-		<p class="muted small">{error}</p>
+		<div class="group"><p class="note">{error}</p></div>
 	{:else if account && account.devices.length > 1}
-		<h3>Signed-in devices</h3>
-		<ul>
-			{#each account.devices as device (device.id)}
-				<li>
-					<span>
-						<strong>{device.name ?? 'Unnamed device'}</strong>
-						<span class="muted small">{device.current ? 'This device' : `Used ${ago(device.last_used_at)}`}</span>
-					</span>
-					{#if !device.current}
-						<button disabled={busy} onclick={() => signOut(device.id)}>Sign out</button>
-					{/if}
-				</li>
-			{/each}
-		</ul>
+		<div class="group">
+			<h3>Signed-in devices</h3>
+			<ul>
+				{#each account.devices as device (device.id)}
+					<li>
+						<span>
+							<strong>{device.name ?? 'Unnamed device'}</strong>
+							<span class="note">{device.current ? 'This device' : `Used ${ago(device.last_used_at)}`}</span>
+						</span>
+						{#if !device.current}
+							<button class="secondary" disabled={busy} onclick={() => signOut(device.id)}>Sign out</button>
+						{/if}
+					</li>
+				{/each}
+			</ul>
+		</div>
 	{/if}
 
 	{#if account?.public_profile}
-		<h3>Public link</h3>
-		<p class="muted small">
-			Anyone with <a href={account.public_profile} target="_blank" rel="noopener">your link</a> can see your map, level and badges.
-			Turning it off breaks the link; sharing again makes a new one.
-		</p>
-		<button class="action" disabled={busy} onclick={unshare}>Turn off the public link</button>
+		<div class="group">
+			<h3>Public link</h3>
+			<p class="note">
+				Anyone with <a href={account.public_profile} target="_blank" rel="noopener">your link</a> can see your map, level and badges.
+				Turning it off breaks the link; sharing again makes a new one.
+			</p>
+			<button class="secondary" disabled={busy} onclick={unshare}>Turn off the public link</button>
+		</div>
 	{/if}
 
-	<button class="danger" disabled={busy} onclick={deleteEverything}>Delete my account</button>
+	<div class="group">
+		<button class="danger" disabled={busy} onclick={deleteEverything}>Delete my account</button>
+	</div>
 </section>
 
 <style>
+	/* One look for every section of the settings, SignIn's included. */
 	.account {
-		margin: 4px 0 14px;
-		padding-top: 12px;
+		margin-top: 4px;
+	}
+
+	.account :global(.group) {
+		display: grid;
+		gap: 8px;
+		justify-items: start;
+		padding: 14px 0;
 		border-top: 1px solid var(--line);
 	}
 
+	.account :global(.group > *) {
+		max-width: 100%;
+	}
+
 	.account :global(h3) {
+		margin: 0;
 		font-size: var(--text-sm);
-		margin: 14px 0 6px;
+		font-weight: 800;
 	}
 
-	.account :global(h3:first-child) {
-		margin-top: 0;
-	}
-
-	.account :global(p) {
-		margin: 0 0 8px;
-	}
-
-	.account :global(.small) {
+	.account :global(.note) {
+		margin: 0;
 		font-size: var(--text-xs);
+		line-height: 1.45;
+		color: var(--muted);
 	}
 
-	.account :global(.action) {
+	.account :global(.action),
+	.account :global(.secondary) {
 		padding: 8px 14px;
 		border-radius: 10px;
+		font-weight: 700;
+		font-size: var(--text-sm);
+		white-space: nowrap;
+	}
+
+	/* The one main action of a form. */
+	.account :global(.action) {
 		background: var(--accent);
 		color: var(--on-accent);
-		font-weight: 700;
-		font-size: var(--text-sm);
 	}
 
-	.account :global(.action:disabled) {
-		opacity: 0.6;
+	.account :global(.secondary) {
+		background: var(--panel);
+		color: var(--text);
+		border: 1px solid var(--line);
 	}
 
-	.code {
-		display: flex;
-		align-items: center;
-		gap: 10px;
-		margin-bottom: 6px;
-	}
-
-	code {
-		font-size: var(--text-lg);
-		font-weight: 700;
-		letter-spacing: 0.06em;
-		user-select: all;
-		overflow-wrap: anywhere;
-	}
-
-	.code button,
-	li button {
-		color: var(--accent);
-		font-weight: 700;
-		font-size: var(--text-sm);
-		padding: 6px;
+	.account :global(.action:disabled),
+	.account :global(.secondary:disabled) {
+		opacity: 0.5;
 	}
 
 	.account :global(form) {
-		margin-top: 14px;
+		display: grid;
+		gap: 6px;
+		width: 100%;
 	}
 
 	.account :global(label) {
-		display: block;
+		font-size: var(--text-xs);
 		font-weight: 700;
-		font-size: var(--text-sm);
-		margin-bottom: 6px;
+		color: var(--muted);
 	}
 
 	.account :global(.row) {
 		display: flex;
 		gap: 8px;
-		margin-bottom: 6px;
 	}
 
 	.account :global(input) {
@@ -291,13 +298,34 @@
 		background: var(--panel);
 		color: var(--text);
 		font: inherit;
+		font-size: var(--text-sm);
+	}
+
+	/* Codes are typed in capitals; addresses aren't. */
+	.account :global(.code-input) {
 		text-transform: uppercase;
+		letter-spacing: 0.04em;
+	}
+
+	.code {
+		display: flex;
+		align-items: center;
+		gap: 10px;
+	}
+
+	code {
+		font-size: var(--text-lg);
+		font-weight: 700;
+		letter-spacing: 0.06em;
+		user-select: all;
+		overflow-wrap: anywhere;
 	}
 
 	ul {
 		list-style: none;
 		margin: 0;
 		padding: 0;
+		width: 100%;
 	}
 
 	li {
@@ -314,9 +342,9 @@
 	}
 
 	.danger {
-		margin-top: 14px;
-		color: var(--muted);
+		color: var(--danger);
 		font-size: var(--text-sm);
-		text-decoration: underline;
+		font-weight: 700;
+		padding: 0;
 	}
 </style>
