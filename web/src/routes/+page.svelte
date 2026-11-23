@@ -126,7 +126,7 @@
 					<button
 						class="who"
 						class:signed={signedIn}
-						onclick={() => (settingsOpen = true)}
+						onclick={() => { settingsOpen = true; pickerOpen = false; }}
 						title={signedIn ? `Signed in as ${signedIn.label}` : 'Sign in to keep your progress on all your devices'}
 						aria-label={signedIn ? `Signed in as ${signedIn.label}. Account settings` : 'Sign in'}
 					>
@@ -141,13 +141,13 @@
 						{/if}
 					</button>
 				{/if}
-				<button class="gear" aria-label="Settings" aria-expanded={settingsOpen} onclick={() => (settingsOpen = !settingsOpen)}>
+				<button class="gear" aria-label="Settings" aria-expanded={settingsOpen} onclick={() => { settingsOpen = !settingsOpen; pickerOpen = false; }}>
 					<Settings size={20} aria-hidden="true" />
 				</button>
 			</h1>
 			{#if !app.location}<p class="tagline">Eat the world, start with your city</p>{/if}
 			{#if app.location}
-				<button class="where" aria-expanded={pickerOpen} onclick={() => (pickerOpen = !pickerOpen)}>
+				<button class="where" aria-expanded={pickerOpen} onclick={() => { pickerOpen = !pickerOpen; settingsOpen = false; }}>
 					{#if app.location.source === 'gps'}<Navigation size={15} strokeWidth={2.5} aria-hidden="true" />{:else}<MapPin size={15} strokeWidth={2.5} aria-hidden="true" />{/if}
 					<span class="name">{place}</span>
 					{#if app.location.area.kind === 'postal_code'}<span class="muted">· postal code</span>{/if}
