@@ -12,6 +12,11 @@ primary_region = 'fra'
 [env]
   # Closed places are reported to OpenStreetMap as notes. Unset locally.
   OSM_NOTES_URL = 'https://api.openstreetmap.org/api/0.6/notes'
+  # Google sign-in: public OAuth client ids. Android signs in with the web one.
+  GOOGLE_WEB_CLIENT_ID = '1020416480252-1hdk15p45gq4le5an455c87ouup4fekm.apps.googleusercontent.com'
+  GOOGLE_IOS_CLIENT_ID = '1020416480252-8pd1vmo6081rvfg1emdgltfh7imsipct.apps.googleusercontent.com'
+  # Sign in with Apple on the web: the Services ID (the iOS app uses the bundle id).
+  APPLE_SERVICES_ID = 'app.mangiamundo.web'
 
 [[mounts]]
   source = 'data'

@@ -9,10 +9,20 @@ settings:
     SWIFT_VERSION: "5.10"
     MARKETING_VERSION: "0.1.0"
     CURRENT_PROJECT_VERSION: "1"
+packages:
+  # Sign in with Google; hands back an ID token for the server to check.
+  GoogleSignIn:
+    url: https://github.com/google/GoogleSignIn-iOS
+    from: 10.1.0
 targets:
   Mangiamundo:
     type: application
     platform: iOS
+    dependencies:
+      - package: GoogleSignIn
+        product: GoogleSignIn
+      - package: GoogleSignIn
+        product: GoogleSignInSwift
     sources:
       - Mangiamundo
       # The country outlines are shared with the Android app.
@@ -48,6 +58,12 @@ targets:
         CFBundleVersion: $(CURRENT_PROJECT_VERSION)
         # Replaced by the "Stamp git commit" build phase.
         GitCommit: unknown
+        # Google sign-in: the iOS OAuth client, and its reversed id as the URL scheme the
+        # sign-in sheet returns to.
+        GIDClientID: 1020416480252-8pd1vmo6081rvfg1emdgltfh7imsipct.apps.googleusercontent.com
+        CFBundleURLTypes:
+          - CFBundleURLSchemes:
+              - com.googleusercontent.apps.1020416480252-8pd1vmo6081rvfg1emdgltfh7imsipct
         # Whole globe on the theme background; StartupLoaderView then takes the bites.
         UILaunchScreen:
           UIImageName: LaunchGlobe

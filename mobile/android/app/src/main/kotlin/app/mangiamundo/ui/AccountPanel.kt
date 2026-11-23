@@ -25,8 +25,10 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.ClipEntry
 import androidx.compose.ui.platform.LocalClipboard
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
@@ -48,6 +50,7 @@ fun AccountSection(vm: AppViewModel) {
     val small = MaterialTheme.typography.bodySmall
     val clipboard = LocalClipboard.current
     val scope = rememberCoroutineScope()
+    val context = LocalContext.current
     val copy = { text: String ->
         scope.launch { clipboard.setClipEntry(ClipEntry(android.content.ClipData.newPlainText("Mangiamundo code", text))) }
         Unit
@@ -100,6 +103,13 @@ fun AccountSection(vm: AppViewModel) {
                 "Optional. Sign in to keep your progress on all your devices; without it, it stays on this one.",
                 color = colors.muted,
                 style = small,
+            )
+            ChunkyButton(
+                "Continue with Google",
+                onClick = { vm.signInWithGoogle { googleIdToken(context) } },
+                enabled = !vm.accountBusy,
+                face = Color.White,
+                content = Color(0xFF1F1F1F),
             )
             val sentTo = vm.codeSentTo
             if (sentTo != null) {

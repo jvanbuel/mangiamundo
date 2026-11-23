@@ -202,6 +202,11 @@ actor APIClient {
         try await switchAccount("/api/auth/apple", ["id_token": idToken])
     }
 
+    /// Signs in with an ID token from Google's sign-in.
+    func signInWithGoogle(idToken: String) async throws {
+        try await switchAccount("/api/auth/google", ["id_token": idToken])
+    }
+
     /// Signs this device out of its account; it starts afresh with a new, empty one.
     func signOut() async throws {
         if let me = try await account().devices.first(where: \.current) {

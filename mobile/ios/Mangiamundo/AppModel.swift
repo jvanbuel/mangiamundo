@@ -1,4 +1,5 @@
 import Foundation
+import GoogleSignIn
 import Observation
 import UIKit
 
@@ -886,6 +887,27 @@ final class AppModel {
     func signInWithApple(idToken: String) {
         accountAction {
             try await self.api.signInWithApple(idToken: idToken)
+            await self.signedIn()
+        }
+    }
+
+    /// Opens Google's sign-in sheet and signs in with the ID token it hands back.
+    func signInWithGoogle() {
+        accountAction {
+            let window = UIApplication.shared.connectedScenes.compactMap { ($0 as? UIWindowScene)?.keyWindow }.first
+            guard var top = window?.rootViewController else { return }
+            while let presented = top.presentedViewController { top = presented }
+            let result: GIDSignInResult
+            do {
+                result = try await GIDSignIn.sharedInstance.signIn(withPresenting: top)
+            } catch let error as GIDSignInError where error.code == .canceled {
+                return
+            }
+            guard let token = result.user.idToken?.tokenString else {
+                self.toast("Google did not hand back a sign-in token. Try again.")
+                return
+            }
+            try await self.api.signInWithGoogle(idToken: token)
             await self.signedIn()
         }
     }
