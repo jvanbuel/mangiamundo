@@ -43,16 +43,26 @@
 
 	onMount(async () => {
 		providers = await api.authProviders().catch(() => null);
-		if (providers?.google && googleButton) {
-			// Google's own button, as its terms ask; it hands back an ID token.
-			await load('https://accounts.google.com/gsi/client');
+	});
+
+	/** Google's script, loaded once, the first time its button is shown. */
+	let googleScript: Promise<void> | null = null;
+
+	// Google's own button, as its terms ask; it hands back an ID token. Drawn whenever its
+	// slot appears: once the providers are known, and again after signing out.
+	$effect(() => {
+		const slot = googleButton;
+		const clientId = providers?.google;
+		if (!slot || !clientId) return;
+		googleScript ??= load('https://accounts.google.com/gsi/client');
+		void googleScript.then(() => {
 			const google = (window as any).google;
 			google.accounts.id.initialize({
-				client_id: providers.google,
+				client_id: clientId,
 				callback: (r: { credential: string }) => act(() => api.signInWith('google', r.credential), 'Signed in with Google')
 			});
-			google.accounts.id.renderButton(googleButton, { theme: 'outline', size: 'large', text: 'continue_with', shape: 'pill' });
-		}
+			google.accounts.id.renderButton(slot, { theme: 'outline', size: 'large', text: 'continue_with', shape: 'pill' });
+		});
 	});
 
 	const apple = () =>
