@@ -24,6 +24,8 @@ android {
         versionName = "0.1.0"
         buildConfigField("String", "GIT_COMMIT", "\"${gitCommit()}\"")
         buildConfigField("String", "API_BASE", "\"${providers.gradleProperty("mangiamundo.apiBase").get()}\"")
+        // Google sign-in asks for an ID token for the web OAuth client, which the server accepts.
+        buildConfigField("String", "GOOGLE_WEB_CLIENT_ID", "\"1020416480252-1hdk15p45gq4le5an455c87ouup4fekm.apps.googleusercontent.com\"")
     }
 
     buildFeatures {
@@ -68,5 +70,9 @@ dependencies {
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.10.2")
     // Street map for placing a new restaurant; open source, no API key.
     implementation("org.maplibre.gl:android-sdk:11.11.0")
+    // Sign in with Google through Android's Credential Manager.
+    implementation("androidx.credentials:credentials:1.5.0")
+    implementation("androidx.credentials:credentials-play-services-auth:1.5.0")
+    implementation("com.google.android.libraries.identity.googleid:googleid:1.1.1")
     testImplementation("junit:junit:4.13.2")
 }

@@ -1,4 +1,5 @@
 import AuthenticationServices
+import GoogleSignInSwift
 import SwiftUI
 import UIKit
 
@@ -156,6 +157,11 @@ struct AccountSection: View {
             .signInWithAppleButtonStyle(colorScheme == .dark ? .white : .black)
             .frame(height: 44)
             .disabled(model.accountBusy)
+            // Google's own button, as its branding guidelines ask.
+            GoogleSignInButton(scheme: colorScheme == .dark ? .dark : .light, style: .wide, state: model.accountBusy ? .disabled : .normal) {
+                model.signInWithGoogle()
+            }
+            .frame(height: 44)
 
             if let sentTo = model.codeSentTo {
                 note("Enter the code we sent to \(sentTo).")

@@ -858,6 +858,20 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    fun signInWithGoogle(idToken: String) = accountAction {
+        api.signInWithGoogle(idToken)
+        codeSentTo = null
+        recoveryCode = null
+        linkCode = null
+        messageChannel.trySend("Signed in. Your progress now follows you to every device you sign in on.")
+        accountChanged()
+    }
+
+    /** For failures that happen before the server is asked, such as in Google's sign-in sheet. */
+    fun announce(text: String) {
+        messageChannel.trySend(text)
+    }
+
     fun signOut() = accountAction {
         api.signOut()
         recoveryCode = null

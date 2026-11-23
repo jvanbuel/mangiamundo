@@ -165,6 +165,9 @@ class ApiClient(private val baseUrl: String, private val tokens: TokenStore, pri
     suspend fun signIn(email: String, code: String) =
         switchAccount("/api/auth/email", mapOf("email" to email, "code" to code))
 
+    /** Signs in with an ID token from Google's sign-in. */
+    suspend fun signInWithGoogle(idToken: String) = switchAccount("/api/auth/google", mapOf("id_token" to idToken))
+
     /** Signs this device out of its account; it starts afresh with a new, empty one. */
     suspend fun signOut() {
         account().devices.firstOrNull { it.current }?.let { removeDevice(it.id) }
