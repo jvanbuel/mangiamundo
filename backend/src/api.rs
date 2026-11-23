@@ -820,8 +820,8 @@ async fn discover(
     Query(query): Query<AreaQuery>,
 ) -> ApiResult<Discover> {
     let area = areas::resolve(&state, &query.area).await?;
-    let zone = zone(query.tz.as_deref());
-    let progress = progress::load(&state, user.as_deref(), area.id(), zone).await?;
+    let today = state.today(zone(query.tz.as_deref()));
+    let progress = progress::load(&state, user.as_deref(), area.id(), today).await?;
     Ok(Json(Discover {
         area: (&area).into(),
         progress,
@@ -1614,30 +1614,31 @@ async fn add_visit(
     let (_, plat, plng) = store::place_summary(&state.db, &place_id, &user)
         .await?
         .ok_or(ApiError::NotFound("place"))?;
-    let zone = zone(query.tz.as_deref());
-    let today = state.today(zone);
     // Before anything is written, so a wrong area leaves no visit behind.
-    let before = match &query.area {
-        Some(id) => {
-            let area = areas::resolve(&state, id).await?;
-            let progress = progress::load(&state, Some(&user), area.id(), zone).await?;
-            Some((area, progress))
-        }
+    let area = match &query.area {
+        Some(id) => Some(areas::resolve(&state, id).await?),
+        None => None,
+    };
+    // One moment for the whole check-in, read after the area: fetching it can take a while,
+    // and the visit and the progress around it must agree on the day.
+    let now = state.now();
+    let today = calendar::local_date(now, zone(query.tz.as_deref()));
+    let before = match &area {
+        Some(area) => Some(progress::load(&state, Some(&user), area.id(), today).await?),
         None => None,
     };
     let check_in = body.map(|JsonBody(b)| b).unwrap_or_default();
     let verified = check_in
         .position
         .is_some_and(|p| geo::distance_m(p.lat, p.lng, plat, plng) <= VERIFY_DISTANCE_M);
-    let visit =
-        store::add_visit(&state.db, &user, &place_id, verified, state.now(), today).await?;
-    let (progress, unlocked) = match before {
-        Some((area, before)) => {
-            let after = progress::load(&state, Some(&user), area.id(), zone).await?;
+    let visit = store::add_visit(&state.db, &user, &place_id, verified, now, today).await?;
+    let (progress, unlocked) = match (&area, before) {
+        (Some(area), Some(before)) => {
+            let after = progress::load(&state, Some(&user), area.id(), today).await?;
             let unlocked = progress::unlocked(&before, &after, &area.boundary.info.name);
             (Some(after), unlocked)
         }
-        None => (None, Vec::new()),
+        _ => (None, Vec::new()),
     };
     // After the progress, which books the XP of quests this check-in finished.
     let profile = game::profile(store::lifetime(&state.db, &user, today).await?);

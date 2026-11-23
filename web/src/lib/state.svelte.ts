@@ -616,7 +616,8 @@ export async function toggleVisit(place: Place) {
 			setVisits(place.id, (visits) => [result.visit, ...visits.filter((v) => v.id !== result.visit.id)]);
 			// Details still loading may have read the visits from before this change.
 			if (app.placeId === place.id && !app.detail) void loadPlace(place.id);
-			if (result.progress) app.discover = { ...result.progress, area: before.area };
+			// Not when the user moved to another area meanwhile: this progress is the old one's.
+			if (result.progress && app.location?.area.id === location.area.id) app.discover = { ...result.progress, area: before.area };
 			celebrate(result.unlocked);
 		} else {
 			const removed = place.visits[0].id;
@@ -631,7 +632,8 @@ export async function toggleVisit(place: Place) {
 				const card = app.places.find((p) => p.id === place.id);
 				if (card) card.visits = app.detail.visits.slice(0, 1);
 			}
-			app.discover = await api.discover(location.area.id);
+			const after = await api.discover(location.area.id);
+			if (app.location?.area.id === location.area.id) app.discover = after;
 		}
 	} catch (error) {
 		toast(null, 'That did not work', message(error));

@@ -497,4 +497,30 @@ mod tests {
             .unwrap();
         assert_eq!(codes, 0);
     }
+
+    /// `merge` finds a user's rows through foreign keys to `users`. A column that names a
+    /// user without one would be left behind, so there may be none.
+    #[tokio::test]
+    async fn every_column_naming_a_user_refers_to_users() {
+        let db = crate::store::connect("sqlite::memory:").await.unwrap();
+        let named: Vec<(String, String)> = sqlx::query_as(
+            "SELECT m.name, c.name FROM sqlite_master m, pragma_table_info(m.name) c
+             WHERE m.type = 'table' AND c.name IN ('user_id', 'added_by') ORDER BY m.name",
+        )
+        .fetch_all(&db)
+        .await
+        .unwrap();
+        assert!(named.len() >= 10, "{named:?}");
+        for (table, column) in named {
+            let refers: i64 = sqlx::query_scalar(
+                r#"SELECT COUNT(*) FROM pragma_foreign_key_list(?) WHERE "table" = 'users' AND "from" = ?"#,
+            )
+            .bind(&table)
+            .bind(&column)
+            .fetch_one(&db)
+            .await
+            .unwrap();
+            assert_eq!(refers, 1, "{table}.{column} has no foreign key to users");
+        }
+    }
 }

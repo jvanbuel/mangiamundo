@@ -4,7 +4,6 @@
 use std::collections::HashMap;
 
 use chrono::NaiveDate;
-use chrono_tz::Tz;
 use serde::Serialize;
 use utoipa::ToSchema;
 
@@ -20,15 +19,14 @@ pub struct Progress {
     pub quests: MonthlyQuests,
 }
 
-/// The progress of `user` in a cached area, on today's date in `zone`. Without a user:
+/// The progress of `user` in a cached area on `today`, their local date. Without a user:
 /// what the area offers, with nothing visited.
 pub async fn load(
     state: &AppState,
     user: Option<&str>,
     area_id: &str,
-    zone: Tz,
+    today: NaiveDate,
 ) -> sqlx::Result<Progress> {
-    let today = state.today(zone);
     let rows = store::area_rows(&state.db, area_id, user).await?;
     let quests = monthly_quests(state, user, area_id, today, &rows).await?;
     // After the rewards, so finished quests count in the profile.
