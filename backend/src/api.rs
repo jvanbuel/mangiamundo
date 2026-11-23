@@ -76,6 +76,9 @@ fn api_router() -> (Router<AppState>, utoipa::openapi::OpenApi) {
         .routes(routes!(countries))
         .routes(routes!(discover))
         .routes(routes!(places, add_place))
+        .routes(routes!(unknown_places))
+        .routes(routes!(suggest_cuisine))
+        .routes(routes!(no_cuisine))
         .routes(routes!(refresh_place))
         .routes(routes!(refresh_nearby))
         .routes(routes!(additions))
@@ -1426,7 +1429,6 @@ async fn add_place(
     let (country, cuisine) = catalog::country(&code)
         .zip(catalog::cuisine_tag(&code))
         .ok_or(ApiError::BadRequest("unknown country".into()))?;
-    let now = state.now();
     let new = store::NewPlace {
         name,
         lat: body.lat,
@@ -1435,8 +1437,22 @@ async fn add_place(
         url,
         country: &country.code,
         cuisine,
+        suggested_for: None,
     };
-    let added = store::add_place(&state.db, &user, &new, now, PLACES_PER_DAY)
+    let note = (body.note != Some(false)).then(|| missing_place_note(&new));
+    add(&state, &user, new, note).await
+}
+
+/// Saves a pending place, posts `note` about it to OpenStreetMap, and returns it with its
+/// reward.
+async fn add(
+    state: &AppState,
+    user: &str,
+    new: store::NewPlace,
+    note: Option<String>,
+) -> ApiResult<AddedPlace> {
+    let now = state.now();
+    let added = store::add_place(&state.db, user, &new, now, PLACES_PER_DAY)
         .await?
         .ok_or(ApiError::TooManyRequests(
             "you have added 5 places today; try again tomorrow",
@@ -1448,13 +1464,8 @@ async fn add_place(
     };
     let id = added.id;
 
-    if let Some(notes) = state
-        .osm_notes_url
-        .clone()
-        .filter(|_| body.note != Some(false))
-    {
+    if let Some((notes, text)) = state.osm_notes_url.clone().zip(note) {
         let (db, id, token) = (state.db.clone(), id.clone(), state.osm_notes_token.clone());
-        let text = missing_place_note(&new);
         tokio::spawn(async move {
             if let Some(note) = post_osm_note(notes, token, new.lat, new.lng, text).await {
                 if let Err(error) = store::set_osm_note(&db, &id, note).await {
@@ -1463,12 +1474,129 @@ async fn add_place(
             }
         });
     }
-    let mut place = store::place(&state.db, &id, Some(&user))
+    let mut place = store::place(&state.db, &id, Some(user))
         .await?
         .ok_or(ApiError::NotFound("place"))?;
     let (lat, lng) = (place.lat, place.lng);
     complete(&mut place, lat, lng, now);
     Ok(Json(AddedPlace { place, reward }))
+}
+
+/// At most this many restaurants with unknown food are listed.
+const UNKNOWN_LISTED: usize = 30;
+
+#[derive(Deserialize, IntoParams)]
+#[into_params(parameter_in = Query)]
+struct UnknownQuery {
+    /// As for `/api/discover`.
+    area: String,
+    /// As for `/api/places`.
+    lat: Option<f64>,
+    lng: Option<f64>,
+}
+
+/// Named restaurants in the area that OpenStreetMap gives no cuisine, nearest first, at most
+/// 30. Only where the daily import reaches (Belgium and its border towns); elsewhere the list
+/// is empty. Leaves out the ones the user already answered for, and the ones two users said
+/// serve nothing specific.
+#[utoipa::path(
+    get, path = "/api/unknown-places", tag = "game", params(UnknownQuery),
+    security((), ("token" = [])),
+    responses((status = 200, body = Vec<store::UnknownPlace>), (status = "default", description = "An error", body = ErrorBody)),
+)]
+async fn unknown_places(
+    State(state): State<AppState>,
+    MaybeUser(user): MaybeUser,
+    Query(query): Query<UnknownQuery>,
+) -> ApiResult<Vec<store::UnknownPlace>> {
+    let area = resolve_area(&state, &query.area).await?;
+    let shape = &area.boundary.shape;
+    let info = &area.boundary.info;
+    let (lat, lng) = (query.lat.unwrap_or(info.lat), query.lng.unwrap_or(info.lng));
+    let mut places = store::unknown_in(&state.db, shape.bbox(), user.as_deref()).await?;
+    places.retain(|p| shape.contains(p.lat, p.lng));
+    for p in &mut places {
+        p.distance_m = geo::distance_m(lat, lng, p.lat, p.lng).round() as u32;
+    }
+    places.sort_by_key(|p| p.distance_m);
+    places.truncate(UNKNOWN_LISTED);
+    Ok(Json(places))
+}
+
+/// The food a restaurant with unknown food serves.
+#[derive(Deserialize, ToSchema)]
+struct SuggestCuisine {
+    /// As for `POST /api/places`.
+    country: String,
+}
+
+/// Says which country's food a restaurant from `/api/unknown-places` serves. Like adding a
+/// place: it shows up right away for this user only, an OpenStreetMap note asks mappers to
+/// tag its cuisine, it counts towards the 5 a day, and it earns its reward once
+/// OpenStreetMap has that cuisine. If OpenStreetMap tags another cuisine, that wins: the
+/// place keeps the user's visits and earns nothing.
+#[utoipa::path(
+    post, path = "/api/unknown-places/{place_id}/cuisine", tag = "game", request_body = SuggestCuisine,
+    params(("place_id" = String, Path)),
+    security(("token" = [])),
+    responses((status = 200, body = AddedPlace), (status = "default", description = "An error", body = ErrorBody)),
+)]
+async fn suggest_cuisine(
+    State(state): State<AppState>,
+    User(user): User,
+    Path(place_id): Path<String>,
+    JsonBody(body): JsonBody<SuggestCuisine>,
+) -> ApiResult<AddedPlace> {
+    let unknown = store::unknown(&state.db, &place_id)
+        .await?
+        .ok_or(ApiError::NotFound("place"))?;
+    let code = body.country.to_uppercase();
+    let (country, cuisine) = catalog::country(&code)
+        .zip(catalog::cuisine_tag(&code))
+        .ok_or(ApiError::BadRequest("unknown country".into()))?;
+    let note = cuisine_note(&unknown, &country.name, cuisine);
+    let new = store::NewPlace {
+        name: unknown.name,
+        lat: unknown.lat,
+        lng: unknown.lng,
+        address: unknown.address,
+        url: None,
+        country: &country.code,
+        cuisine,
+        suggested_for: Some(unknown.id),
+    };
+    add(&state, &user, new, Some(note)).await
+}
+
+/// Says a restaurant from `/api/unknown-places` serves no particular country's food, such
+/// as a snack bar or a Belgian brasserie. It leaves this user's list, and everyone's once
+/// two users said so. Nothing is sent to OpenStreetMap, which has no tag for that.
+#[utoipa::path(
+    put, path = "/api/unknown-places/{place_id}/no-cuisine", tag = "game",
+    params(("place_id" = String, Path)),
+    security(("token" = [])),
+    responses((status = 204, description = "Recorded"), (status = "default", description = "An error", body = ErrorBody)),
+)]
+async fn no_cuisine(
+    State(state): State<AppState>,
+    User(user): User,
+    Path(place_id): Path<String>,
+) -> Result<StatusCode, ApiError> {
+    store::unknown(&state.db, &place_id)
+        .await?
+        .ok_or(ApiError::NotFound("place"))?;
+    store::report_no_cuisine(&state.db, &user, &place_id, state.now()).await?;
+    Ok(StatusCode::NO_CONTENT)
+}
+
+/// The OpenStreetMap note asking mappers to tag a place's cuisine.
+fn cuisine_note(place: &store::UnknownPlace, country: &str, cuisine: &str) -> String {
+    let link = osm_link(&place.id).map_or_else(String::new, |url| format!("\n\n{url}"));
+    format!(
+        "A Mangiamundo user who knows this place says {} serves food from {country}:\n\n\
+         cuisine={cuisine}{link}\n\nCould someone check and add the tag?",
+        place.name
+    )
 }
 
 /// The restaurants the user added, newest first, with their rewards. Those confirmed since

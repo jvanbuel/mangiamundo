@@ -17,6 +17,7 @@ import {
 	type Located,
 	type Location,
 	type Place,
+	type UnknownPlace,
 	type Visit,
 	visitedToday
 } from './types';
@@ -827,8 +828,45 @@ export async function addPlace(fields: AddPlace): Promise<boolean> {
 		toast(null, 'Could not add the restaurant', message(error));
 		return false;
 	}
+	await added(place, fields.country);
+	return true;
+}
+
+/** Restaurants in the area with unknown food, nearest to the user first. Empty on failure. */
+export async function unknownPlaces(): Promise<UnknownPlace[]> {
+	const location = app.location;
+	if (!location) return [];
+	return api.unknownPlaces(location.area.id, here()).catch(() => []);
+}
+
+/** "It serves food from …" for a restaurant with unknown food. True once saved. */
+export async function suggestCuisine(placeId: string, code: string): Promise<boolean> {
+	let place: AddedPlace;
+	try {
+		place = await api.suggestCuisine(placeId, code);
+	} catch (error) {
+		toast(null, 'Could not save that', message(error));
+		return false;
+	}
+	await added(place, code);
+	return true;
+}
+
+/** "It serves no particular country's food". True once saved. */
+export async function noCuisine(placeId: string): Promise<boolean> {
+	try {
+		await api.noCuisine(placeId);
+		return true;
+	} catch (error) {
+		toast(null, 'Could not save that', message(error));
+		return false;
+	}
+}
+
+/** Tells what a new pending place earns, counts it in and opens it. */
+async function added(place: AddedPlace, code: string) {
 	const { xp, bonus, area_name } = place.reward;
-	const extra = bonusText(bonus, fields.country.toUpperCase(), area_name, 'would be');
+	const extra = bonusText(bonus, code.toUpperCase(), area_name, 'would be');
 	const reward = `+${xp} XP once it is on OpenStreetMap${extra ? `: ${extra}` : ''}.`;
 	toast(null, `${place.name} added`, `You see it right away. ${reward}`);
 	// It counts towards its country, for this user, if it lies in the area. A failure here
@@ -839,7 +877,6 @@ export async function addPlace(fields: AddPlace): Promise<boolean> {
 		if (discover && app.location === location) app.discover = discover;
 	}
 	await openPlace(place.id);
-	return true;
 }
 
 /** Updates a place's visits on its card (which shows only the latest) and in its details. */

@@ -765,6 +765,8 @@ pub struct NewPlace {
     pub url: Option<String>,
     pub country: &'static str,
     pub cuisine: &'static str,
+    /// The unknown place this suggests the food of, from [`unknown_places`].
+    pub suggested_for: Option<String>,
 }
 
 /// A place a user just added, and the reward it earns once OpenStreetMap has it.
@@ -793,8 +795,8 @@ pub async fn add_place(
     let id = format!("user-{}", uuid::Uuid::new_v4().simple());
     let mut tx = db.begin().await?;
     let added = sqlx::query(
-        "INSERT INTO places (id, name, lat, lng, address, url, cuisine, updated_at, added_by, added_at)
-         SELECT ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?8
+        "INSERT INTO places (id, name, lat, lng, address, url, cuisine, updated_at, added_by, added_at, suggested_for)
+         SELECT ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?8, ?11
          WHERE (SELECT COUNT(*) FROM places WHERE added_by = ?9 AND added_at > ?8 - 86400) < ?10",
     )
     .bind(&id)
@@ -807,6 +809,7 @@ pub async fn add_place(
     .bind(at)
     .bind(user)
     .bind(limit)
+    .bind(&place.suggested_for)
     .execute(&mut *tx)
     .await?;
     if added.rows_affected() == 0 {
@@ -1090,7 +1093,7 @@ const MATCH_RADIUS_M: f64 = 50.0;
 /// pending row goes. Returns how many were swapped.
 async fn match_pending(tx: &mut sqlx::SqliteConnection) -> sqlx::Result<usize> {
     let pending = sqlx::query(
-        "SELECT p.id, p.name, p.lat, p.lng, pc.country FROM places p
+        "SELECT p.id, p.name, p.lat, p.lng, p.suggested_for, pc.country FROM places p
          JOIN place_countries pc ON pc.place_id = p.id
          WHERE p.added_by IS NOT NULL ORDER BY p.added_at, p.id",
     )
@@ -1105,6 +1108,7 @@ async fn match_pending(tx: &mut sqlx::SqliteConnection) -> sqlx::Result<usize> {
             p.get("lng"),
             p.get("country"),
         );
+        let suggested_for: Option<String> = p.get("suggested_for");
         // 0.001° of latitude is 111 m; a degree of longitude shrinks with cos(latitude).
         let dlng = 0.001 / lat.to_radians().cos().max(0.01);
         let near = sqlx::query(
@@ -1123,10 +1127,31 @@ async fn match_pending(tx: &mut sqlx::SqliteConnection) -> sqlx::Result<usize> {
             .map(|o| (geo::distance_m(lat, lng, o.lat, o.lng), o))
             .filter(|(d, _)| *d <= MATCH_RADIUS_M)
             .min_by(|a, b| a.0.total_cmp(&b.0));
-        let Some((_, twin)) = twin else { continue };
+        // A suggestion is about one OSM place: once that has a cuisine of its own, OSM wins.
+        let overruled = match (&twin, suggested_for) {
+            (Some(_), _) | (None, None) => None,
+            (None, Some(osm_id)) => sqlx::query("SELECT * FROM osm_places WHERE id = ?")
+                .bind(osm_id)
+                .fetch_optional(&mut *tx)
+                .await?
+                .and_then(found),
+        };
         let at = now();
+        let twin = match (twin, overruled) {
+            (Some((_, twin)), _) => {
+                confirm_addition(&mut *tx, &id, &twin.id, at).await?;
+                twin
+            }
+            (None, Some(osm)) => {
+                sqlx::query("DELETE FROM additions WHERE place_id = ?")
+                    .bind(&id)
+                    .execute(&mut *tx)
+                    .await?;
+                osm
+            }
+            (None, None) => continue,
+        };
         upsert_place(&mut *tx, &twin, at).await?;
-        confirm_addition(&mut *tx, &id, &twin.id, at).await?;
         // A clash means the user already has that row for the twin; the pending copy goes with the place.
         for sql in [
             "UPDATE OR IGNORE visits SET place_id = ?1 WHERE place_id = ?2",
@@ -1353,6 +1378,102 @@ fn found(r: sqlx::sqlite::SqliteRow) -> Option<FoundPlace> {
     })
 }
 
+/// A named restaurant OpenStreetMap gives no cuisine, so it isn't on the map yet.
+#[derive(Debug, Clone, PartialEq, Serialize, utoipa::ToSchema)]
+pub struct UnknownPlace {
+    /// An OpenStreetMap place id, like the ones of other places.
+    pub id: String,
+    pub name: String,
+    pub lat: f64,
+    pub lng: f64,
+    #[schema(required = true)]
+    pub address: Option<String>,
+    pub distance_m: u32,
+}
+
+/// Replaces the restaurants with unknown food with a fresh import of them.
+pub async fn replace_unknown(db: &SqlitePool, places: &[UnknownPlace]) -> sqlx::Result<()> {
+    let mut tx = db.begin().await?;
+    sqlx::query("DELETE FROM unknown_places")
+        .execute(&mut *tx)
+        .await?;
+    for p in places {
+        sqlx::query(
+            "INSERT OR REPLACE INTO unknown_places (id, name, lat, lng, address) VALUES (?, ?, ?, ?, ?)",
+        )
+        .bind(&p.id)
+        .bind(&p.name)
+        .bind(p.lat)
+        .bind(p.lng)
+        .bind(&p.address)
+        .execute(&mut *tx)
+        .await?;
+    }
+    tx.commit().await
+}
+
+fn unknown_place(r: &sqlx::sqlite::SqliteRow) -> UnknownPlace {
+    UnknownPlace {
+        id: r.get("id"),
+        name: r.get("name"),
+        lat: r.get("lat"),
+        lng: r.get("lng"),
+        address: r.get("address"),
+        distance_m: 0,
+    }
+}
+
+/// Restaurants with unknown food inside a box that `user` hasn't answered for yet, and that
+/// fewer than two users said serve nothing specific. `distance_m` is left at 0.
+pub async fn unknown_in(
+    db: &SqlitePool,
+    b: Bbox,
+    user: Option<&str>,
+) -> sqlx::Result<Vec<UnknownPlace>> {
+    let rows = sqlx::query(
+        "SELECT * FROM unknown_places u
+         WHERE lat BETWEEN ?1 AND ?2 AND lng BETWEEN ?3 AND ?4
+           AND NOT EXISTS (SELECT 1 FROM no_cuisine_reports WHERE place_id = u.id AND user_id = ?5)
+           AND (SELECT COUNT(*) FROM no_cuisine_reports WHERE place_id = u.id) < 2
+           AND NOT EXISTS (SELECT 1 FROM places WHERE suggested_for = u.id AND added_by = ?5)",
+    )
+    .bind(b.south)
+    .bind(b.north)
+    .bind(b.west)
+    .bind(b.east)
+    .bind(user)
+    .fetch_all(db)
+    .await?;
+    Ok(rows.iter().map(unknown_place).collect())
+}
+
+/// One restaurant with unknown food.
+pub async fn unknown(db: &SqlitePool, id: &str) -> sqlx::Result<Option<UnknownPlace>> {
+    let row = sqlx::query("SELECT * FROM unknown_places WHERE id = ?")
+        .bind(id)
+        .fetch_optional(db)
+        .await?;
+    Ok(row.as_ref().map(unknown_place))
+}
+
+/// Records that `user` says a place serves no particular country's food.
+pub async fn report_no_cuisine(
+    db: &SqlitePool,
+    user: &str,
+    place_id: &str,
+    at: i64,
+) -> sqlx::Result<()> {
+    sqlx::query(
+        "INSERT OR IGNORE INTO no_cuisine_reports (place_id, user_id, reported_at) VALUES (?, ?, ?)",
+    )
+    .bind(place_id)
+    .bind(user)
+    .bind(at)
+    .execute(db)
+    .await?;
+    Ok(())
+}
+
 /// Imported places inside a box.
 pub async fn imported_in(db: &SqlitePool, b: Bbox) -> sqlx::Result<Vec<FoundPlace>> {
     let rows =
@@ -1445,6 +1566,7 @@ mod tests {
             url: None,
             country: "ET",
             cuisine: "ethiopian",
+            suggested_for: None,
         };
         let day = |d| NaiveDate::from_ymd_opt(2026, 11, d).unwrap();
         let mine = add_place(&db, a, &new("Lalibela", 50.88, 4.7), 1000, 5)
@@ -1585,6 +1707,7 @@ mod tests {
             url: None,
             country: "ET",
             cuisine: "ethiopian",
+            suggested_for: None,
         };
         // The same user adds the same restaurant twice; the import confirms both.
         let first = add_place(&db, &user, &new, 1000, 5)
@@ -1651,6 +1774,7 @@ mod tests {
             url: None,
             country: "ET",
             cuisine: "ethiopian",
+            suggested_for: None,
         };
 
         // Only a postal code is cached: no bonus, though Ethiopia is new there.
@@ -1784,5 +1908,66 @@ mod tests {
                 .await
                 .unwrap();
         assert_eq!(fetched, vec![("leuven".into(), 0), ("paris".into(), 1000)]);
+    }
+
+    #[tokio::test]
+    async fn a_suggestion_gives_way_to_the_cuisine_osm_tags() {
+        let db = connect("sqlite::memory:").await.unwrap();
+        let token = create_user(&db).await.unwrap();
+        let user = user_for_token(&db, &token).await.unwrap().unwrap();
+        let suggest = |country, cuisine| NewPlace {
+            name: "Lalibela".into(),
+            lat: 50.88,
+            lng: 4.7,
+            address: None,
+            url: None,
+            country,
+            cuisine,
+            suggested_for: Some("osm-node-1".into()),
+        };
+        let all = Bbox {
+            south: 50.0,
+            west: 4.0,
+            north: 51.0,
+            east: 5.0,
+        };
+        let mut tagged = place("osm-node-1", 50.88, 4.7, "eritrean");
+        tagged.name = "Lalibela".into();
+
+        // Wrong guess: OSM says Eritrean. The visit moves over, the addition goes.
+        let wrong = add_place(&db, &user, &suggest("ET", "ethiopian"), 1000, 5)
+            .await
+            .unwrap()
+            .unwrap()
+            .id;
+        add_visit(
+            &db,
+            &user,
+            &wrong,
+            false,
+            1000,
+            NaiveDate::from_ymd_opt(2026, 11, 1).unwrap(),
+        )
+        .await
+        .unwrap();
+        assert_eq!(
+            replace_imported(&db, all, &[tagged.clone()]).await.unwrap(),
+            1
+        );
+        assert!(super::place(&db, &wrong, Some(&user))
+            .await
+            .unwrap()
+            .is_none());
+        assert_eq!(visits(&db, &user, "osm-node-1").await.unwrap().len(), 1);
+        assert!(additions(&db, &user).await.unwrap().is_empty());
+
+        // Right guess: confirmed as any addition.
+        add_place(&db, &user, &suggest("ER", "eritrean"), 1001, 5)
+            .await
+            .unwrap()
+            .unwrap();
+        replace_imported(&db, all, &[tagged]).await.unwrap();
+        let done = additions(&db, &user).await.unwrap();
+        assert_eq!(done[0].status, AdditionStatus::Confirmed);
     }
 }

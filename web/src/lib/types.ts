@@ -25,6 +25,8 @@ export type Suggestion = Schemas['Suggestion'];
 export type AddPlace = Schemas['AddPlace'];
 /** The place just added, with the XP it earns once OpenStreetMap has it. */
 export type AddedPlace = Schemas['AddedPlace'];
+/** A named restaurant OpenStreetMap gives no cuisine. */
+export type UnknownPlace = Schemas['UnknownPlace'];
 export type Bonus = Schemas['Bonus'];
 export type Addition = Schemas['Addition'];
 /** What reading a place again from OpenStreetMap found. */

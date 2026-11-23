@@ -617,6 +617,72 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/unknown-places": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Named restaurants in the area that OpenStreetMap gives no cuisine, nearest first, at most
+         *     30. Only where the daily import reaches (Belgium and its border towns); elsewhere the list
+         *     is empty. Leaves out the ones the user already answered for, and the ones two users said
+         *     serve nothing specific.
+         */
+        get: operations["unknown_places"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/unknown-places/{place_id}/cuisine": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Says which country's food a restaurant from `/api/unknown-places` serves. Like adding a
+         *     place: it shows up right away for this user only, an OpenStreetMap note asks mappers to
+         *     tag its cuisine, it counts towards the 5 a day, and it earns its reward once
+         *     OpenStreetMap has that cuisine. If OpenStreetMap tags another cuisine, that wins: the
+         *     place keeps the user's visits and earns nothing.
+         */
+        post: operations["suggest_cuisine"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/unknown-places/{place_id}/no-cuisine": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Says a restaurant from `/api/unknown-places` serves no particular country's food, such
+         *     as a snack bar or a Belgian brasserie. It leaves this user's list, and everyone's once
+         *     two users said so. Nothing is sent to OpenStreetMap, which has no tag for that.
+         */
+        put: operations["no_cuisine"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/visits/{visit_id}": {
         parameters: {
             query?: never;
@@ -1235,6 +1301,11 @@ export interface components {
             auth: string;
             p256dh: string;
         };
+        /** @description The food a restaurant with unknown food serves. */
+        SuggestCuisine: {
+            /** @description As for `POST /api/places`. */
+            country: string;
+        };
         /** @description One restaurant to try and the country the globe lands on. */
         Suggestion: {
             /** @description One of the place's `countries`. */
@@ -1251,6 +1322,19 @@ export interface components {
             places_visited: number;
             profile: components["schemas"]["Profile"];
             world: components["schemas"]["GroupProgress"];
+        };
+        /** @description A named restaurant OpenStreetMap gives no cuisine, so it isn't on the map yet. */
+        UnknownPlace: {
+            address: string | null;
+            /** Format: int32 */
+            distance_m: number;
+            /** @description An OpenStreetMap place id, like the ones of other places. */
+            id: string;
+            /** Format: double */
+            lat: number;
+            /** Format: double */
+            lng: number;
+            name: string;
         };
         UnsubscribeBody: {
             endpoint: string;
@@ -2381,6 +2465,103 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["Suggestion"];
                 };
+            };
+            /** @description An error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    unknown_places: {
+        parameters: {
+            query: {
+                /** @description As for `/api/discover`. */
+                area: string;
+                /** @description As for `/api/places`. */
+                lat?: number;
+                lng?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UnknownPlace"][];
+                };
+            };
+            /** @description An error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    suggest_cuisine: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                place_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SuggestCuisine"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AddedPlace"];
+                };
+            };
+            /** @description An error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    no_cuisine: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                place_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Recorded */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
             /** @description An error */
             default: {

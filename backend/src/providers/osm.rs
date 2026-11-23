@@ -51,12 +51,13 @@ impl Overpass {
         }
     }
 
-    async fn fetch(
+    async fn fetch<T>(
         &self,
         url: &str,
         query: &str,
         timeout: Duration,
-    ) -> anyhow::Result<Vec<FoundPlace>> {
+        read: fn(Vec<Element>) -> T,
+    ) -> anyhow::Result<T> {
         let body = self
             .http
             .post(url)
@@ -67,7 +68,7 @@ impl Overpass {
             .error_for_status()?
             .text()
             .await?;
-        parse(&body)
+        Ok(read(elements(&body)?))
     }
 
     /// Asks the servers in order and returns the first answer. With `next_after`, the next
@@ -81,9 +82,22 @@ impl Overpass {
         next_after: Option<Duration>,
         on_next_server: &(dyn Fn() + Send + Sync),
     ) -> anyhow::Result<Vec<FoundPlace>> {
+        self.fetch_any_with(query, timeout, next_after, on_next_server, places)
+            .await
+    }
+
+    /// [`Self::fetch_any`], reading the elements with `read`.
+    async fn fetch_any_with<'a, T: Send + 'a>(
+        &'a self,
+        query: &'a str,
+        timeout: Duration,
+        next_after: Option<Duration>,
+        on_next_server: &(dyn Fn() + Send + Sync),
+        read: fn(Vec<Element>) -> T,
+    ) -> anyhow::Result<T> {
         let mut last_error = anyhow::anyhow!("no Overpass server configured");
         let mut urls = self.urls.iter();
-        let ask = |url: &'a str| async move { (url, self.fetch(url, query, timeout).await) };
+        let ask = |url: &'a str| async move { (url, self.fetch(url, query, timeout, read).await) };
         let mut running = FuturesUnordered::new();
         let first = urls
             .next()
@@ -94,7 +108,7 @@ impl Overpass {
             let wait = next_after.filter(|_| urls.len() > 0 && running.len() < MAX_RUNNING);
             let next = tokio::select! {
                 Some((url, result)) = running.next() => match result {
-                    Ok(places) => return Ok(places),
+                    Ok(answer) => return Ok(answer),
                     Err(error) => {
                         tracing::warn!(url, error = format!("{error:#}"), "overpass server failed, trying the next");
                         last_error = error;
@@ -167,16 +181,22 @@ fn element_query(id: &str) -> Option<String> {
 /// Restaurants in the area's bounding box; [`Overpass::search`] keeps the ones inside the
 /// outline. A box query works for every area, also postal codes Overpass has no area for.
 fn query(b: Bbox, timeout_secs: u64) -> String {
+    // Full precision: rounding could cut off a place just inside an edge.
+    let b = format!("({},{},{},{})", b.south, b.west, b.north, b.east);
+    format!("[out:json][timeout:{timeout_secs}];nwr{AMENITIES}[\"cuisine\"][\"name\"]{b};out center tags;")
+}
+
+/// Which places can have unknown food: cafés, pubs and bars without a cuisine mostly serve
+/// none to speak of.
+const MEALS: &str = "[\"amenity\"~\"^(restaurant|fast_food)$\"]";
+
+/// [`query`], plus the named restaurants with no `cuisine` at all, for the import.
+fn import_query(b: Bbox, timeout_secs: u64) -> String {
+    let b = format!("({},{},{},{})", b.south, b.west, b.north, b.east);
     format!(
         "[out:json][timeout:{timeout_secs}];\
-         nwr{AMENITIES}[\"cuisine\"][\"name\"]\
-         ({},{},{},{});\
-         out center tags;",
-        // Full precision: rounding could cut off a place just inside an edge.
-        b.south,
-        b.west,
-        b.north,
-        b.east
+         (nwr{AMENITIES}[\"cuisine\"][\"name\"]{b};nwr{MEALS}[!\"cuisine\"][\"name\"]{b};);\
+         out center tags;"
     )
 }
 
@@ -208,14 +228,67 @@ fn is_closed(tags: &HashMap<String, String>, today: &str) -> bool {
     hours_closed || ended || flagged || lifecycle
 }
 
-fn parse(body: &str) -> anyhow::Result<Vec<FoundPlace>> {
+fn elements(body: &str) -> anyhow::Result<Vec<Element>> {
     let response: OverpassResponse = serde_json::from_str(body)?;
     // An empty answer from a failed query must not read as "no restaurants": that would empty
     // an area, or hide a refreshed place. An error lets the next server try.
     if let Some(remark) = response.remark.as_deref().filter(|r| r.contains("error")) {
         anyhow::bail!("overpass query failed: {remark}");
     }
-    Ok(places(response.elements))
+    Ok(response.elements)
+}
+
+#[cfg(test)]
+fn parse(body: &str) -> anyhow::Result<Vec<FoundPlace>> {
+    elements(body).map(places)
+}
+
+fn position(el: &Element) -> Option<(f64, f64)> {
+    match (el.lat, el.lon, &el.center) {
+        (Some(lat), Some(lon), _) => Some((lat, lon)),
+        (_, _, Some(c)) => Some((c.lat, c.lon)),
+        _ => None,
+    }
+}
+
+/// "Street 12, City" from the `addr:*` tags, `None` when there are none.
+fn address(tags: &HashMap<String, String>) -> Option<String> {
+    let street = [tags.get("addr:street"), tags.get("addr:housenumber")]
+        .into_iter()
+        .flatten()
+        .map(String::as_str)
+        .collect::<Vec<_>>()
+        .join(" ");
+    let address = [
+        Some(street.as_str()),
+        tags.get("addr:city").map(String::as_str),
+    ]
+    .into_iter()
+    .flatten()
+    .filter(|s| !s.is_empty())
+    .collect::<Vec<_>>()
+    .join(", ");
+    (!address.is_empty()).then_some(address)
+}
+
+/// The named, open places among OSM elements that have no `cuisine` tag at all.
+fn unknown(elements: &[Element]) -> Vec<store::UnknownPlace> {
+    let today = chrono::Utc::now().format("%Y-%m-%d").to_string();
+    elements
+        .iter()
+        .filter(|el| !el.tags.contains_key("cuisine") && !is_closed(&el.tags, &today))
+        .filter_map(|el| {
+            let (lat, lng) = position(el)?;
+            Some(store::UnknownPlace {
+                id: format!("osm-{}-{}", el.kind, el.id),
+                name: el.tags.get("name")?.clone(),
+                lat,
+                lng,
+                address: address(&el.tags),
+                distance_m: 0,
+            })
+        })
+        .collect()
 }
 
 /// The places among OSM elements: named, open, and serving a national cuisine.
@@ -239,32 +312,15 @@ fn places(elements: Vec<Element>) -> Vec<FoundPlace> {
             }
             continue;
         }
-        let (lat, lng) = match (el.lat, el.lon, &el.center) {
-            (Some(lat), Some(lon), _) => (lat, lon),
-            (_, _, Some(c)) => (c.lat, c.lon),
-            _ => continue,
+        let Some((lat, lng)) = position(&el) else {
+            continue;
         };
-        let street = [el.tags.get("addr:street"), el.tags.get("addr:housenumber")]
-            .into_iter()
-            .flatten()
-            .map(String::as_str)
-            .collect::<Vec<_>>()
-            .join(" ");
-        let address = [
-            Some(street.as_str()),
-            el.tags.get("addr:city").map(String::as_str),
-        ]
-        .into_iter()
-        .flatten()
-        .filter(|s| !s.is_empty())
-        .collect::<Vec<_>>()
-        .join(", ");
         places.push(FoundPlace {
             id: format!("osm-{}-{}", el.kind, el.id),
             name: name.clone(),
             lat,
             lng,
-            address: (!address.is_empty()).then_some(address),
+            address: address(&el.tags),
             url: el
                 .tags
                 .get("website")
@@ -449,16 +505,22 @@ impl PlacesProvider for Overpass {
 /// day is kinder to the public servers than one per area, and a failure only delays
 /// the refresh instead of breaking a user's request.
 pub async fn import(db: &SqlitePool, overpass: &Overpass) -> anyhow::Result<usize> {
-    let places = overpass
-        .fetch_any(
-            &query(IMPORT_BBOX, 300),
+    let (places, unknown) = overpass
+        .fetch_any_with(
+            &import_query(IMPORT_BBOX, 300),
             Duration::from_secs(330),
             None,
             &|| (),
+            |elements| {
+                let unknown = unknown(&elements);
+                (places(elements), unknown)
+            },
         )
         .await?;
     let matched = store::replace_imported(db, IMPORT_BBOX, &places).await?;
     tracing::info!(matched, "pending places matched to imported ones");
+    store::replace_unknown(db, &unknown).await?;
+    tracing::info!(unknown = unknown.len(), "places with unknown food");
     store::set_setting(db, IMPORTED_AT, &store::now().to_string()).await?;
     Ok(places.len())
 }
@@ -981,6 +1043,29 @@ mod tests {
         assert_eq!(places[1].countries, vec!["VN", "TH"]);
         assert_eq!((places[1].lat, places[1].lng), (50.87, 4.71));
         assert_eq!(places[1].address, None);
+    }
+
+    #[test]
+    fn restaurants_without_a_cuisine_are_unknown_not_places() {
+        let body = r#"{"elements":[
+            {"type":"node","id":1,"lat":50.88,"lon":4.70,"tags":{"name":"Lalibela","addr:city":"Leuven"}},
+            {"type":"node","id":2,"lat":50.88,"lon":4.70,"tags":{"name":"Shut","disused":"yes"}},
+            {"type":"node","id":3,"lat":50.88,"lon":4.70,"tags":{"name":"Burger Bar","cuisine":"burger"}},
+            {"type":"node","id":4,"lat":50.88,"lon":4.70,"tags":{}}
+        ]}"#;
+        let all = elements(body).unwrap();
+        let unknown = unknown(&all);
+        assert_eq!(unknown.len(), 1);
+        assert_eq!(
+            (unknown[0].id.as_str(), unknown[0].address.as_deref()),
+            ("osm-node-1", Some("Leuven"))
+        );
+        assert!(places(all).is_empty());
+        let q = import_query(IMPORT_BBOX, 300);
+        assert!(
+            q.contains("[!\"cuisine\"][\"name\"](49.4,2.4,51.6,6.5)"),
+            "{q}"
+        );
     }
 
     #[test]
