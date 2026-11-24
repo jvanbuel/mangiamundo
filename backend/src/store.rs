@@ -1487,6 +1487,43 @@ pub async fn imported_in(db: &SqlitePool, b: Bbox) -> sqlx::Result<Vec<FoundPlac
     Ok(rows.into_iter().filter_map(found).collect())
 }
 
+/// The cached areas whose outline holds a point, by id.
+pub async fn areas_containing(db: &SqlitePool, lat: f64, lng: f64) -> sqlx::Result<Vec<Boundary>> {
+    // Areas are at most 1.5° across, so any area holding the point is centred within that.
+    let near = sqlx::query(
+        "SELECT id, name, kind, detail, lat, lng, shape FROM areas
+         WHERE lat BETWEEN ? AND ? AND lng BETWEEN ? AND ? ORDER BY id",
+    )
+    .bind(lat - 1.5)
+    .bind(lat + 1.5)
+    .bind(lng - 1.5)
+    .bind(lng + 1.5)
+    .fetch_all(db)
+    .await?;
+    Ok(near
+        .into_iter()
+        .filter_map(|r| {
+            let kind = match r.get::<String, _>("kind").as_str() {
+                "city" => AreaKind::City,
+                "postal_code" => AreaKind::PostalCode,
+                _ => return None,
+            };
+            let shape: Shape = serde_json::from_str(r.get("shape")).ok()?;
+            shape.contains(lat, lng).then(|| Boundary {
+                info: AreaInfo {
+                    id: r.get("id"),
+                    name: r.get("name"),
+                    kind,
+                    detail: r.get("detail"),
+                    lat: r.get("lat"),
+                    lng: r.get("lng"),
+                },
+                shape,
+            })
+        })
+        .collect())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
