@@ -165,7 +165,7 @@ struct WorldCountry {
 fn world() -> &'static [WorldCountry] {
     static WORLD: OnceLock<Vec<WorldCountry>> = OnceLock::new();
     WORLD.get_or_init(|| {
-        serde_json::from_str(include_str!("../../mobile/shared/world.json")).expect("world.json is valid")
+        serde_json::from_str(include_str!("../../shared/world.json")).expect("world.json is valid")
     })
 }
 
@@ -174,8 +174,8 @@ fn fonts() -> Arc<usvg::fontdb::Database> {
     FONTS
         .get_or_init(|| {
             let mut db = usvg::fontdb::Database::new();
-            db.load_font_data(include_bytes!("../../mobile/android/app/src/main/res/font/nunito_extrabold.ttf").to_vec());
-            db.load_font_data(include_bytes!("../../mobile/android/app/src/main/res/font/nunito_semibold.ttf").to_vec());
+            db.load_font_data(include_bytes!("../../shared/fonts/res/font/nunito_extrabold.ttf").to_vec());
+            db.load_font_data(include_bytes!("../../shared/fonts/res/font/nunito_semibold.ttf").to_vec());
             Arc::new(db)
         })
         .clone()
