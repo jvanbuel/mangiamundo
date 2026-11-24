@@ -35,6 +35,8 @@ export type NearbyResult = Schemas['NearbyResult'];
 export type Visit = Schemas['Visit'];
 export type Day = Schemas['Day'];
 export type VisitResult = Schemas['VisitResult'];
+export type VisitRemoved = Schemas['VisitRemoved'];
+export type ClosedResult = Schemas['ClosedResult'];
 /** Something a check-in unlocked, with the words to announce it. */
 export type Unlocked = Schemas['Unlocked'];
 export type Health = Schemas['Health'];

@@ -290,6 +290,21 @@ data class Located(
 
 /** From `POST /api/places/{id}/visits`. */
 @Serializable
+data class VisitRemoved(
+    /** The visits left at the place, newest first. */
+    val visits: List<Visit> = emptyList(),
+    val profile: Profile,
+    /** The progress in the area after the removal; null when no area was sent. */
+    val progress: Discover? = null,
+)
+
+@Serializable
+data class ClosedResult(
+    /** The progress in the area without the place; null when no area was sent. */
+    val progress: Discover? = null,
+)
+
+@Serializable
 data class VisitResult(
     val visit: Visit,
     val profile: Profile,

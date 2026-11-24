@@ -370,6 +370,19 @@ struct VisitResult: Decodable {
     let unlocked: [Unlocked]
 }
 
+struct VisitRemoved: Decodable {
+    /// The visits left at the place, newest first.
+    let visits: [Visit]
+    let profile: Profile
+    /// The progress in the area after the removal; nil when no area was sent.
+    let progress: Discover?
+}
+
+struct ClosedResult: Decodable {
+    /// The progress in the area without the place; nil when no area was sent.
+    let progress: Discover?
+}
+
 enum UnlockedKind: String, Decodable {
     case country, badge, event, level
     /// A kind from a newer server. Announced with its words alone.

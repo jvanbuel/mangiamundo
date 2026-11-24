@@ -95,8 +95,9 @@ actor APIClient {
         return try decode(await write("POST", "/api/places/\(encode(placeID))/visits?\(area(areaID))&\(timeZone())", body: data))
     }
 
-    func removeVisit(id: Int) async throws {
-        _ = try await write("DELETE", "/api/visits/\(id)")
+    /// Takes a check-in back. The answer has the visits left at the place and the progress in the area.
+    func removeVisit(id: Int, areaID: String) async throws -> VisitRemoved {
+        try decode(await write("DELETE", "/api/visits/\(id)?\(area(areaID))&\(timeZone())"))
     }
 
     /// Makes (or moves to this area) the public page of the user's progress.
@@ -123,8 +124,11 @@ actor APIClient {
     }
 
     /// "This place has closed": hides it for this user, and for everyone after a second report.
-    func reportClosed(placeID: String) async throws {
-        _ = try await write("PUT", "/api/places/\(encode(placeID))/closed")
+    /// With an area, the answer has the progress there without the place.
+    @discardableResult
+    func reportClosed(placeID: String, areaID: String? = nil) async throws -> ClosedResult {
+        let query = areaID.map { "\(area($0))&" } ?? ""
+        return try decode(await write("PUT", "/api/places/\(encode(placeID))/closed?\(query)\(timeZone())"))
     }
 
     /// How far loading the area has come; nil when it isn't loading.

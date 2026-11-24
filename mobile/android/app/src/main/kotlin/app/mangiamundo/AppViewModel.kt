@@ -500,40 +500,27 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
                 // Visited today: undo that visit. Otherwise check in, also when there are older visits.
                 val undoing = place.visitedToday()
                 var checkedIn: VisitResult? = null
+                var progress: Discover? = null
                 val update: (List<Visit>) -> List<Visit> = if (!undoing) {
                     val fix = gpsFix?.takeIf { System.currentTimeMillis() - it.third < 10 * 60_000 }
                     val result = api.checkIn(place.id, here.area.id, fix?.let { it.first to it.second })
                     checkedIn = result
+                    progress = result.progress
                     val visit = result.visit
                     // Checking in twice on one day returns that day's visit.
                     { old -> listOf(visit) + old.filter { it.id != visit.id } }
                 } else {
-                    val removed = place.visits.first().id
-                    api.removeVisit(removed);
-                    { old -> old.filter { it.id != removed } }
+                    val result = api.removeVisit(place.visits.first().id, here.area.id)
+                    progress = result.progress
+                    // The server's list of the visits left: the card only knew the latest.
+                    { _ -> result.visits }
                 }
                 if (!sameAccount()) return@launch
                 setVisits(place.id, update)
                 // Details still loading may have read the visits from before this change.
                 detail?.takeIf { it.id == place.id && detailVisits != DetailVisits.LOADED }?.let { openPlace(it) }
-                val result = checkedIn
-                if (result != null) {
-                    if (result.progress != null && stillHere()) discover = result.progress
-                    for (unlocked in result.unlocked) messageChannel.trySend(unlocked.announcement(catalog))
-                } else {
-                    // The server has the remaining visits; details shown here may be out of date.
-                    val rest = runCatching { api.place(place.id, null).visits }.getOrNull()
-                    if (!sameAccount()) return@launch
-                    val loaded = detail?.takeIf { it.id == place.id && detailVisits == DetailVisits.LOADED }
-                    if (rest != null) {
-                        setVisits(place.id) { rest }
-                    } else if (loaded != null) {
-                        // The card shows only the latest visit: fall back on the older ones in the details.
-                        places = places.map { if (it.id == place.id) it.copy(visits = loaded.visits.take(1)) else it }
-                    }
-                    val after = api.discover(here.area.id)
-                    if (stillHere()) discover = after
-                }
+                progress?.let { if (stillHere()) discover = it }
+                for (unlocked in checkedIn?.unlocked.orEmpty()) messageChannel.trySend(unlocked.announcement(catalog))
             } catch (e: Exception) {
                 messageChannel.trySend("That did not work: ${e.message}")
             } finally {
@@ -548,16 +535,21 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         busyPlace = place.id
         viewModelScope.launch {
             try {
-                api.reportClosed(place.id)
+                val here = location
+                val generation = accountGeneration
+                val result = api.reportClosed(place.id, here?.area?.id)
+                if (accountGeneration != generation) return@launch
                 places = places.filter { it.id != place.id }
                 if (detail?.id == place.id) closePlace()
                 messageChannel.trySend("Thanks for letting us know. ${place.name} is hidden for you now.")
                 // The place no longer counts towards its countries.
-                location?.let { discover = api.discover(it.area.id) }
+                val progress = result.progress
+                if (progress != null && here != null && location?.area?.id == here.area.id) discover = progress
             } catch (e: Exception) {
                 messageChannel.trySend("Could not report this place: ${e.message}")
+            } finally {
+                busyPlace = null
             }
-            busyPlace = null
         }
     }
 

@@ -626,22 +626,12 @@ export async function toggleVisit(place: Place) {
 			if (result.progress && stillHere()) app.discover = { ...result.progress, area: before.area };
 			celebrate(result.unlocked);
 		} else {
-			const removed = place.visits[0].id;
-			await api.removeVisit(removed);
+			const result = await api.removeVisit(place.visits[0].id, location.area.id);
 			if (!sameAccount()) return;
-			setVisits(place.id, (visits) => visits.filter((v) => v.id !== removed));
+			// The server's list of the visits left: the card only knew the latest.
+			setVisits(place.id, () => result.visits);
 			if (app.placeId === place.id && !app.detail) void loadPlace(place.id);
-			// The server has the remaining visits; details shown here may be out of date.
-			const rest = await api.place(place.id, null).then((p) => p.visits, () => null);
-			if (!sameAccount()) return;
-			if (rest) setVisits(place.id, () => rest);
-			else if (app.detail?.id === place.id) {
-				// The card shows only the latest visit: fall back on the older ones in the details.
-				const card = app.places.find((p) => p.id === place.id);
-				if (card) card.visits = app.detail.visits.slice(0, 1);
-			}
-			const after = await api.discover(location.area.id);
-			if (stillHere()) app.discover = after;
+			if (result.progress && stillHere()) app.discover = { ...result.progress, area: before.area };
 		}
 	} catch (error) {
 		toast(null, 'That did not work', message(error));
@@ -655,13 +645,18 @@ export async function reportClosed(place: Place) {
 	if (app.busyPlace) return;
 	app.busyPlace = place.id;
 	try {
-		await api.reportClosed(place.id);
+		const location = app.location;
+		const generation = accountGeneration;
+		const result = await api.reportClosed(place.id, location?.area.id ?? null);
+		if (accountGeneration !== generation) return;
 		app.places = app.places.filter((p) => p.id !== place.id);
 		if (app.placeId === place.id) closePlace();
 		toast(null, 'Thanks for letting us know', `${place.name} is hidden for you now.`);
 		// The place no longer counts towards its countries.
-		const location = app.location;
-		if (location) app.discover = await api.discover(location.area.id);
+		const shown = app.discover;
+		if (result.progress && shown && shown.area.id === location?.area.id && app.location?.area.id === shown.area.id) {
+			app.discover = { ...result.progress, area: shown.area };
+		}
 	} catch (error) {
 		toast(null, 'Could not report this place', message(error));
 	} finally {

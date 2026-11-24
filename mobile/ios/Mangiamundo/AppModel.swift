@@ -520,6 +520,7 @@ final class AppModel {
         do {
             let update: ([Visit]) -> [Visit]
             var checkedIn: VisitResult?
+            var progress: Discover?
             // Visited today: undo that visit. Otherwise check in, also when there are older visits.
             let undoing = visited ?? place.visitedToday()
             if !undoing {
@@ -529,12 +530,15 @@ final class AppModel {
                 }
                 let result = try await api.checkIn(placeID: place.id, areaID: here.area.id, here: position)
                 checkedIn = result
+                progress = result.progress
                 let visit = result.visit
                 // Checking in twice on one day returns that day's visit.
                 update = { old in [visit] + old.filter { $0.id != visit.id } }
             } else if let latest = place.visits.first {
-                try await api.removeVisit(id: latest.id)
-                update = { old in old.filter { $0.id != latest.id } }
+                let result = try await api.removeVisit(id: latest.id, areaID: here.area.id)
+                progress = result.progress
+                // The server's list of the visits left: the card only knew the latest.
+                update = { _ in result.visits }
             } else {
                 return
             }
@@ -542,23 +546,8 @@ final class AppModel {
             setVisits(place.id, update)
             // Details still loading may have read the visits from before this change.
             if let detail, detail.id == place.id, detailVisits != .loaded { openPlace(detail) }
-            if let checkedIn {
-                if let progress = checkedIn.progress, stillHere() { discover = progress }
-                for unlocked in checkedIn.unlocked { toast(unlocked.announcement(catalog: catalog)) }
-            } else {
-                // The server has the remaining visits; details shown here may be out of date.
-                let rest = try? await api.place(id: place.id, from: nil).visits
-                guard sameAccount() else { return }
-                if let rest {
-                    setVisits(place.id) { _ in rest }
-                } else if let detail, detail.id == place.id, detailVisits == .loaded,
-                          let index = places.firstIndex(where: { $0.id == place.id }) {
-                    // The card shows only the latest visit: fall back on the older ones in the details.
-                    places[index].visits = Array(detail.visits.prefix(1))
-                }
-                let after = try await api.discover(areaID: here.area.id)
-                if stillHere() { discover = after }
-            }
+            if let progress, stillHere() { discover = progress }
+            for unlocked in checkedIn?.unlocked ?? [] { toast(unlocked.announcement(catalog: catalog)) }
         } catch {
             toast("That did not work: \(error.localizedDescription)")
         }
@@ -570,12 +559,15 @@ final class AppModel {
         busyPlace = place.id
         defer { busyPlace = nil }
         do {
-            try await api.reportClosed(placeID: place.id)
+            let here = location
+            let generation = accountGeneration
+            let result = try await api.reportClosed(placeID: place.id, areaID: here?.area.id)
+            guard accountGeneration == generation else { return }
             places.removeAll { $0.id == place.id }
             if detail?.id == place.id { closePlace() }
             toast("Thanks for letting us know. \(place.name) is hidden for you now.")
             // The place no longer counts towards its countries.
-            if let here = location { discover = try await api.discover(areaID: here.area.id) }
+            if let progress = result.progress, let here, location?.area.id == here.area.id { discover = progress }
         } catch {
             toast("Could not report this place: \(error.localizedDescription)")
         }

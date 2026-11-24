@@ -1652,7 +1652,8 @@ struct VisitQuery {
     /// As for `/api/discover`: the check-in counts for events by its date in this zone.
     tz: Option<String>,
     /// The area the user is playing in. With it, the answer has the progress there after
-    /// the check-in and what it unlocked, so there is no need to ask `/api/discover` again.
+    /// the change (and for a check-in, what it unlocked), so there is no need to ask
+    /// `/api/discover` again.
     area: Option<String>,
 }
 
@@ -1732,25 +1733,53 @@ async fn add_visit(
     }))
 }
 
+#[derive(Serialize, ToSchema)]
+struct VisitRemoved {
+    /// The user's visits to the place that are left, newest first. The place stays visited
+    /// while there are any.
+    visits: Vec<Visit>,
+    /// After the removal, without the XP of the quests that are no longer finished.
+    profile: game::Profile,
+    /// The progress in `area` after the removal; `null` without `area`.
+    #[schema(required = true)]
+    progress: Option<Progress>,
+}
+
 /// Removes one visit. The place stays visited while the user has other visits to it. The
-/// XP of quests that are no longer finished without it is taken back.
+/// XP of quests that are no longer finished without it is taken back, in every area.
 #[utoipa::path(
     delete, path = "/api/visits/{visit_id}", tag = "game",
-    params(("visit_id" = i64, Path, description = "A visit id from a place's `visits`.")),
+    params(("visit_id" = i64, Path, description = "A visit id from a place's `visits`."), VisitQuery),
     security(("token" = [])),
-    responses((status = 204, description = "Removed, or there was no such visit"), (status = "default", description = "An error", body = ErrorBody)),
+    responses((status = 200, body = VisitRemoved), (status = "default", description = "An error, `not_found` when the user has no such visit", body = ErrorBody)),
 )]
 async fn remove_visit(
     State(state): State<AppState>,
     User(user): User,
     Path(visit_id): Path<i64>,
-) -> Result<StatusCode, ApiError> {
-    if let Some((place_id, local_date)) = store::remove_visit(&state.db, &user, visit_id).await? {
-        if let Ok(day) = local_date.parse() {
-            progress::settle_quests(&state, &user, &place_id, day, VisitChange::Removed).await?;
-        }
+    Query(query): Query<VisitQuery>,
+) -> ApiResult<VisitRemoved> {
+    // Before anything is removed, so a wrong area leaves the visit in place.
+    let area = match &query.area {
+        Some(id) => Some(areas::resolve(&state, id).await?),
+        None => None,
+    };
+    let (place_id, local_date) = store::remove_visit(&state.db, &user, visit_id)
+        .await?
+        .ok_or(ApiError::NotFound("visit"))?;
+    if let Ok(day) = local_date.parse() {
+        progress::settle_quests(&state, &user, &place_id, day, VisitChange::Removed).await?;
     }
-    Ok(StatusCode::NO_CONTENT)
+    let today = state.today(zone(query.tz.as_deref()));
+    let progress = match &area {
+        Some(area) => Some(progress::load(&state, Some(&user), area.id(), today).await?),
+        None => None,
+    };
+    Ok(Json(VisitRemoved {
+        visits: store::visits(&state.db, &user, &place_id).await?,
+        profile: game::profile(store::lifetime(&state.db, &user, today).await?),
+        progress,
+    }))
 }
 
 /// A public link and what to say alongside it.
@@ -1936,20 +1965,34 @@ async fn visit_card(State(state): State<AppState>, headers: header::HeaderMap, P
     Ok(png(render_card(statuses, share::visit_headline(&visit), caption).await?))
 }
 
+#[derive(Serialize, ToSchema)]
+struct ClosedResult {
+    /// The progress in `area` without the place; `null` without `area`.
+    #[schema(required = true)]
+    progress: Option<Progress>,
+}
+
 /// "This place has closed": hides it for the reporter now, and for everyone after more reports.
 #[utoipa::path(
-    put, path = "/api/places/{place_id}/closed", tag = "game", params(("place_id" = String, Path, description = "A place id from `/api/places`.")),
+    put, path = "/api/places/{place_id}/closed", tag = "game",
+    params(("place_id" = String, Path, description = "A place id from `/api/places`."), VisitQuery),
     security(("token" = [])),
-    responses((status = 204, description = "Reported"), (status = "default", description = "An error", body = ErrorBody)),
+    responses((status = 200, body = ClosedResult), (status = "default", description = "An error", body = ErrorBody)),
 )]
 async fn report_closed(
     State(state): State<AppState>,
     User(user): User,
     Path(place_id): Path<String>,
-) -> Result<StatusCode, ApiError> {
+    Query(query): Query<VisitQuery>,
+) -> ApiResult<ClosedResult> {
     let (name, lat, lng) = store::place_summary(&state.db, &place_id, &user)
         .await?
         .ok_or(ApiError::NotFound("place"))?;
+    // Before the report, so a wrong area reports nothing.
+    let area = match &query.area {
+        Some(id) => Some(areas::resolve(&state, id).await?),
+        None => None,
+    };
     let reports = store::report_closed(&state.db, &user, &place_id, state.now()).await?;
     // Tell OSM once, when the place gets hidden for everyone, so one person cannot spam mappers.
     if let (Some(2), Some(url), Some(page)) = (reports, &state.osm_notes_url, osm::link(&place_id)) {
@@ -1961,7 +2004,14 @@ async fn report_closed(
             osm::closed_note(&name, &page),
         ));
     }
-    Ok(StatusCode::NO_CONTENT)
+    let progress = match &area {
+        Some(area) => {
+            let today = state.today(zone(query.tz.as_deref()));
+            Some(progress::load(&state, Some(&user), area.id(), today).await?)
+        }
+        None => None,
+    };
+    Ok(Json(ClosedResult { progress }))
 }
 
 #[derive(Serialize, ToSchema)]

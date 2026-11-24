@@ -302,10 +302,11 @@ async fn visiting_every_place_completes_a_country() {
     .await;
     assert_eq!(theirs["world"]["discovered"], 0);
 
-    // Undoing a visit takes the completion away again.
-    let uri = format!("/api/visits/{}", visit["visit"]["id"]);
-    let (status, _) = call(&app, "DELETE", &uri, Some(&token), None).await;
-    assert_eq!(status, StatusCode::NO_CONTENT);
+    // Undoing a visit takes the completion away again, and says so with the area.
+    let uri = format!("/api/visits/{}?{HERE}", visit["visit"]["id"]);
+    let (status, removed) = call(&app, "DELETE", &uri, Some(&token), None).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(removed["progress"]["world"]["completed"], 0);
     let (_, undone) = call(
         &app,
         "GET",
@@ -315,6 +316,10 @@ async fn visiting_every_place_completes_a_country() {
     )
     .await;
     assert_eq!(undone["world"]["completed"], 0);
+    let mut undone = undone;
+    undone.as_object_mut().unwrap().remove("area");
+    assert_eq!(removed["progress"], undone);
+    assert_eq!(removed["profile"], undone["profile"]);
 }
 
 #[tokio::test]
@@ -386,8 +391,8 @@ async fn visits_are_a_history_with_one_visit_per_day() {
         serde_json::json!([second["visit"], first["visit"]])
     );
 
-    // Removing the latest visit leaves the place visited.
-    let (status, _) = call(
+    // Removing the latest visit leaves the place visited, and says what is left.
+    let (status, removed) = call(
         &app,
         "DELETE",
         &format!("/api/visits/{}", second["visit"]["id"]),
@@ -395,7 +400,10 @@ async fn visits_are_a_history_with_one_visit_per_day() {
         None,
     )
     .await;
-    assert_eq!(status, StatusCode::NO_CONTENT);
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(removed["visits"], serde_json::json!([first["visit"]]));
+    assert_eq!(removed["profile"], first["profile"]);
+    assert_eq!(removed["progress"], Value::Null, "no area, no progress");
     let (_, after) = call(
         &app,
         "GET",
@@ -407,6 +415,18 @@ async fn visits_are_a_history_with_one_visit_per_day() {
     assert_eq!(after["places_visited"], 1);
     let (_, detail) = call(&app, "GET", &detail_uri, Some(&token), None).await;
     assert_eq!(detail["visits"], serde_json::json!([first["visit"]]));
+
+    // Removing it again: there is no such visit any more.
+    let (status, body) = call(
+        &app,
+        "DELETE",
+        &format!("/api/visits/{}", second["visit"]["id"]),
+        Some(&token),
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+    assert_error(&body, "not_found");
 
     // Nobody else can see or remove the visit.
     let other = session(&app).await;
@@ -420,7 +440,17 @@ async fn visits_are_a_history_with_one_visit_per_day() {
         None,
     )
     .await;
-    assert_eq!(status, StatusCode::NO_CONTENT);
+    assert_eq!(status, StatusCode::NOT_FOUND);
+    // A wrong area leaves the visit in place.
+    let (status, _) = call(
+        &app,
+        "DELETE",
+        &format!("/api/visits/{}?area=demo-nowhere", first["visit"]["id"]),
+        Some(&token),
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
     let (_, detail) = call(&app, "GET", &detail_uri, Some(&token), None).await;
     assert_eq!(detail["visits"], serde_json::json!([first["visit"]]));
 }
@@ -1082,15 +1112,17 @@ async fn closed_reports_hide_a_place_from_the_reporter_then_from_everyone() {
         StatusCode::NOT_FOUND
     );
 
-    assert_eq!(
-        call(&app, "PUT", &report, Some(&alice), None).await.0,
-        StatusCode::NO_CONTENT
-    );
-    // Reporting twice counts once.
-    assert_eq!(
-        call(&app, "PUT", &report, Some(&alice), None).await.0,
-        StatusCode::NO_CONTENT
-    );
+    let (status, reported) = call(&app, "PUT", &report, Some(&alice), None).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(reported["progress"], Value::Null, "no area, no progress");
+    // Reporting twice counts once. With the area, the answer has the progress without it.
+    let (status, reported) = call(&app, "PUT", &format!("{report}?{HERE}"), Some(&alice), None).await;
+    assert_eq!(status, StatusCode::OK);
+    let (_, mut discover) = call(&app, "GET", &format!("/api/discover?{HERE}"), Some(&alice), None).await;
+    discover.as_object_mut().unwrap().remove("area");
+    assert_eq!(reported["progress"], discover);
+    let (_, theirs) = call(&app, "GET", &format!("/api/discover?{HERE}"), Some(&bob), None).await;
+    assert_eq!(discover["places"].as_u64().unwrap() + 1, theirs["places"].as_u64().unwrap());
     assert!(!list(Some(alice.clone())).await.contains(&place));
     assert!(list(Some(bob.clone())).await.contains(&place));
     assert!(list(None).await.contains(&place));
@@ -1182,7 +1214,7 @@ async fn the_second_closed_report_of_an_osm_place_posts_one_osm_note() {
             )
             .await
             .0,
-            StatusCode::NO_CONTENT
+            StatusCode::OK
         );
     }
     tokio::time::sleep(std::time::Duration::from_millis(200)).await;
@@ -1578,6 +1610,13 @@ async fn writes_contract_fixtures() {
     additions[0]["place_id"] = added["id"].clone();
     additions[0]["id"] = added["id"].clone();
     write("additions", &additions);
+
+    // Taking back the unverified check-in, after everything that shows it is written.
+    let (_, places) = call(&app, "GET", &format!("/api/places/{}", second["id"].as_str().unwrap()), Some(&token), None).await;
+    let uri = format!("/api/visits/{}?{HERE}", places["visits"][0]["id"]);
+    let (status, removed) = call(&app, "DELETE", &uri, Some(&token), None).await;
+    assert_eq!(status, StatusCode::OK);
+    write("visit-removed", &removed);
 
     // Two devices, one with a name, and a recovery code. Ids and times are random or real.
     call(
@@ -2864,7 +2903,7 @@ async fn a_shared_check_in_has_its_own_page_until_it_is_removed() {
     assert_eq!((status, kind.as_str()), (StatusCode::OK, "image/png"));
 
     let (status, _) = call(&app, "DELETE", &format!("/api/visits/{visit}"), Some(&token), None).await;
-    assert_eq!(status, StatusCode::NO_CONTENT);
+    assert_eq!(status, StatusCode::OK);
     assert_eq!(fetch(&app, &page).await.0, StatusCode::NOT_FOUND);
 }
 
@@ -2993,7 +3032,7 @@ async fn quests_are_paid_per_area_at_check_in_and_taken_back_with_it() {
     // Taking a check-in back takes back the quests it finished, where it finished them.
     let uri = format!("/api/visits/{}", visits[0]["visit"]["id"]);
     let (status, _) = call(&app, "DELETE", &uri, Some(&token), None).await;
-    assert_eq!(status, StatusCode::NO_CONTENT);
+    assert_eq!(status, StatusCode::OK);
     assert_eq!(paid().await, ["demo-tokyo"]);
     assert_eq!(done(app.clone(), token.clone(), "demo-leuven").await, (1, false));
     // And checking in again pays them again, once.

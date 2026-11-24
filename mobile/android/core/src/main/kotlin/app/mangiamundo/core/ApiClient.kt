@@ -84,9 +84,9 @@ class ApiClient(
         return json.decodeFromString(write("POST", "/api/places/${encode(placeId)}/visits?${area(areaId)}&${tz()}", body))
     }
 
-    suspend fun removeVisit(visitId: Long) {
-        write("DELETE", "/api/visits/$visitId")
-    }
+    /** Takes a check-in back. The answer has the visits left at the place and the progress in the area. */
+    suspend fun removeVisit(visitId: Long, areaId: String): VisitRemoved =
+        json.decodeFromString(write("DELETE", "/api/visits/$visitId?${area(areaId)}&${tz()}"))
 
     /** Makes (or moves to this area) the public page of the user's progress. */
     suspend fun shareProgress(areaId: String): ShareLink =
@@ -116,8 +116,10 @@ class ApiClient(
     }
 
     /** "This place has closed": hides it for this user, and for everyone after a second report. */
-    suspend fun reportClosed(placeId: String) {
-        write("PUT", "/api/places/${encode(placeId)}/closed")
+    /** With an area, the answer has the progress there without the place. */
+    suspend fun reportClosed(placeId: String, areaId: String? = null): ClosedResult {
+        val query = areaId?.let { "${area(it)}&" }.orEmpty()
+        return json.decodeFromString(write("PUT", "/api/places/${encode(placeId)}/closed?$query${tz()}"))
     }
 
     /** How far loading an area has come while `discover` waits on it; null when it isn't loading. */
