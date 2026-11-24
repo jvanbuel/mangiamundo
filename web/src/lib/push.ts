@@ -45,8 +45,12 @@ export async function enableReminders(target: Omit<api.PushTarget, 'timezone'>):
 	});
 }
 
-/** Keeps the server's copy in step after the user moves to another area. */
+/**
+ * Keeps the server's copy in step after the user moves to another area. Not for a device
+ * without an account (it was signed out): this runs unasked, and must not start one.
+ */
 export async function updateReminders(target: Omit<api.PushTarget, 'timezone'>): Promise<void> {
+	if (!api.hasAccount()) return;
 	const subscription = await currentSubscription();
 	if (!subscription || Notification.permission !== 'granted') return;
 	await api.savePushSubscription(subscription.toJSON(), {

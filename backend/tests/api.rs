@@ -2616,6 +2616,99 @@ async fn link_codes_are_limited_per_hour() {
     assert_error(&error, "too_many_requests");
 }
 
+/// `POST /api/session` as Fly's proxy passes it on from `address`.
+async fn session_from(app: &Router, address: &str) -> StatusCode {
+    let request = Request::builder()
+        .method("POST")
+        .uri("/api/session")
+        .header("fly-client-ip", address)
+        .body(Body::empty())
+        .unwrap();
+    app.clone().oneshot(request).await.unwrap().status()
+}
+
+#[tokio::test]
+async fn new_accounts_are_limited_per_address_and_hour() {
+    let (app, now) = app_with_clock().await;
+    for _ in 0..20 {
+        assert_eq!(session_from(&app, "203.0.113.7").await, StatusCode::OK);
+    }
+    assert_eq!(session_from(&app, "203.0.113.7").await, StatusCode::TOO_MANY_REQUESTS);
+    let (status, error) = call(&app, "GET", "/api/health", None, None).await;
+    assert_eq!((status, &error["ok"]), (StatusCode::OK, &Value::Bool(true)));
+    // Someone else is not held up, and one connection's IPv6 addresses count as one.
+    assert_eq!(session_from(&app, "203.0.113.8").await, StatusCode::OK);
+    for _ in 0..20 {
+        assert_eq!(session_from(&app, "2001:db8:1:2::1").await, StatusCode::OK);
+    }
+    assert_eq!(session_from(&app, "2001:db8:1:2:a:b:c:d").await, StatusCode::TOO_MANY_REQUESTS);
+    assert_eq!(session_from(&app, "2001:db8:1:3::1").await, StatusCode::OK);
+    // The accounts that were made keep working, and an hour later there is room again.
+    now.fetch_add(3600, Ordering::Relaxed);
+    assert_eq!(session_from(&app, "203.0.113.7").await, StatusCode::OK);
+}
+
+/// Without the proxy's header (tests, development) only the limit for everyone applies.
+#[tokio::test]
+async fn new_accounts_are_limited_for_everyone_together() {
+    let app = app().await;
+    for _ in 0..1000 {
+        let (status, _) = call(&app, "POST", "/api/session", None, None).await;
+        assert_eq!(status, StatusCode::OK);
+    }
+    let (status, error) = call(&app, "POST", "/api/session", None, None).await;
+    assert_eq!(status, StatusCode::TOO_MANY_REQUESTS);
+    assert_error(&error, "too_many_requests");
+}
+
+/// What a client shows before the first check-in needs no account, and makes none.
+#[tokio::test]
+async fn everything_a_client_reads_at_first_works_without_an_account() {
+    let db = store::connect("sqlite::memory:").await.unwrap();
+    let (app, _) = app_with(db.clone(), None, START).await;
+    let (status, discover) = call(&app, "GET", &format!("/api/discover?{HERE}"), None, None).await;
+    assert_eq!(status, StatusCode::OK);
+    let country = discover["countries"][0]["code"].as_str().unwrap();
+    let (status, places) = call(&app, "GET", &format!("/api/places?{HERE}&country={country}"), None, None).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(places[0]["visits"], serde_json::json!([]));
+    let place = places[0]["id"].as_str().unwrap();
+    let reads = [
+        format!("/api/places/{place}"),
+        format!("/api/suggestion?{HERE}&open=false"),
+        format!("/api/unknown-places?{HERE}"),
+        format!("/api/reminders?{HERE}"),
+        format!("/api/celebrations?{HERE}"),
+        "/api/countries".to_string(),
+        "/api/auth/providers".to_string(),
+    ];
+    for uri in &reads {
+        let (status, body) = call(&app, "GET", uri, None, None).await;
+        assert_eq!(status, StatusCode::OK, "{uri}: {body}");
+    }
+    let users: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM users")
+        .fetch_one(&db)
+        .await
+        .unwrap();
+    assert_eq!(users, 0);
+
+    // A token the server doesn't know is not anonymous: the device was signed out, and
+    // its app says so.
+    let token = session(&app).await;
+    let (_, account) = call(&app, "GET", "/api/account", Some(&token), None).await;
+    let device = account["devices"][0]["id"].as_str().unwrap();
+    let (status, _) = call(&app, "DELETE", &format!("/api/account/devices/{device}"), Some(&token), None).await;
+    assert_eq!(status, StatusCode::NO_CONTENT);
+    for uri in &reads[..4] {
+        let (status, body) = call(&app, "GET", uri, Some(&token), None).await;
+        assert_eq!(status, StatusCode::UNAUTHORIZED, "{uri}");
+        assert_error(&body, "unauthorized");
+    }
+    // A write needs an account.
+    let (status, _) = call(&app, "POST", &format!("/api/places/{place}/visits?{HERE}"), None, Some("{}")).await;
+    assert_eq!(status, StatusCode::UNAUTHORIZED);
+}
+
 /// A restore that read its session before another restore moved that session to a new
 /// account merges that new account, not the stale one.
 #[tokio::test]

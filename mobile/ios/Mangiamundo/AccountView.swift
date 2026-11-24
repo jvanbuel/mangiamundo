@@ -99,12 +99,15 @@ struct AccountSection: View {
                 }
             }
 
-            Button("Delete my account") { confirmingDelete = true }
-                .font(Theme.font(.subheadline))
-                .foregroundStyle(Theme.muted)
-                .underline()
-                .padding(.top, 8)
-                .disabled(model.accountBusy)
+            // A device that only looked around has no account yet: there is nothing to delete.
+            if model.account?.devices.isEmpty != true {
+                Button("Delete my account") { confirmingDelete = true }
+                    .font(Theme.font(.subheadline))
+                    .foregroundStyle(Theme.muted)
+                    .underline()
+                    .padding(.top, 8)
+                    .disabled(model.accountBusy)
+            }
         }
         .buttonStyle(.plain)
         .task { await model.loadAccount() }

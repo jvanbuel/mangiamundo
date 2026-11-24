@@ -95,7 +95,7 @@ export const app = $state({
 	toasts: [] as Toast[],
 	/** This device's account, for showing whether and how it is signed in. */
 	account: null as Account | null,
-	/** Goes up whenever the public link is made or turned off, for whatever shows it. */
+	/** Goes up whenever the public link is made or turned off, or the device is signed out, for whatever shows the account. */
 	publicLink: 0,
 	/** Areas used lately, newest first, for switching back quickly. */
 	recents: [] as Area[]
@@ -133,7 +133,21 @@ function loadServer() {
 		.catch(() => (app.server = 'not reached'));
 }
 
+/**
+ * The server no longer knows this device: it was signed out from another device, or its
+ * account is gone. Says so, and shows everything again as for someone without an account,
+ * so that nothing of the old account stays on screen as if it were still here. A new
+ * account only starts with the next check-in or other change.
+ */
+function signedOut() {
+	toast(null, 'You were signed out', 'This device no longer has your progress. Sign in or use a recovery code to get it back.');
+	// Whatever shows the account reads it again.
+	app.publicLink++;
+	void accountChanged();
+}
+
 export async function init() {
+	api.onSignedOut(signedOut);
 	loadServer();
 	app.projection = load<'globe' | 'mercator'>(PROJECTION_KEY) ?? 'globe';
 	app.theme = load<Theme>(THEME_KEY) ?? 'system';

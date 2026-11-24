@@ -242,12 +242,15 @@ fun AccountSection(vm: AppViewModel) {
             }
         }
 
-        Text(
-            "Delete my account",
-            color = colors.muted,
-            textDecoration = TextDecoration.Underline,
-            modifier = Modifier.padding(top = 8.dp).clickable(enabled = !vm.accountBusy) { confirm = Confirm.DELETE },
-        )
+        // A device that only looked around has no account yet: there is nothing to delete.
+        if (vm.account?.devices?.isEmpty() != true) {
+            Text(
+                "Delete my account",
+                color = colors.muted,
+                textDecoration = TextDecoration.Underline,
+                modifier = Modifier.padding(top = 8.dp).clickable(enabled = !vm.accountBusy) { confirm = Confirm.DELETE },
+            )
+        }
     }
 }
 

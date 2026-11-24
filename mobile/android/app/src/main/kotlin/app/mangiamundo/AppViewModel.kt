@@ -48,7 +48,7 @@ private const val SPIN_MS = 1600L
 
 class AppViewModel(application: Application) : AndroidViewModel(application) {
     private val settings = Settings(application)
-    private val api = ApiClient(BuildConfig.API_BASE, settings, android.os.Build.MODEL)
+    private val api = ApiClient(BuildConfig.API_BASE, settings, android.os.Build.MODEL) { signedOut() }
 
     var world by mutableStateOf<World?>(null); private set
     var catalog by mutableStateOf<Catalog?>(null); private set
@@ -927,6 +927,22 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         linkCode = null
         messageChannel.trySend("Account deleted. You start fresh on this device.")
         accountChanged()
+    }
+
+    /**
+     * The server no longer knows this device: it was signed out from another device, or its
+     * account is gone. Says so, and shows everything again as for someone without an account,
+     * so nothing of the old account stays on screen as if it were still here. A new account
+     * only starts with the next check-in or other change.
+     */
+    private fun signedOut() {
+        // On its own: the request that found out is often part of what this starts again.
+        viewModelScope.launch {
+            messageChannel.trySend("You were signed out. Sign in or use a recovery code to get your progress back.")
+            recoveryCode = null
+            linkCode = null
+            accountChanged()
+        }
     }
 
     /** Goes up with every change of account, so an answer for the previous one can be told apart. */
