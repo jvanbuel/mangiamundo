@@ -1,0 +1,76 @@
+name: iOS release
+
+# Archives the app and uploads it to App Store Connect, where it shows up in TestFlight.
+# Started by hand: Actions → iOS release → Run workflow. See docs/release.md.
+#
+# Repository secrets it needs (Settings → Secrets and variables → Actions), all from an
+# App Store Connect API key (Users and Access → Integrations → App Store Connect API)
+# that may manage certificates and profiles and upload builds, such as one with the
+# Admin role:
+#   ASC_KEY_ID      the key's ID
+#   ASC_ISSUER_ID   the issuer ID shown above the list of keys
+#   ASC_KEY_P8      the contents of the downloaded AuthKey_<key id>.p8 file
+#
+# Signing is automatic: with the key, xcodebuild makes the certificates and profiles it
+# needs. The app record for app.mangiamundo has to exist in App Store Connect first.
+on:
+  workflow_dispatch:
+
+jobs:
+  testflight:
+    # The App Store only takes builds made with a recent Xcode; move this along with it.
+    runs-on: macos-26
+    timeout-minutes: 45
+    defaults:
+      run:
+        working-directory: mobile/ios
+    env:
+      ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+      ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: App Store Connect secrets are set
+        env:
+          ASC_KEY_P8: ${{ secrets.ASC_KEY_P8 }}
+        run: |
+          missing=""
+          test -n "$ASC_KEY_ID" || missing="$missing ASC_KEY_ID"
+          test -n "$ASC_ISSUER_ID" || missing="$missing ASC_ISSUER_ID"
+          test -n "$ASC_KEY_P8" || missing="$missing ASC_KEY_P8"
+          if [ -n "$missing" ]; then
+            echo "::error::Missing repository secrets:$missing. See docs/release.md."
+            exit 1
+          fi
+          # Outside the checkout, so the commit shown in the app is not marked dirty.
+          printf '%s\n' "$ASC_KEY_P8" > "$RUNNER_TEMP/AuthKey.p8"
+      - run: brew install xcodegen
+      - run: xcodegen
+      # App Store Connect takes each build number once; the run number rises with every run.
+      - name: Archive
+        run: |
+          xcodebuild archive \
+            -project Mangiamundo.xcodeproj \
+            -scheme Mangiamundo \
+            -configuration Release \
+            -destination 'generic/platform=iOS' \
+            -archivePath "$RUNNER_TEMP/Mangiamundo.xcarchive" \
+            -allowProvisioningUpdates \
+            -authenticationKeyPath "$RUNNER_TEMP/AuthKey.p8" \
+            -authenticationKeyID "$ASC_KEY_ID" \
+            -authenticationKeyIssuerID "$ASC_ISSUER_ID" \
+            CURRENT_PROJECT_VERSION="$GITHUB_RUN_NUMBER"
+      - name: The privacy manifest is in the app
+        run: test -f "$RUNNER_TEMP/Mangiamundo.xcarchive/Products/Applications/Mangiamundo.app/PrivacyInfo.xcprivacy"
+      - name: Upload to App Store Connect
+        run: |
+          xcodebuild -exportArchive \
+            -archivePath "$RUNNER_TEMP/Mangiamundo.xcarchive" \
+            -exportOptionsPlist ExportOptions.plist \
+            -exportPath "$RUNNER_TEMP/export" \
+            -allowProvisioningUpdates \
+            -authenticationKeyPath "$RUNNER_TEMP/AuthKey.p8" \
+            -authenticationKeyID "$ASC_KEY_ID" \
+            -authenticationKeyIssuerID "$ASC_ISSUER_ID"
+      - name: Remove the key
+        if: always()
+        run: rm -f "$RUNNER_TEMP/AuthKey.p8"

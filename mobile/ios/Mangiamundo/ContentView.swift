@@ -231,6 +231,13 @@ struct SettingsSheet: View {
             .font(Theme.font(.subheadline, .bold))
             .foregroundStyle(Theme.accent)
             .padding(.top, 16)
+            Button("Privacy policy") {
+                if let privacy = URL(string: "https://mangiamundo.com/privacy/") { openURL(privacy) }
+            }
+            .buttonStyle(.plain)
+            .font(Theme.font(.subheadline, .bold))
+            .foregroundStyle(Theme.accent)
+            .padding(.top, 12)
             BuildLine(server: model.server)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
