@@ -147,8 +147,8 @@ export async function init() {
 	}
 	void checkReminders();
 	void loadAccount();
-	const stored = await storedLocation();
-	if (stored) {
+	const stored = load<Location>(LOCATION_KEY);
+	if (stored?.area) {
 		app.location = stored;
 		await refresh();
 		void hideSplash();
@@ -161,36 +161,6 @@ export async function init() {
 		if (await locationAllowed()) await locate(true);
 	}
 	await followLink();
-}
-
-/** The saved location. One saved before areas existed (a point and a radius) is moved to
- * the city at that point. */
-async function storedLocation(): Promise<Location | null> {
-	const stored = load<Partial<Location> & { lat?: number; lng?: number; source?: 'gps' | 'search' }>(LOCATION_KEY);
-	try {
-		localStorage.removeItem('mangiamundo.radius');
-	} catch {
-		// Storage unavailable: nothing to clean up.
-	}
-	if (!stored) return null;
-	if (stored.area && Array.isArray(stored.options)) return stored as Location;
-	if (typeof stored.lat !== 'number' || typeof stored.lng !== 'number') return null;
-	try {
-		const located = await api.locateArea(stored.lat, stored.lng);
-		const area = located.city ?? located.postal_code;
-		if (!area) return null;
-		const location: Location = {
-			area,
-			lat: stored.lat,
-			lng: stored.lng,
-			source: stored.source ?? 'search',
-			options: optionsOf(located)
-		};
-		localStorage.setItem(LOCATION_KEY, JSON.stringify(location));
-		return location;
-	} catch {
-		return null;
-	}
 }
 
 function optionsOf(located: Located): Area[] {
