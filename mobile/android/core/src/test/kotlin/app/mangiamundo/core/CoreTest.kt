@@ -113,7 +113,17 @@ class CoreTest {
         val celebrations = json.decodeFromString<List<Celebration>>(fixture("celebrations"))
         assertTrue(celebrations.all { it.nearby.isNotEmpty() && it.reminder.title.isNotEmpty() })
         assertTrue(places.any { it.hours?.status != null })
-        assertTrue(json.decodeFromString<VisitResult>(fixture("visit")).visit.verified)
+        val visit = json.decodeFromString<VisitResult>(fixture("visit"))
+        assertTrue(visit.visit.verified)
+        assertEquals(1, visit.progress?.placesVisited)
+        assertEquals(2, visit.progress?.profile?.level)
+        assertEquals(listOf(UnlockedKind.COUNTRY, UnlockedKind.BADGE, UnlockedKind.LEVEL), visit.unlocked.map { it.kind })
+        assertEquals("AZ", visit.unlocked[0].country)
+        assertEquals(BadgeKind.VISITS, visit.unlocked[1].badge)
+        assertEquals(2, visit.unlocked[2].level)
+        val catalog = json.decodeFromString<Catalog>(fixture("countries"))
+        assertEquals("🇦🇿 Azerbaijan: gold. 2 more for diamond.", visit.unlocked[0].announcement(catalog))
+        assertEquals("Level 2. 175 XP so far.", visit.unlocked[2].announcement(catalog))
         val place = json.decodeFromString<Place>(fixture("place"))
         assertEquals(1, place.visits.size)
         assertTrue(place.verified)
@@ -175,6 +185,12 @@ class CoreTest {
         assertEquals(BadgeKind.UNKNOWN, discover.badges[0].kind)
         assertEquals(EventStatus.UNKNOWN, discover.events[0].status)
         assertEquals(Status.DISCOVERED, discover.countries[0].status)
+        val unlocked = json.decodeFromString<Unlocked>(
+            """{"kind":"quest","country":null,"badge":"later","level":null,"title":"Quest done","text":"+50 XP."}""",
+        )
+        assertEquals(UnlockedKind.UNKNOWN, unlocked.kind)
+        assertNull(unlocked.badge)
+        assertEquals("Quest done. +50 XP.", unlocked.announcement(null))
     }
 
     @Test

@@ -57,11 +57,14 @@ class ApiClient(private val baseUrl: String, private val tokens: TokenStore, pri
         return json.decodeFromString(authed("GET", "/api/places/${encode(placeId)}$position"))
     }
 
-    /** `here` is the device position, sent so the server can mark the visit as verified. */
-    suspend fun checkIn(placeId: String, here: Pair<Double, Double>?): VisitResult {
+    /**
+     * Checks in, and answers with the progress in the area afterwards and what the check-in
+     * unlocked. `here` is the device position, sent so the server can mark the visit as verified.
+     */
+    suspend fun checkIn(placeId: String, areaId: String, here: Pair<Double, Double>?): VisitResult {
         val position = here?.let { LatLng(it.first, it.second) }
         val body = json.encodeToString(CheckInBody.serializer(), CheckInBody(position))
-        return json.decodeFromString(authed("POST", "/api/places/${encode(placeId)}/visits?${tz()}", body))
+        return json.decodeFromString(authed("POST", "/api/places/${encode(placeId)}/visits?${area(areaId)}&${tz()}", body))
     }
 
     suspend fun removeVisit(visitId: Long) {
