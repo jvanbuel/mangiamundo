@@ -985,8 +985,10 @@ async fn visits_between_counts_distinct_places_inside_the_window() {
     )
     .await
     .unwrap();
-    let token = store::create_user(&db).await.unwrap();
-    let user = store::user_for_token(&db, &token).await.unwrap().unwrap();
+    use mangiamundo::account;
+    let token = account::create_user(&db, None, START).await.unwrap();
+    let session = account::session_for_token(&db, &token, START).await;
+    let user = session.unwrap().unwrap().user;
 
     let day = |s: &str| s.parse::<chrono::NaiveDate>().unwrap();
     let (first, last) = (day("2026-12-01"), day("2026-12-31"));
