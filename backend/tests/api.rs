@@ -42,9 +42,20 @@ async fn app_with_notes(
     osm_notes_token: Option<String>,
     start: i64,
 ) -> (Router, Arc<AtomicI64>) {
+    let (state, now) = state_with_notes(db, osm_notes_url, osm_notes_token, start);
+    (api::router(state), now)
+}
+
+/// The state of such an app, for a test that needs a hand in it.
+fn state_with_notes(
+    db: sqlx::SqlitePool,
+    osm_notes_url: Option<String>,
+    osm_notes_token: Option<String>,
+    start: i64,
+) -> (AppState, Arc<AtomicI64>) {
     let now = Arc::new(AtomicI64::new(start));
     let clock = now.clone();
-    let router = api::router(AppState {
+    let state = AppState {
         loads: Default::default(),
         limits: Default::default(),
         db,
@@ -56,8 +67,8 @@ async fn app_with_notes(
         osm_notes_url,
         osm_notes_token,
         auth: Default::default(),
-    });
-    (router, now)
+    };
+    (state, now)
 }
 
 async fn call(
@@ -987,8 +998,10 @@ async fn visits_between_counts_distinct_places_inside_the_window() {
     )
     .await
     .unwrap();
-    let token = store::create_user(&db).await.unwrap();
-    let user = store::user_for_token(&db, &token).await.unwrap().unwrap();
+    use mangiamundo::account;
+    let token = account::create_user(&db, None, START).await.unwrap();
+    let session = account::session_for_token(&db, &token, START).await;
+    let user = session.unwrap().unwrap().user;
 
     let day = |s: &str| s.parse::<chrono::NaiveDate>().unwrap();
     let (first, last) = (day("2026-12-01"), day("2026-12-31"));
@@ -1604,6 +1617,86 @@ async fn writes_contract_fixtures() {
         "link-code",
         &serde_json::json!({ "code": "ABCD-EFGH", "expires_at": START + 600 }),
     );
+
+    // The server's version is real; the commit is only set in a Docker build.
+    let mut health = get("/api/health".into()).await;
+    health["commit"] = "0123abc".into();
+    write("health", &health);
+
+    // Tokens, recovery codes and the slugs of shared pages are random.
+    let (status, mut new) = call(&app, "POST", "/api/session", None, None).await;
+    assert_eq!(status, StatusCode::OK);
+    assert!(new["token"].is_string());
+    new["token"] = "0123456789abcdef0123456789abcdef".into();
+    write("session", &new);
+    let uri = "/api/account/recovery-code";
+    let (status, mut recovery) = call(&app, "POST", uri, Some(&token), None).await;
+    assert_eq!(status, StatusCode::OK);
+    assert!(recovery["code"].is_string());
+    recovery["code"] = "ABCD-EFGH-JKLM-NPQR-STUV".into();
+    write("recovery-code", &recovery);
+    let (status, mut link) = post_shared(&app, &format!("/api/share?{HERE}"), &token).await;
+    assert_eq!(status, StatusCode::OK);
+    let page = "https://mangiamundo.test/p/";
+    assert!(link["url"].as_str().unwrap().starts_with(page));
+    link["url"] = format!("{page}abcd2345ef").into();
+    link["image_url"] = format!("{page}abcd2345ef/card.png").into();
+    write("share-link", &link);
+
+    // A suggestion is drawn at random: with every other place excluded, one is left.
+    let everywhere = get(format!("/api/places?{HERE}")).await;
+    let everywhere = everywhere.as_array().unwrap();
+    let id = |p: &Value| p["id"].as_str().unwrap().to_string();
+    let only = everywhere
+        .iter()
+        .find(|p| {
+            p["visits"].as_array().unwrap().is_empty()
+                && p["countries"].as_array().unwrap().len() == 1
+                && p["hours"]["status"]["open"] == true
+                && !id(p).starts_with("user-")
+        })
+        .map(id)
+        .unwrap();
+    let others: Vec<String> = everywhere.iter().map(id).filter(|i| *i != only).collect();
+    let suggestion = get(format!("/api/suggestion?{HERE}&exclude={}", others.join(","))).await;
+    assert_eq!(suggestion["place"]["id"], only.as_str());
+    write("suggestion", &suggestion);
+
+    // An area that is loading: the fetch is begun by hand, and so slow it stays where it began.
+    let db = store::connect("sqlite::memory:").await.unwrap();
+    let (state, _) = state_with_notes(db, None, None, START);
+    let loads = state.loads.clone();
+    let _loading = loads.begin("demo-leuven");
+    loads.step("demo-leuven", 15.0, 95.0, "Looking for restaurants", 1e9);
+    let loading = api::router(state);
+    let (status, progress) =
+        call(&loading, "GET", "/api/areas/demo-leuven/progress", None, None).await;
+    assert_eq!(status, StatusCode::OK);
+    write("area-progress", &progress);
+
+    // Reading again from OpenStreetMap: a place that got hours there, and one mapped since
+    // that the user had added.
+    let (osm, _, fake, _) = app_with_osm().await;
+    let token = session(&osm).await;
+    let mut edited = osm_place(42, "Lalibela", "ethiopian", 50.8798, 4.7005);
+    edited.opening_hours = Some("Mo-Su 12:00-22:00".into());
+    let found = mangiamundo::providers::Lookup::Found(edited);
+    fake.places.lock().unwrap().insert("osm-node-42".into(), found);
+    let uri = "/api/places/osm-node-42/refresh?lat=50.88&lng=4.7";
+    let (status, refreshed) = call(&osm, "POST", uri, Some(&token), None).await;
+    assert_eq!(status, StatusCode::OK);
+    write("refresh", &refreshed);
+    let new = r#"{"name":"Inti","country":"PE","lat":50.8801,"lng":4.7009,"note":false}"#;
+    let (status, _) = call(&osm, "POST", "/api/places", Some(&token), Some(new)).await;
+    assert_eq!(status, StatusCode::OK);
+    *fake.nearby.lock().unwrap() = vec![
+        osm_place(42, "Lalibela", "ethiopian", 50.8798, 4.7005),
+        osm_place(43, "Restaurant Inti", "peruvian", 50.8801, 4.7009),
+    ];
+    let uri = "/api/places/nearby/refresh?lat=50.88&lng=4.7";
+    let (status, nearby) = call(&osm, "POST", uri, Some(&token), None).await;
+    assert_eq!(status, StatusCode::OK);
+    write("nearby", &nearby);
 
     // What a newer server might send: enum values this app version doesn't know.
     let mut newer = discover.clone();

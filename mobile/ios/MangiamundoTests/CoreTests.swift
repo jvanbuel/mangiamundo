@@ -138,6 +138,38 @@ final class ContractTests: XCTestCase {
         XCTAssertEqual(try decode(LinkCode.self, "link-code").code, "ABCD-EFGH")
     }
 
+    /// The answers that are not lists of places: one fixture each.
+    func testDecodesTheSmallerAnswers() throws {
+        let health = try decode(Health.self, "health")
+        XCTAssertEqual(health.commit, "0123abc")
+        XCTAssertFalse(health.version?.isEmpty ?? true)
+        XCTAssertEqual(try decode(Session.self, "session").token, "0123456789abcdef0123456789abcdef")
+        XCTAssertEqual(try decode(RecoveryCode.self, "recovery-code").code, "ABCD-EFGH-JKLM-NPQR-STUV")
+        let link = try decode(ShareLink.self, "share-link")
+        XCTAssertEqual(link.url, "https://mangiamundo.test/p/abcd2345ef")
+        XCTAssertEqual(link.imageUrl, link.url + "/card.png")
+        XCTAssertTrue(link.text.contains("Leuven"))
+        XCTAssertEqual(
+            try decode(AreaProgress?.self, "area-progress"),
+            AreaProgress(percent: 15, text: "Looking for restaurants")
+        )
+    }
+
+    func testDecodesASuggestionAndWhatARefreshFound() throws {
+        let suggestion = try decode(Suggestion.self, "suggestion")
+        XCTAssertEqual(suggestion.place.countries, [suggestion.country])
+        XCTAssertTrue(suggestion.place.visits.isEmpty)
+        XCTAssertEqual(suggestion.place.hours?.status?.open, true)
+        let refreshed = try decode(RefreshResult.self, "refresh")
+        XCTAssertEqual(refreshed.status, .updated)
+        XCTAssertEqual(refreshed.place?.name, "Lalibela")
+        XCTAssertEqual(refreshed.place?.hours?.week?.count, 7)
+        let nearby = try decode(NearbyResult.self, "nearby")
+        XCTAssertEqual(nearby.added.map(\.name), ["Restaurant Inti"])
+        XCTAssertEqual(nearby.added.first?.osmUrl, "https://www.openstreetmap.org/node/43")
+        XCTAssertEqual(nearby.matched, 1)
+    }
+
     func testDecodesRefreshResults() throws {
         let decoder = JSONDecoder()
         decoder.keyDecodingStrategy = .convertFromSnakeCase
