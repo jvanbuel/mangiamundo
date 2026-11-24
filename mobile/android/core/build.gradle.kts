@@ -24,4 +24,6 @@ tasks.test {
     useJUnitPlatform()
     // The API fixtures written by the backend tests, so a change reruns the tests.
     inputs.dir("../../../contract")
+    // The country outlines the map maths is tested on.
+    inputs.file("../../../shared/world.json")
 }

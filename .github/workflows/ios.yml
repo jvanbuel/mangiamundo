@@ -7,14 +7,14 @@ on:
     branches: [main]
     paths:
       - mobile/ios/**
-      - mobile/shared/**
+      - shared/**
       - contract/**
       - .github/workflows/ios.yml
   pull_request:
     # The iOS tests decode the contract fixtures, so those count too.
     paths:
       - mobile/ios/**
-      - mobile/shared/**
+      - shared/**
       - contract/**
       - .github/workflows/ios.yml
 

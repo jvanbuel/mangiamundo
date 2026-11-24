@@ -25,8 +25,10 @@ targets:
         product: GoogleSignInSwift
     sources:
       - Mangiamundo
-      # The country outlines are shared with the Android app.
-      - path: ../shared/world.json
+      # The country outlines and the fonts are shared with the Android app and the backend.
+      - path: ../../shared/world.json
+        buildPhase: resources
+      - path: ../../shared/fonts/res/font
         buildPhase: resources
     settings:
       base:
@@ -71,14 +73,15 @@ targets:
           UIImageRespectsSafeAreaInsets: false
         UISupportedInterfaceOrientations:
           - UIInterfaceOrientationPortrait
-        # Nunito, shipped in Mangiamundo/Fonts (SIL Open Font License).
+        # Nunito, from shared/fonts (SIL Open Font License). These are file names, which
+        # follow Android's resource naming; the code asks for fonts by PostScript name.
         UIAppFonts:
-          - Nunito-Regular.ttf
-          - Nunito-Medium.ttf
-          - Nunito-SemiBold.ttf
-          - Nunito-Bold.ttf
-          - Nunito-ExtraBold.ttf
-          - Nunito-Black.ttf
+          - nunito_regular.ttf
+          - nunito_medium.ttf
+          - nunito_semibold.ttf
+          - nunito_bold.ttf
+          - nunito_extrabold.ttf
+          - nunito_black.ttf
         # Lets the app check which maps apps are installed (canOpenURL): Google Maps for
         # Directions, CoMaps and Organic Maps for editing a place.
         LSApplicationQueriesSchemes:
