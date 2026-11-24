@@ -1527,6 +1527,10 @@ async fn writes_contract_fixtures() {
         "celebrations",
         &get(format!("/api/celebrations?{HERE}&days=90")).await,
     );
+    write(
+        "reminders",
+        &get(format!("/api/reminders?{HERE}&days=90")).await,
+    );
     write("visit", &visit);
     write(
         "place",
@@ -2731,6 +2735,67 @@ async fn monthly_quests_pay_once_and_the_streak_shows() {
         .map(|q| q["xp"].as_u64().unwrap())
         .sum();
     assert!(quest_xp >= 50 && xp >= quest_xp + 2 * 10);
+}
+
+#[tokio::test]
+async fn planning_reminders_books_no_quest_rewards() {
+    // 1 December 2026, 12:00 UTC: the day the quests reminder is due.
+    let first = START + 15 * DAY;
+    let db = store::connect("sqlite::memory:").await.unwrap();
+    let (app, _) = app_with(db.clone(), None, first).await;
+    let token = session(&app).await;
+    let (_, places) = call(&app, "GET", &format!("/api/places?{HERE}"), None, None).await;
+    // Two check-ins finish a quest. Without an area, checking in doesn't look at quests.
+    for place in &places.as_array().unwrap()[..2] {
+        let (status, _) = call(&app, "POST", &visits_uri(place), Some(&token), None).await;
+        assert_eq!(status, StatusCode::OK);
+    }
+    let booked = || async {
+        sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM quest_rewards")
+            .fetch_one(&db)
+            .await
+            .unwrap()
+    };
+    assert_eq!(booked().await, 0);
+
+    let uri = format!("/api/reminders?{HERE}&days=366");
+    let (status, plan) = call(&app, "GET", &uri, Some(&token), None).await;
+    assert_eq!(status, StatusCode::OK);
+    let plan = plan.as_array().unwrap();
+    let quests = &plan[0];
+    assert_eq!(quests["key"], "quests:2026-12");
+    assert_eq!(quests["local_date"], "2026-12-01");
+    assert_eq!(quests["hour"], 10);
+    assert_eq!(quests["title"], "New quests this month");
+    assert_eq!(quests["url"], "/?tab=badges");
+    assert_eq!(quests["tag"], "quests");
+    // A year ahead: every month's quests, soonest first.
+    let months = plan.iter().filter(|r| r["tag"] == "quests").count();
+    assert_eq!(months, 13);
+    let dates: Vec<&str> = plan
+        .iter()
+        .map(|r| r["local_date"].as_str().unwrap())
+        .collect();
+    assert!(dates.is_sorted());
+    assert_eq!(booked().await, 0);
+
+    // The plan is the same for nobody in particular, and `days` is how far it looks.
+    let (status, anonymous) = call(&app, "GET", &uri, None, None).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(anonymous.as_array().unwrap().len(), plan.len());
+    let uri = format!("/api/reminders?{HERE}&days=0");
+    let (_, today) = call(&app, "GET", &uri, Some(&token), None).await;
+    assert!(today
+        .as_array()
+        .unwrap()
+        .iter()
+        .all(|r| r["local_date"] == "2026-12-01"));
+    assert_eq!(booked().await, 0);
+
+    // Looking at the quests themselves is what books the finished one.
+    let uri = format!("/api/discover?{HERE}");
+    call(&app, "GET", &uri, Some(&token), None).await;
+    assert!(booked().await > 0);
 }
 
 #[tokio::test]
