@@ -129,7 +129,10 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Cities and postal codes matching what someone typed. */
+        /**
+         * Cities and postal codes matching what someone typed.
+         * @description For a search someone submits: `/api/areas/suggest` is the one to call while they type.
+         */
         get: operations["search_areas"];
         put?: never;
         post?: never;
@@ -1010,7 +1013,8 @@ export interface components {
          *     - `nothing_open` (404): `/api/suggestion` found unvisited places, but none open now;
          *       ask again with `open=false`.
          *     - `nothing_left` (404): `/api/suggestion` found no unvisited place at all.
-         *     - `too_many_requests` (429): a limit was reached, such as places added per day.
+         *     - `too_many_requests` (429): a limit was reached, such as places added per day or
+         *       location lookups per minute.
          *     - `upstream` (502): the places or areas provider failed.
          *     - `internal` (500): anything else, such as a database error.
          * @enum {string}
@@ -1662,6 +1666,15 @@ export interface operations {
                     "application/json": components["schemas"]["AreaInfo"][];
                 };
             };
+            /** @description `too_many_requests`: this client searched for too many new things (more than 10 in a minute or 60 in an hour), or too many lookups are waiting */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
             /** @description An error */
             default: {
                 headers: {
@@ -1691,6 +1704,15 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["Located"];
+                };
+            };
+            /** @description `too_many_requests`: this client asked about too many new places (more than 5 in a minute or 30 in an hour), or too many lookups are waiting */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
                 };
             };
             /** @description An error */

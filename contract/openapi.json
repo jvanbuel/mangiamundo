@@ -691,7 +691,7 @@
         "type": "object"
       },
       "ErrorCode": {
-        "description": "What went wrong, for clients that react to a specific case:\n\n- `bad_request` (400, 413, 415, 422): invalid or missing parameters, or a malformed,\n  oversized (over 2 MiB) or non-JSON body.\n- `unauthorized` (401): a missing or unknown session token.\n- `not_found` (404): an unknown place, area, device, code or `/api` path.\n- `method_not_allowed` (405): the path exists, but not with this method.\n- `nothing_open` (404): `/api/suggestion` found unvisited places, but none open now;\n  ask again with `open=false`.\n- `nothing_left` (404): `/api/suggestion` found no unvisited place at all.\n- `too_many_requests` (429): a limit was reached, such as places added per day.\n- `upstream` (502): the places or areas provider failed.\n- `internal` (500): anything else, such as a database error.",
+        "description": "What went wrong, for clients that react to a specific case:\n\n- `bad_request` (400, 413, 415, 422): invalid or missing parameters, or a malformed,\n  oversized (over 2 MiB) or non-JSON body.\n- `unauthorized` (401): a missing or unknown session token.\n- `not_found` (404): an unknown place, area, device, code or `/api` path.\n- `method_not_allowed` (405): the path exists, but not with this method.\n- `nothing_open` (404): `/api/suggestion` found unvisited places, but none open now;\n  ask again with `open=false`.\n- `nothing_left` (404): `/api/suggestion` found no unvisited place at all.\n- `too_many_requests` (429): a limit was reached, such as places added per day or\n  location lookups per minute.\n- `upstream` (502): the places or areas provider failed.\n- `internal` (500): anything else, such as a database error.",
         "enum": [
           "bad_request",
           "unauthorized",
@@ -2158,6 +2158,7 @@
     },
     "/api/areas": {
       "get": {
+        "description": "For a search someone submits: `/api/areas/suggest` is the one to call while they type.",
         "operationId": "search_areas",
         "parameters": [
           {
@@ -2182,6 +2183,16 @@
                 }
               }
             }
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "`too_many_requests`: this client searched for too many new things (more than 10 in a minute or 60 in an hour), or too many lookups are waiting"
           },
           "default": {
             "content": {
@@ -2232,6 +2243,16 @@
                 }
               }
             }
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "`too_many_requests`: this client asked about too many new places (more than 5 in a minute or 30 in an hour), or too many lookups are waiting"
           },
           "default": {
             "content": {
