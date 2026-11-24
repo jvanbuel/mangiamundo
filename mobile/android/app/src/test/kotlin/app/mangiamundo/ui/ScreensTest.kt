@@ -40,11 +40,20 @@ import com.android.resources.NightMode
 import org.junit.Rule
 import org.junit.Test
 import java.io.File
+import java.util.Locale
+import java.util.TimeZone
 
 /** Renders the main screens with sample data, in light and dark mode. */
 class ScreensTest {
     @get:Rule
     val paparazzi = Paparazzi(deviceConfig = DeviceConfig.PIXEL_6, maxPercentDifference = 0.1)
+
+    // Dates are written, and "visited today" is decided, in the machine's language and time
+    // zone. Pinned, so the images are the same wherever the tests run.
+    init {
+        Locale.setDefault(Locale.US)
+        TimeZone.setDefault(TimeZone.getTimeZone("UTC"))
+    }
 
     private val world = World.parse(File("../../../shared/world.json").readText())
     private val leuven = SavedLocation(Area("demo-leuven", "Leuven", lat = 50.8798, lng = 4.7005), 50.8798, 4.7005, fromGps = true)

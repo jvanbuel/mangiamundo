@@ -59,3 +59,13 @@ jobs:
       - uses: gradle/actions/setup-gradle@v4
       # The runner image ships the Android SDK, so the app module compiles too.
       - run: ./gradlew :core:test :app:compileDebugKotlin
+      # Renders the screens on the JVM and compares them with the images in
+      # app/src/test/snapshots. After a change to the UI: ./gradlew :app:recordPaparazziDebug
+      - run: ./gradlew :app:verifyPaparazziDebug
+      - name: Keep the images that differ
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: paparazzi-failures
+          path: mobile/android/app/build/paparazzi/failures
+          if-no-files-found: ignore
