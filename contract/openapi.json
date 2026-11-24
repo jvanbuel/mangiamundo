@@ -3339,6 +3339,7 @@
     },
     "/api/session": {
       "post": {
+        "description": "A device asks for one before its first write, not before: what it shows until then it\ncan read without a token. It keeps the token. At most 20 accounts an hour are made from\none address.",
         "operationId": "create_session",
         "requestBody": {
           "content": {
@@ -3367,6 +3368,16 @@
               }
             }
           },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "`too_many_requests`: too many accounts were made from this address in the last hour"
+          },
           "default": {
             "content": {
               "application/json": {
@@ -3378,7 +3389,7 @@
             "description": "An error"
           }
         },
-        "summary": "Creates an anonymous account. A device asks for a token once and keeps it.",
+        "summary": "Creates an anonymous account and returns the token of its first device.",
         "tags": [
           "account"
         ]

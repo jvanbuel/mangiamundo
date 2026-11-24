@@ -24,9 +24,29 @@ codes, with their statuses, are listed in the description of `ErrorCode` in
 
 ## Sessions and accounts
 
-Accounts are anonymous: each device asks `POST /api/session` for a token once and
-sends it as `Authorization: Bearer <token>`. Each device has its own session, listed
-(and signed out) under `GET /api/account`.
+Accounts are anonymous, and made late. What a client shows before anyone does anything
+(`/api/discover`, `/api/places`, `/api/places/{id}`, `/api/suggestion`,
+`/api/unknown-places`, `/api/reminders`, and everything that is the same for everyone)
+answers without a token, as for someone with no visits. A device asks
+`POST /api/session` for a token with its first write (a check-in, an added place, a
+recovery code) and from then on sends it as `Authorization: Bearer <token>`, also when
+reading. Each device has its own session, listed (and signed out) under
+`GET /api/account`. At most 20 accounts an hour are made from one address
+(`Fly-Client-IP`), and 1000 an hour in all; past that the answer is a 429.
+
+A token the server doesn't know is a 401 `unauthorized` everywhere, also where no token
+is needed: the device was signed out from another one, or its account was deleted. A
+client then drops the token, tells the user they were signed out, and goes on without an
+account; it doesn't quietly start a new one, which would look like lost progress. The
+next write makes one.
+
+The server keeps only the SHA-256 of a session token, as of recovery and link codes.
+
+Once a day the server deletes accounts nobody can come back to and nothing is in: older
+than 90 days, not used by any device for 90 days, without a recovery code or a way to
+sign in, and without a row in any table that refers to a user (visits, added places,
+reports, reminders, a public page, …). It also deletes expired sign-in and link codes,
+and the record of reminders sent more than 60 days ago.
 
 To keep progress after clearing the browser or switching phones, an account can make a
 **recovery code** (20 characters, only its hash is stored, a new one replaces the old)

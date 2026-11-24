@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use mangiamundo::config::{Config, ProviderKind};
 use mangiamundo::providers::{self, cached::CachedDirectory, osm};
-use mangiamundo::{api, auth, calendar, push, store, AppState};
+use mangiamundo::{account, api, auth, calendar, push, store, AppState};
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
@@ -63,6 +63,9 @@ async fn main() -> anyhow::Result<()> {
             std::time::Duration::from_secs(config.push_interval_secs),
         ));
     }
+
+    // Accounts nobody came back to, expired codes and old reminder records go once a day.
+    tokio::spawn(account::run_cleanup(state.clone()));
 
     let mut app = api::router(state);
     if let Some(dir) = config

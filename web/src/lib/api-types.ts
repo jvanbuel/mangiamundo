@@ -567,7 +567,12 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Creates an anonymous account. A device asks for a token once and keeps it. */
+        /**
+         * Creates an anonymous account and returns the token of its first device.
+         * @description A device asks for one before its first write, not before: what it shows until then it
+         *     can read without a token. It keeps the token. At most 20 accounts an hour are made from
+         *     one address.
+         */
         post: operations["create_session"];
         delete?: never;
         options?: never;
@@ -2431,6 +2436,15 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["Session"];
+                };
+            };
+            /** @description `too_many_requests`: too many accounts were made from this address in the last hour */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
                 };
             };
             /** @description An error */

@@ -410,18 +410,51 @@ struct NewSession {
     device: Option<String>,
 }
 
-/// Creates an anonymous account. A device asks for a token once and keeps it.
+/// The address a session is being made from, for [`create_session`]'s limit: what Fly's
+/// proxy puts in `Fly-Client-IP` itself, whatever the client sent. An IPv6 address counts
+/// as its /64, since one connection has all of those. `None` without the proxy
+/// (development, tests).
+fn session_client(headers: &header::HeaderMap) -> Option<String> {
+    let ip = headers.get("fly-client-ip")?.to_str().ok()?.trim().parse().ok()?;
+    Some(match ip {
+        std::net::IpAddr::V4(ip) => ip.to_string(),
+        std::net::IpAddr::V6(ip) => {
+            let [a, b, c, d, ..] = ip.segments();
+            format!("{a:x}:{b:x}:{c:x}:{d:x}::/64")
+        }
+    })
+}
+
+/// Creates an anonymous account and returns the token of its first device.
+///
+/// A device asks for one before its first write, not before: what it shows until then it
+/// can read without a token. It keeps the token. At most 20 accounts an hour are made from
+/// one address.
 #[utoipa::path(
     post, path = "/api/session", tag = "account",
     request_body(content = Option<NewSession>, description = "Optional."),
-    responses((status = 200, body = Session), (status = "default", description = "An error", body = ErrorBody)),
+    responses(
+        (status = 200, body = Session),
+        (status = 429, description = "`too_many_requests`: too many accounts were made from this address in the last hour", body = ErrorBody),
+        (status = "default", description = "An error", body = ErrorBody),
+    ),
 )]
 async fn create_session(
     State(state): State<AppState>,
+    headers: header::HeaderMap,
     body: Option<JsonBody<NewSession>>,
 ) -> ApiResult<Session> {
+    let now = state.now();
+    // Per address where the proxy tells it, and for everyone together, so that addresses
+    // that can't be told apart (or a great many of them) don't fill the database either.
+    let client = session_client(&headers);
+    if client.is_some_and(|client| !state.limits.allow(&client, "session", 20, 3600, now))
+        || !state.limits.allow("*", "session", 1000, 3600, now)
+    {
+        return Err(ApiError::TooManyRequests("too many new accounts from here; try again in an hour"));
+    }
     let device = body.and_then(|JsonBody(b)| b.device);
-    let token = account::create_user(&state.db, device.as_deref(), state.now()).await?;
+    let token = account::create_user(&state.db, device.as_deref(), now).await?;
     Ok(Json(Session { token }))
 }
 

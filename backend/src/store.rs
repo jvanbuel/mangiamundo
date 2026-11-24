@@ -31,8 +31,18 @@ pub async fn connect(url: &str) -> anyhow::Result<SqlitePool> {
         .max_connections(max)
         .connect_with(options)
         .await?;
-    sqlx::migrate!().run(&pool).await?;
+    migrate(&pool).await?;
     Ok(pool)
+}
+
+/// Brings the database up to date: the migrations, then what they leave to the server.
+pub(crate) async fn migrate(pool: &SqlitePool) -> anyhow::Result<()> {
+    sqlx::migrate!().run(pool).await?;
+    let hashed = crate::account::hash_plain_tokens(pool).await?;
+    if hashed > 0 {
+        tracing::info!(hashed, "session tokens are now kept as hashes");
+    }
+    Ok(())
 }
 
 /// A cached provider lookup for a city or postal code.

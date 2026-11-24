@@ -36,6 +36,18 @@ can only hold fixed build arguments, not the commit being built. Without it
 `/api/health` answers `"commit": null` and the web app shows its build time instead
 of a commit. A deploy by hand, as above, sets it.
 
+## Upgrading
+
+Migrations run when the server starts. Migration 0017 keeps session tokens as hashes:
+the server hashes the ones already there at its first start after it (devices keep their
+tokens), and a server from before it can no longer read the `sessions` table. To go back
+to an older build, restore a snapshot from before the upgrade.
+
+New accounts are limited per address, which the server reads from the `Fly-Client-IP`
+header that Fly's proxy sets. Behind another proxy that header is absent (only the limit
+for everyone together applies) unless the proxy sets it; it must then also overwrite one a
+client sends.
+
 ## Backups
 
 All data is one SQLite file, `/data/mangiamundo.db`, on one Fly volume named `data`.
