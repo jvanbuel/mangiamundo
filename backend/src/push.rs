@@ -253,19 +253,19 @@ pub fn quests_notification(monthly: &crate::game::MonthlyQuests) -> Notification
     }
 }
 
-/// The reminders due for one subscriber on `day`, keyed for de-duplication.
+/// The reminders due on `day` in an area, keyed for de-duplication. Only reads, so it can
+/// be asked about any day. Without a user: as for someone who has no visits.
 async fn due(
     state: &AppState,
-    user: &str,
+    user: Option<&str>,
     day: NaiveDate,
     area_id: &str,
     rows: &[PlaceRow],
     counts: &HashMap<&str, u32>,
-) -> anyhow::Result<Vec<(String, Notification)>> {
+) -> sqlx::Result<Vec<(String, Notification)>> {
     let mut out = Vec::new();
     if day.day() == 1 {
-        // ponytail: this also books quests already finished on the 1st; harmless, they pay once.
-        let monthly = progress::monthly_quests(state, Some(user), area_id, day, rows).await?;
+        let monthly = progress::quests(state, user, area_id, day, rows).await?;
         out.push((
             format!("quests:{}", monthly.month),
             quests_notification(&monthly),
@@ -300,9 +300,13 @@ async fn due(
                 },
             ));
         } else if event.ends - Duration::days(LAST_CHANCE_DAYS - 1) == day {
-            let done =
-                store::visits_between(&state.db, user, &event.countries, event.starts, event.ends)
-                    .await?;
+            let done = match user {
+                Some(user) => {
+                    let (from, to) = (event.starts, event.ends);
+                    store::visits_between(&state.db, user, &event.countries, from, to).await?
+                }
+                None => 0,
+            };
             if done < event.target {
                 let left = event.target - done;
                 out.push((
@@ -315,6 +319,45 @@ async fn due(
                     },
                 ));
             }
+        }
+    }
+    Ok(out)
+}
+
+/// A reminder that will be sent, for apps that schedule their own notifications.
+#[derive(Debug, Serialize, utoipa::ToSchema)]
+pub struct Reminder {
+    /// Stable for this reminder: scheduling it again under the same key replaces it.
+    pub key: String,
+    /// The day it is due, in the user's time zone.
+    pub local_date: NaiveDate,
+    /// The local hour from which it is sent that day.
+    pub hour: u32,
+    #[serde(flatten)]
+    pub notification: Notification,
+}
+
+/// The reminders that become due in an area from `today` up to `days` days later, soonest
+/// first: what the push loop would send on each of those days, given what the user has
+/// visited so far. Sends and records nothing.
+pub async fn plan(
+    state: &AppState,
+    user: Option<&str>,
+    area_id: &str,
+    today: NaiveDate,
+    days: i64,
+) -> sqlx::Result<Vec<Reminder>> {
+    let rows = store::area_rows(&state.db, area_id, None).await?;
+    let counts = progress::places_per_country(&rows);
+    let mut out = Vec::new();
+    for local_date in today.iter_days().take(days.max(0) as usize + 1) {
+        for (key, notification) in due(state, user, local_date, area_id, &rows, &counts).await? {
+            out.push(Reminder {
+                key,
+                local_date,
+                hour: FIRST_HOUR,
+                notification,
+            });
         }
     }
     Ok(out)
@@ -360,11 +403,16 @@ async fn remind(
     let rows = store::area_rows(&state.db, area_id, None).await?;
     let counts = progress::places_per_country(&rows);
 
+    let day = local.date_naive();
+    if day.day() == 1 {
+        // The quests reminder goes out today; quests already finished get their XP now.
+        // ponytail: booked on every pass of the 1st; harmless, they pay once.
+        progress::monthly_quests(state, Some(user), area_id, day, &rows).await?;
+    }
+
     let mut sent = 0;
     let mut gone = false;
-    for (dedupe, notification) in
-        due(state, user, local.date_naive(), area_id, &rows, &counts).await?
-    {
+    for (dedupe, notification) in due(state, Some(user), day, area_id, &rows, &counts).await? {
         if !store::mark_push_sent(&state.db, &sub.endpoint, &dedupe, state.now()).await? {
             continue;
         }

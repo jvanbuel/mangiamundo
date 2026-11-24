@@ -114,8 +114,9 @@ async fn event_progress(
     Ok(out)
 }
 
-/// This month's quests in the area, keeping the XP of the ones the user finished.
-pub async fn monthly_quests(
+/// The quests of `today`'s month in the area and how far the user is. Only reads, so it
+/// can be asked about any month.
+pub async fn quests(
     state: &AppState,
     user: Option<&str>,
     area_id: &str,
@@ -132,7 +133,24 @@ pub async fn monthly_quests(
         .into_iter()
         .flat_map(|c| c.countries)
         .collect();
-    let monthly = game::monthly_quests(area_id, today, rows, &tasted, &celebrating);
+    Ok(game::monthly_quests(
+        area_id,
+        today,
+        rows,
+        &tasted,
+        &celebrating,
+    ))
+}
+
+/// This month's quests in the area, keeping the XP of the ones the user finished.
+pub async fn monthly_quests(
+    state: &AppState,
+    user: Option<&str>,
+    area_id: &str,
+    today: NaiveDate,
+    rows: &[PlaceRow],
+) -> sqlx::Result<MonthlyQuests> {
+    let monthly = quests(state, user, area_id, today, rows).await?;
     if let Some(user) = user {
         let done: Vec<(&str, u32)> = monthly
             .quests

@@ -28,9 +28,10 @@ use chrono_tz::Tz;
 
 use crate::calendar::{self, Celebration};
 use crate::game::{self, Summary};
-use crate::providers::{AreaInfo, Located, Lookup};
+use crate::providers::{osm, AreaInfo, Located, Lookup};
 use crate::store::{self, Area, HoursStatus, PlaceView, Visit};
 use crate::progress::{self, Progress};
+use crate::push::{self, Reminder};
 use crate::{account, areas, auth, catalog, geo, hours, share, AppState};
 
 /// A check-in counts as verified when made within this distance of the place.
@@ -86,6 +87,7 @@ fn api_router() -> (Router<AppState>, utoipa::openapi::OpenApi) {
         .routes(routes!(place))
         .routes(routes!(suggestion))
         .routes(routes!(celebrations))
+        .routes(routes!(reminders))
         .routes(routes!(report_closed))
         .routes(routes!(add_visit))
         .routes(routes!(remove_visit))
@@ -853,7 +855,7 @@ struct CelebrationView {
     /// The celebration's countries that have places in the area.
     nearby: Vec<NearbyCountry>,
     /// Notification text for the first day, for apps that schedule reminders themselves.
-    reminder: crate::push::Notification,
+    reminder: push::Notification,
 }
 
 /// Celebrations coming up for countries whose food can be found in the area, with
@@ -874,6 +876,38 @@ async fn celebrations(
     Ok(Json(nearby_celebrations(state.today(zone), days, &counts)))
 }
 
+#[derive(Deserialize, IntoParams)]
+#[into_params(parameter_in = Query)]
+struct RemindersQuery {
+    /// As for `/api/discover`.
+    area: String,
+    /// How many days ahead to look, today included: 0 to 366, 60 when missing.
+    days: Option<i64>,
+    /// As for `/api/discover`.
+    tz: Option<String>,
+}
+
+/// The reminders that become due in the area from today on, soonest first, for apps that
+/// schedule their own notifications: the ones Web Push sends on those days. An event's
+/// "last days" reminder depends on the user's visits; without a token it is as for someone
+/// with no visits. Ask again after a check-in or when the area changes.
+#[utoipa::path(
+    get, path = "/api/reminders", tag = "calendar", params(RemindersQuery),
+    security((), ("token" = [])),
+    responses((status = 200, body = Vec<Reminder>), (status = "default", description = "An error", body = ErrorBody)),
+)]
+async fn reminders(
+    State(state): State<AppState>,
+    MaybeUser(user): MaybeUser,
+    Query(query): Query<RemindersQuery>,
+) -> ApiResult<Vec<Reminder>> {
+    let area = areas::resolve(&state, &query.area).await?;
+    let today = state.today(zone(query.tz.as_deref()));
+    let days = query.days.unwrap_or(60).clamp(0, 366);
+    let plan = push::plan(&state, user.as_deref(), area.id(), today, days).await?;
+    Ok(Json(plan))
+}
+
 fn nearby_celebrations(
     today: NaiveDate,
     days: i64,
@@ -892,7 +926,7 @@ fn nearby_celebrations(
                     })
                 })
                 .collect();
-            let reminder = crate::push::celebration_notification(&celebration, counts)?;
+            let reminder = push::celebration_notification(&celebration, counts)?;
             Some(CelebrationView {
                 celebration,
                 nearby,
@@ -947,7 +981,7 @@ async fn places(
 /// Fills in what the store leaves empty: the distance, whether the place is open now and
 /// its OSM page.
 fn complete(place: &mut PlaceView, from_lat: f64, from_lng: f64, now: i64) {
-    place.osm_url = osm_link(&place.id);
+    place.osm_url = osm::link(&place.id);
     place.distance_m = geo::distance_m(from_lat, from_lng, place.lat, place.lng).round() as u32;
     if let Some(h) = &mut place.hours {
         h.status = hours::status(&h.raw, place.lat, place.lng, now)
@@ -1028,51 +1062,17 @@ async fn suggestion(
             return Err(ApiError::NothingOpen);
         }
     }
-    let weights: Vec<f64> = unvisited
+    let candidates: Vec<game::Candidate> = unvisited
         .iter()
-        .map(|p| suggestion_weight(p, &tasted))
+        .map(|p| game::Candidate {
+            countries: &p.countries,
+            distance_m: p.distance_m,
+        })
         .collect();
-    let mut place = unvisited.swap_remove(pick(&weights, random_unit()));
-    // The country to land on: an untasted one when the place serves several.
-    let country = place
-        .countries
-        .iter()
-        .find(|c| !tasted.contains(c))
-        .unwrap_or(&place.countries[0])
-        .clone();
+    let (index, country) = game::suggest(&candidates, &tasted).ok_or(ApiError::NothingLeft)?;
+    let mut place = unvisited.swap_remove(index);
     place.countries.sort_by_key(|c| *c != country);
     Ok(Json(Suggestion { country, place }))
-}
-
-/// How likely a place is suggested: three times as likely when it serves a country not
-/// tasted yet, and halving every 2 km away.
-// ponytail: no levels (#72) or quests (#73) in the weighting yet; add them here.
-fn suggestion_weight(place: &PlaceView, tasted: &[String]) -> f64 {
-    let new = place.countries.iter().any(|c| !tasted.contains(c));
-    let near = 0.5f64.powf(f64::from(place.distance_m) / 2000.0);
-    if new {
-        3.0 * near
-    } else {
-        near
-    }
-}
-
-/// The index `r` (in `[0, 1)`) lands on when each index takes its weight's share of the line.
-fn pick(weights: &[f64], r: f64) -> usize {
-    let mut left = r * weights.iter().sum::<f64>();
-    for (i, w) in weights.iter().enumerate() {
-        if left < *w {
-            return i;
-        }
-        left -= w;
-    }
-    weights.len() - 1
-}
-
-fn random_unit() -> f64 {
-    let mut bytes = [0u8; 8];
-    getrandom::fill(&mut bytes).expect("the system has no randomness");
-    (u64::from_le_bytes(bytes) >> 11) as f64 / (1u64 << 53) as f64
 }
 
 /// Places a user may add per day, so the app never floods OpenStreetMap with notes.
@@ -1170,7 +1170,7 @@ async fn add_place(
         cuisine,
         suggested_for: None,
     };
-    let note = (body.note != Some(false)).then(|| missing_place_note(&new));
+    let note = (body.note != Some(false)).then(|| osm::missing_place_note(&new));
     add(&state, &user, new, note).await
 }
 
@@ -1198,7 +1198,7 @@ async fn add(
     if let Some((notes, text)) = state.osm_notes_url.clone().zip(note) {
         let (db, id, token) = (state.db.clone(), id.clone(), state.osm_notes_token.clone());
         tokio::spawn(async move {
-            if let Some(note) = post_osm_note(notes, token, new.lat, new.lng, text).await {
+            if let Some(note) = osm::post_note(notes, token, new.lat, new.lng, text).await {
                 if let Err(error) = store::set_osm_note(&db, &id, note).await {
                     tracing::warn!(%error, "could not keep the osm note id");
                 }
@@ -1285,7 +1285,7 @@ async fn suggest_cuisine(
     let (country, cuisine) = catalog::country(&code)
         .zip(catalog::cuisine_tag(&code))
         .ok_or(ApiError::BadRequest("unknown country".into()))?;
-    let note = cuisine_note(&unknown, &country.name, cuisine);
+    let note = osm::cuisine_note(&unknown, &country.name, cuisine);
     let new = store::NewPlace {
         name: unknown.name,
         lat: unknown.lat,
@@ -1318,16 +1318,6 @@ async fn no_cuisine(
         .ok_or(ApiError::NotFound("place"))?;
     store::report_no_cuisine(&state.db, &user, &place_id, state.now()).await?;
     Ok(StatusCode::NO_CONTENT)
-}
-
-/// The OpenStreetMap note asking mappers to tag a place's cuisine.
-fn cuisine_note(place: &store::UnknownPlace, country: &str, cuisine: &str) -> String {
-    let link = osm_link(&place.id).map_or_else(String::new, |url| format!("\n\n{url}"));
-    format!(
-        "A Mangiamundo user who knows this place says {} serves food from {country}:\n\n\
-         cuisine={cuisine}{link}\n\nCould someone check and add the tag?",
-        place.name
-    )
 }
 
 /// The restaurants the user added, newest first, with their rewards. Those confirmed since
@@ -1370,22 +1360,6 @@ async fn mark_additions_seen(
     Ok(StatusCode::NO_CONTENT)
 }
 
-/// An OSM note mappers can act on: the tags to add, ready to copy.
-fn missing_place_note(place: &store::NewPlace) -> String {
-    let mut text = format!(
-        "A Mangiamundo user who knows this place says a restaurant is missing here:\n\n\
-         amenity=restaurant\nname={}\ncuisine={}\n",
-        place.name, place.cuisine
-    );
-    if let Some(url) = &place.url {
-        text += &format!("website={url}\n");
-    }
-    if let Some(address) = &place.address {
-        text += &format!("\nAddress: {address}\n");
-    }
-    text + "\nCould someone check and add it?"
-}
-
 /// What a refresh from OpenStreetMap found.
 #[derive(Serialize, ToSchema)]
 struct RefreshResult {
@@ -1411,7 +1385,7 @@ async fn refresh_place(
     Path(place_id): Path<String>,
     Query(query): Query<PlaceQuery>,
 ) -> ApiResult<RefreshResult> {
-    if osm_link(&place_id).is_none() {
+    if osm::link(&place_id).is_none() {
         return Err(ApiError::BadRequest(
             "only OpenStreetMap places can be refreshed".into(),
         ));
@@ -1866,72 +1840,16 @@ async fn report_closed(
         .ok_or(ApiError::NotFound("place"))?;
     let reports = store::report_closed(&state.db, &user, &place_id, state.now()).await?;
     // Tell OSM once, when the place gets hidden for everyone, so one person cannot spam mappers.
-    if let (Some(2), Some(url), Some(osm)) = (reports, &state.osm_notes_url, osm_link(&place_id)) {
-        let text = format!(
-            "Two Mangiamundo users reported that \"{name}\" ({osm}) has closed. \
-             Could someone check and update or remove it?"
-        );
-        tokio::spawn(post_osm_note(
+    if let (Some(2), Some(url), Some(page)) = (reports, &state.osm_notes_url, osm::link(&place_id)) {
+        tokio::spawn(osm::post_note(
             url.clone(),
             state.osm_notes_token.clone(),
             lat,
             lng,
-            text,
+            osm::closed_note(&name, &page),
         ));
     }
     Ok(StatusCode::NO_CONTENT)
-}
-
-/// The openstreetmap.org page of an OSM place, from an id like `osm-node-123`.
-fn osm_link(place_id: &str) -> Option<String> {
-    let (kind, id) = place_id.strip_prefix("osm-")?.split_once('-')?;
-    Some(format!("https://www.openstreetmap.org/{kind}/{id}"))
-}
-
-/// Posts an OSM note, as the account `token` belongs to or anonymously, and returns its id.
-/// Best effort: a failure is logged, not retried.
-async fn post_osm_note(
-    url: String,
-    token: Option<String>,
-    lat: f64,
-    lng: f64,
-    text: String,
-) -> Option<i64> {
-    // The `.json` endpoint answers with the note as GeoJSON instead of XML.
-    let result = async {
-        let mut request = reqwest::Client::new()
-            .post(format!("{url}.json"))
-            .header(
-                header::USER_AGENT,
-                concat!("mangiamundo/", env!("CARGO_PKG_VERSION")),
-            )
-            .form(&[
-                ("lat", lat.to_string()),
-                ("lon", lng.to_string()),
-                ("text", text),
-            ]);
-        if let Some(token) = token {
-            request = request.bearer_auth(token);
-        }
-        request
-            .send()
-            .await?
-            .error_for_status()?
-            .json::<serde_json::Value>()
-            .await
-    }
-    .await;
-    match result {
-        Ok(note) => {
-            let id = note["properties"]["id"].as_i64();
-            tracing::info!(lat, lng, id, "posted osm note");
-            id
-        }
-        Err(error) => {
-            tracing::warn!(%error, "osm note failed");
-            None
-        }
-    }
 }
 
 #[derive(Serialize, ToSchema)]
@@ -1984,7 +1902,7 @@ async fn subscribe(
     if body.timezone.parse::<chrono_tz::Tz>().is_err() {
         return Err(ApiError::BadRequest("unknown time zone".into()));
     }
-    let subscription = crate::push::Subscription {
+    let subscription = push::Subscription {
         endpoint: body.endpoint,
         p256dh: body.keys.p256dh,
         auth: body.keys.auth,
@@ -2130,38 +2048,4 @@ async fn locate_area(
         .await
         .map(Json)
         .map_err(ApiError::Upstream)
-}
-
-#[cfg(test)]
-mod tests {
-    #[test]
-    fn pick_follows_the_weights() {
-        let w = [1.0, 0.0, 3.0];
-        assert_eq!(super::pick(&w, 0.0), 0);
-        assert_eq!(super::pick(&w, 0.24), 0);
-        assert_eq!(super::pick(&w, 0.25), 2);
-        assert_eq!(super::pick(&w, 0.999), 2);
-        let place = |country: &str, distance_m| crate::store::PlaceView {
-            id: String::new(),
-            name: String::new(),
-            lat: 0.0,
-            lng: 0.0,
-            address: None,
-            url: None,
-            cuisine: None,
-            hours: None,
-            countries: vec![country.into()],
-            distance_m,
-            visits: vec![],
-            osm_url: None,
-        };
-        let tasted = ["JP".to_string()];
-        let weight = |c, d| super::suggestion_weight(&place(c, d), &tasted);
-        assert_eq!(weight("PE", 0), 3.0);
-        assert_eq!(weight("JP", 0), 1.0);
-        assert_eq!(weight("JP", 2000), 0.5);
-        let r = super::random_unit();
-        assert!((0.0..1.0).contains(&r));
-    }
-
 }
