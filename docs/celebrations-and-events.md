@@ -14,6 +14,22 @@
 the area. Each has the text of its reminder too (`reminder`); the mobile apps no longer
 read it, they schedule what `/api/reminders` plans.
 
+## Monthly quests
+
+Every area has its own quests each month (`monthly_quests` in `backend/src/game.rs`):
+"two check-ins" and up to two more, picked by area and month from what the area has and
+what the player had done before the month began. They are done in the area: only that
+month's check-ins at the area's places count, so the same quest can be finished, and
+paid, in two areas. What makes a country new is the player's whole history, anywhere.
+
+The XP of a finished quest is kept in `quest_rewards`, per user, area, month and quest.
+It is booked by the check-in that finishes the quest (`settle_quests` in
+`backend/src/progress.rs`), in every cached area the place is in, whether or not the
+check-in names an `area`; a postal code and the city around it both pay. The check-in's
+`profile` already has it. Removing a check-in takes back the quests of its month that are
+no longer finished. Nothing else books quest XP: `GET /api/discover`, the reminders plan
+and the push loop only read.
+
 ## Time zones
 
 Days are the user's local days: clients send their time zone as `tz` (IANA name, e.g.

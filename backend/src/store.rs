@@ -316,18 +316,21 @@ pub async fn tasted(db: &SqlitePool, user: &str) -> sqlx::Result<Vec<Tasted>> {
         .collect())
 }
 
-/// Keeps the XP of finished quests. A quest pays once per month, whatever happens after.
+/// Keeps the XP of the quests the user finished in an area. A quest pays once per area
+/// and month.
 pub async fn reward_quests(
     db: &SqlitePool,
     user: &str,
+    area_id: &str,
     month: &str,
     quests: &[(&str, u32)],
 ) -> sqlx::Result<()> {
     for (quest, xp) in quests {
         sqlx::query(
-            "INSERT OR IGNORE INTO quest_rewards (user_id, month, quest, xp) VALUES (?, ?, ?, ?)",
+            "INSERT OR IGNORE INTO quest_rewards (user_id, area_id, month, quest, xp) VALUES (?, ?, ?, ?, ?)",
         )
         .bind(user)
+        .bind(area_id)
         .bind(month)
         .bind(quest)
         .bind(xp)
@@ -335,6 +338,34 @@ pub async fn reward_quests(
         .await?;
     }
     Ok(())
+}
+
+/// Takes back the XP of one quest in an area and month, when it is no longer finished.
+pub async fn unreward_quest(
+    db: &SqlitePool,
+    user: &str,
+    area_id: &str,
+    month: &str,
+    quest: &str,
+) -> sqlx::Result<()> {
+    sqlx::query(
+        "DELETE FROM quest_rewards WHERE user_id = ? AND area_id = ? AND month = ? AND quest = ?",
+    )
+    .bind(user)
+    .bind(area_id)
+    .bind(month)
+    .bind(quest)
+    .execute(db)
+    .await?;
+    Ok(())
+}
+
+/// The cached areas a place is in.
+pub async fn areas_of_place(db: &SqlitePool, place_id: &str) -> sqlx::Result<Vec<String>> {
+    sqlx::query_scalar("SELECT area_id FROM area_places WHERE place_id = ? ORDER BY area_id")
+        .bind(place_id)
+        .fetch_all(db)
+        .await
 }
 
 /// One check-in.
@@ -558,14 +589,18 @@ pub async fn add_visit(
     .await
 }
 
-/// Removes one of the user's visits. Visits of other users are left alone.
-pub async fn remove_visit(db: &SqlitePool, user: &str, visit_id: i64) -> sqlx::Result<()> {
-    sqlx::query("DELETE FROM visits WHERE user_id = ? AND id = ?")
+/// Removes one of the user's visits and returns its place and local date, if there was
+/// such a visit. Visits of other users are left alone.
+pub async fn remove_visit(
+    db: &SqlitePool,
+    user: &str,
+    visit_id: i64,
+) -> sqlx::Result<Option<(String, String)>> {
+    sqlx::query_as("DELETE FROM visits WHERE user_id = ? AND id = ? RETURNING place_id, local_date")
         .bind(user)
         .bind(visit_id)
-        .execute(db)
-        .await?;
-    Ok(())
+        .fetch_optional(db)
+        .await
 }
 
 pub async fn setting(db: &SqlitePool, key: &str) -> sqlx::Result<Option<String>> {
