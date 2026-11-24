@@ -26,6 +26,9 @@ struct Account: Decodable {
     let publicProfile: String?
     /// The ways to sign in, oldest first; empty for an account that lives on its devices.
     let identities: [Identity]
+
+    /// What a device without an account shows: nothing is on the server until its first change.
+    static let none = Account(createdAt: 0, recoveryCodeCreatedAt: nil, devices: [], publicProfile: nil, identities: [])
 }
 
 /// A way to sign in: Sign in with Apple, Google or an email address.

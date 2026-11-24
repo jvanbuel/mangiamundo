@@ -9,26 +9,39 @@ struct APIError: LocalizedError {
     var errorDescription: String? { message }
 }
 
-/// Talks to the Mangiamundo backend. Accounts are anonymous: the device asks for a
-/// token once and keeps it in UserDefaults.
+/// Talks to the Mangiamundo backend. Accounts are anonymous: the device asks for a token
+/// with the first thing it changes (a check-in, an added place) and keeps it in the
+/// Keychain. What it only reads, it reads without one.
 actor APIClient {
     let baseURL: String
     private let session: URLSession
     private let decoder: JSONDecoder
-    private let defaults = UserDefaults.standard
-    private static let tokenKey = "mangiamundo.token"
+    private let tokens: TokenStore
     private var pendingToken: Task<String, Error>?
     /// How this device shows up in the account's device list, such as "iPhone".
     private let deviceName: String?
+    /// Gets a value each time the server turns out not to know this device's token any
+    /// more, after the token is dropped: the device was signed out from another one, or its
+    /// account was deleted. No new account is made then; that waits for the next change.
+    nonisolated let signedOut: AsyncStream<Void>
+    private let signedOutContinuation: AsyncStream<Void>.Continuation
 
-    init(baseURL: String, deviceName: String? = nil) {
+    init(
+        baseURL: String,
+        deviceName: String? = nil,
+        tokens: TokenStore = TokenStore(),
+        configuration: URLSessionConfiguration = .default
+    ) {
         self.baseURL = baseURL.hasSuffix("/") ? String(baseURL.dropLast()) : baseURL
         self.deviceName = deviceName
-        let configuration = URLSessionConfiguration.default
+        self.tokens = tokens
         configuration.timeoutIntervalForRequest = 100
         session = URLSession(configuration: configuration)
         decoder = JSONDecoder()
         decoder.keyDecodingStrategy = .convertFromSnakeCase
+        let (stream, continuation) = AsyncStream<Void>.makeStream()
+        signedOut = stream
+        signedOutContinuation = continuation
     }
 
     func health() async throws -> Health {
@@ -40,20 +53,20 @@ actor APIClient {
     }
 
     func discover(areaID: String) async throws -> Discover {
-        try decode(await authed("GET", "/api/discover?\(area(areaID))&\(timeZone())"))
+        try decode(await read("/api/discover?\(area(areaID))&\(timeZone())"))
     }
 
     /// Distances are measured from `from` when given, otherwise from the area's centre.
     func places(areaID: String, country: String, from: (lat: Double, lng: Double)?) async throws -> [Place] {
         let position = from.map { "&lat=\($0.lat)&lng=\($0.lng)" } ?? ""
-        return try decode(await authed("GET", "/api/places?\(area(areaID))&country=\(country)\(position)"))
+        return try decode(await read("/api/places?\(area(areaID))&country=\(country)\(position)"))
     }
 
     /// A random unvisited place to try, open now unless `open` is false, skipping `exclude`.
     func suggestion(areaID: String, from: (lat: Double, lng: Double)?, exclude: [String], open: Bool) async throws -> Suggestion {
         let position = from.map { "&lat=\($0.lat)&lng=\($0.lng)" } ?? ""
         let skip = exclude.map(encode).joined(separator: ",")
-        return try decode(await authed("GET", "/api/suggestion?\(area(areaID))&open=\(open)&exclude=\(skip)\(position)"))
+        return try decode(await read("/api/suggestion?\(area(areaID))&open=\(open)&exclude=\(skip)\(position)"))
     }
 
     func celebrations(areaID: String, days: Int = 60) async throws -> [Celebration] {
@@ -63,7 +76,7 @@ actor APIClient {
     /// One place with all of the user's visits. The distance is measured from `from` when given.
     func place(id: String, from: (lat: Double, lng: Double)?) async throws -> Place {
         let position = from.map { "?lat=\($0.lat)&lng=\($0.lng)" } ?? ""
-        return try decode(await authed("GET", "/api/places/\(encode(id))\(position)"))
+        return try decode(await read("/api/places/\(encode(id))\(position)"))
     }
 
     /// Checks in, and answers with the progress in the area afterwards and what the check-in
@@ -74,26 +87,26 @@ actor APIClient {
             body = ["position": ["lat": here.lat, "lng": here.lng]]
         }
         let data = try JSONSerialization.data(withJSONObject: body)
-        return try decode(await authed("POST", "/api/places/\(encode(placeID))/visits?\(area(areaID))&\(timeZone())", body: data))
+        return try decode(await write("POST", "/api/places/\(encode(placeID))/visits?\(area(areaID))&\(timeZone())", body: data))
     }
 
     func removeVisit(id: Int) async throws {
-        _ = try await authed("DELETE", "/api/visits/\(id)")
+        _ = try await write("DELETE", "/api/visits/\(id)")
     }
 
     /// Makes (or moves to this area) the public page of the user's progress.
     func shareProgress(areaID: String) async throws -> ShareLink {
-        try decode(await authed("POST", "/api/share?\(area(areaID))"))
+        try decode(await write("POST", "/api/share?\(area(areaID))"))
     }
 
     /// Turns the public page off.
     func unshareProgress() async throws {
-        _ = try await authed("DELETE", "/api/share")
+        try await writeMine("DELETE", "/api/share")
     }
 
     /// A public page for one check-in.
     func shareVisit(id: Int) async throws -> ShareLink {
-        try decode(await authed("POST", "/api/visits/\(id)/share"))
+        try decode(await write("POST", "/api/visits/\(id)/share"))
     }
 
     /// The share card; nil when it can't be loaded, so the link is shared alone.
@@ -106,7 +119,7 @@ actor APIClient {
 
     /// "This place has closed": hides it for this user, and for everyone after a second report.
     func reportClosed(placeID: String) async throws {
-        _ = try await authed("PUT", "/api/places/\(encode(placeID))/closed")
+        _ = try await write("PUT", "/api/places/\(encode(placeID))/closed")
     }
 
     /// How far loading the area has come; nil when it isn't loading.
@@ -121,46 +134,47 @@ actor APIClient {
         body["address"] = address
         body["website"] = website
         let data = try JSONSerialization.data(withJSONObject: body)
-        return try decode(await authed("POST", "/api/places", body: data))
+        return try decode(await write("POST", "/api/places", body: data))
     }
 
     /// Restaurants in the area OpenStreetMap gives no cuisine, nearest to `from` first.
     func unknownPlaces(areaID: String, from: (lat: Double, lng: Double)?) async throws -> [UnknownPlace] {
         let position = from.map { "&lat=\($0.lat)&lng=\($0.lng)" } ?? ""
-        return try decode(await authed("GET", "/api/unknown-places?\(area(areaID))\(position)"))
+        return try decode(await read("/api/unknown-places?\(area(areaID))\(position)"))
     }
 
     /// "It serves food from …": like adding a place, only this user sees it until OSM has the cuisine.
     func suggestCuisine(placeID: String, country: String) async throws -> AddedPlace {
         let data = try JSONSerialization.data(withJSONObject: ["country": country])
-        return try decode(await authed("POST", "/api/unknown-places/\(encode(placeID))/cuisine", body: data))
+        return try decode(await write("POST", "/api/unknown-places/\(encode(placeID))/cuisine", body: data))
     }
 
     /// "It serves no particular country's food": hides it for this user, and for everyone after two.
     func noCuisine(placeID: String) async throws {
-        _ = try await authed("PUT", "/api/unknown-places/\(encode(placeID))/no-cuisine")
+        _ = try await write("PUT", "/api/unknown-places/\(encode(placeID))/no-cuisine")
     }
 
     /// Reads a place again from OpenStreetMap, for an edit made there since the daily import.
     func refreshPlace(id: String, from: (lat: Double, lng: Double)?) async throws -> RefreshResult {
         let position = from.map { "?lat=\($0.lat)&lng=\($0.lng)" } ?? ""
-        return try decode(await authed("POST", "/api/places/\(encode(id))/refresh\(position)"))
+        return try decode(await write("POST", "/api/places/\(encode(id))/refresh\(position)"))
     }
 
     /// Asks OpenStreetMap for restaurants within 150 m of a point, for one just mapped there.
     func refreshNearby(lat: Double, lng: Double) async throws -> NearbyResult {
-        try decode(await authed("POST", "/api/places/nearby/refresh?lat=\(lat)&lng=\(lng)"))
+        try decode(await write("POST", "/api/places/nearby/refresh?lat=\(lat)&lng=\(lng)"))
     }
 
     /// The restaurants this user added, newest first, with their rewards.
     func additions() async throws -> [Addition] {
-        try decode(await authed("GET", "/api/additions"))
+        guard let data = try await mine("/api/additions") else { return [] }
+        return try decode(data)
     }
 
     /// The user was told about these confirmed additions, by `id` (at most 100).
     func markAdditionsSeen(ids: [String]) async throws {
         let data = try JSONSerialization.data(withJSONObject: ["ids": ids])
-        _ = try await authed("PUT", "/api/additions/seen", body: data)
+        try await writeMine("PUT", "/api/additions/seen", body: data)
     }
 
     /// Cities and postal codes matching what someone typed.
@@ -181,21 +195,27 @@ actor APIClient {
 
     // MARK: - Account
 
-    /// The account's recovery code status and the devices signed in to it.
+    /// Whether this device has an account yet; it gets one with its first check-in or other change.
+    var hasAccount: Bool { tokens.token != nil }
+
+    /// The account's recovery code status and the devices signed in to it. A device without
+    /// an account has an empty one, with no devices: nothing is on the server until its
+    /// first change.
     func account() async throws -> Account {
-        try decode(await authed("GET", "/api/account"))
+        guard let data = try await mine("/api/account") else { return .none }
+        return try decode(data)
     }
 
     /// A new recovery code, shown once. The previous one stops working.
     func newRecoveryCode() async throws -> String {
         struct RecoveryCode: Decodable { let code: String }
-        let made: RecoveryCode = try decode(await authed("POST", "/api/account/recovery-code"))
+        let made: RecoveryCode = try decode(await write("POST", "/api/account/recovery-code"))
         return made.code
     }
 
     /// A code that signs another device in to this account, once, within 10 minutes.
     func newLinkCode() async throws -> LinkCode {
-        try decode(await authed("POST", "/api/account/link-code"))
+        try decode(await write("POST", "/api/account/link-code"))
     }
 
     /// Signs this device in to the account of a recovery or link code. What this device did
@@ -225,12 +245,12 @@ actor APIClient {
         try await switchAccount("/api/auth/google", ["id_token": idToken])
     }
 
-    /// Signs this device out of its account; it starts afresh with a new, empty one.
+    /// Signs this device out of its account; it starts afresh, without one.
     func signOut() async throws {
         if let me = try await account().devices.first(where: \.current) {
             try await removeDevice(id: me.id)
         }
-        defaults.removeObject(forKey: Self.tokenKey)
+        tokens.token = nil
     }
 
     /// Sends the device's token along to an endpoint that answers with another account's
@@ -240,27 +260,27 @@ actor APIClient {
         body["device"] = deviceName
         let data = try JSONSerialization.data(withJSONObject: body)
         struct Session: Decodable { let token: String }
-        let current = defaults.string(forKey: Self.tokenKey)
+        let current = tokens.token
         let session: Session
         do {
             session = try decode(await request("POST", path, body: data, token: current))
         } catch let error as APIError where error.status == 401 && current != nil {
             // This device was signed out elsewhere: drop that token and go on without it.
-            if defaults.string(forKey: Self.tokenKey) == current { defaults.removeObject(forKey: Self.tokenKey) }
+            if tokens.token == current { tokens.token = nil }
             session = try decode(await request("POST", path, body: data))
         }
-        defaults.set(session.token, forKey: Self.tokenKey)
+        tokens.token = session.token
     }
 
     /// Signs another device out of this account.
     func removeDevice(id: String) async throws {
-        _ = try await authed("DELETE", "/api/account/devices/\(encode(id))")
+        try await writeMine("DELETE", "/api/account/devices/\(encode(id))")
     }
 
-    /// Deletes the account and everything in it. This device starts over with a new one.
+    /// Deletes the account and everything in it. This device starts over without one.
     func deleteAccount() async throws {
-        _ = try await authed("DELETE", "/api/account")
-        defaults.removeObject(forKey: Self.tokenKey)
+        try await writeMine("DELETE", "/api/account")
+        tokens.token = nil
     }
 
     // MARK: - Plumbing
@@ -284,8 +304,9 @@ actor APIClient {
         try decoder.decode(T.self, from: data)
     }
 
+    /// This device's token; its account is made now when there is none yet.
     private func token() async throws -> String {
-        if let stored = defaults.string(forKey: Self.tokenKey) { return stored }
+        if let stored = tokens.token { return stored }
         if let pendingToken { return try await pendingToken.value }
         let task = Task<String, Error> {
             struct Session: Decodable { let token: String }
@@ -299,20 +320,72 @@ actor APIClient {
         defer { pendingToken = nil }
         let token = try await task.value
         // A restore may have stored a token meanwhile: keep that one.
-        if let stored = defaults.string(forKey: Self.tokenKey) { return stored }
-        defaults.set(token, forKey: Self.tokenKey)
+        if let stored = tokens.token { return stored }
+        tokens.token = token
         return token
     }
 
-    private func authed(_ method: String, _ path: String, body: Data? = nil) async throws -> Data {
+    /// The server answered 401 to `sent`: this device was signed out. The token goes and
+    /// the app is told. A token stored meanwhile (by a restore) is newer: it stays.
+    private func dropToken(_ sent: String) {
+        guard tokens.token == sent else { return }
+        tokens.token = nil
+        signedOutContinuation.yield()
+    }
+
+    /// Reads something the server also shows to nobody in particular: with this device's
+    /// token when it has one, without an account otherwise. Reading never makes an account.
+    private func read(_ path: String) async throws -> Data {
+        let sent = tokens.token
+        do {
+            return try await request("GET", path, token: sent)
+        } catch let error as APIError where error.status == 401 && sent != nil {
+            if let sent { dropToken(sent) }
+            // With the token a restore stored meanwhile, or as nobody.
+            return try await request("GET", path, token: tokens.token)
+        }
+    }
+
+    /// Reads something of the account's; nil when this device has no account (any more).
+    private func mine(_ path: String) async throws -> Data? {
+        guard let sent = tokens.token else { return nil }
+        do {
+            return try await request("GET", path, token: sent)
+        } catch let error as APIError where error.status == 401 {
+            dropToken(sent)
+            guard let newer = tokens.token else { return nil }
+            return try await request("GET", path, token: newer)
+        }
+    }
+
+    /// Changes something, as this device's account, which is made now when there is none
+    /// yet. A device that was signed out is told so and the change fails: doing it again
+    /// starts a new account, knowingly.
+    private func write(_ method: String, _ path: String, body: Data? = nil) async throws -> Data {
         let sent = try await token()
         do {
             return try await request(method, path, body: body, token: sent)
         } catch let error as APIError where error.status == 401 {
-            // The server no longer knows this token (its database was reset): start over once.
-            // A token stored meanwhile (by a restore) is newer: keep it.
-            if defaults.string(forKey: Self.tokenKey) == sent { defaults.removeObject(forKey: Self.tokenKey) }
-            return try await request(method, path, body: body, token: try await token())
+            dropToken(sent)
+            guard let newer = tokens.token else {
+                throw APIError(
+                    status: 401,
+                    message: "This device was signed out. Sign in again, or repeat this to start afresh here.",
+                    code: "unauthorized"
+                )
+            }
+            return try await request(method, path, body: body, token: newer)
+        }
+    }
+
+    /// Like `write`, for a change that only matters to an account that exists: nothing
+    /// happens without one.
+    private func writeMine(_ method: String, _ path: String, body: Data? = nil) async throws {
+        guard let sent = tokens.token else { return }
+        do {
+            _ = try await request(method, path, body: body, token: sent)
+        } catch let error as APIError where error.status == 401 {
+            dropToken(sent)
         }
     }
 
