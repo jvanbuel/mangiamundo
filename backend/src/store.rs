@@ -200,11 +200,19 @@ pub async fn user_for_token(db: &SqlitePool, token: &str) -> sqlx::Result<Option
         .map(|s| s.user))
 }
 
+/// Places added by users are pending: only whoever added them can see them. The user is
+/// parameter `?1`.
+const NOT_SOMEONE_ELSES: &str = "(p.added_by IS NULL OR p.added_by = ?1)";
+
 /// Hides other users' added places, places the user reported closed, and places two or
-/// more users reported closed.
-const VISIBLE: &str = "(p.added_by IS NULL OR p.added_by = ?1)
+/// more users reported closed. The user is parameter `?1`.
+fn visible() -> String {
+    format!(
+        "{NOT_SOMEONE_ELSES}
            AND NOT EXISTS (SELECT 1 FROM closed_reports WHERE place_id = p.id AND user_id = ?1)
-           AND (SELECT COUNT(*) FROM closed_reports WHERE place_id = p.id) < 2";
+           AND (SELECT COUNT(*) FROM closed_reports WHERE place_id = p.id) < 2"
+    )
+}
 
 pub async fn area_rows(
     db: &SqlitePool,
@@ -217,7 +225,8 @@ pub async fn area_rows(
          FROM area_places ap
          JOIN places p ON p.id = ap.place_id
          JOIN place_countries pc ON pc.place_id = p.id
-         WHERE ap.area_id = ?2 AND {VISIBLE}"
+         WHERE ap.area_id = ?2 AND {visible}",
+        visible = visible()
     );
     let rows = sqlx::query(&sql)
         .bind(user)
@@ -435,7 +444,8 @@ pub async fn area_places(
          WHERE ap.area_id = ?2
            AND (?3 IS NULL OR EXISTS (
                 SELECT 1 FROM place_countries WHERE place_id = p.id AND country = ?3))
-           AND {VISIBLE}"
+           AND {visible}",
+        visible = visible()
     );
     let rows = sqlx::query(&sql)
         .bind(user)
@@ -459,9 +469,6 @@ pub async fn area_places(
         .collect())
 }
 
-/// Places added by users are pending: only whoever added them can see them.
-const NOT_SOMEONE_ELSES: &str = "(p.added_by IS NULL OR p.added_by = ?)";
-
 /// One place with all of the user's visits, whatever area it is in. `distance_m` and the
 /// hours status are left empty.
 pub async fn place(
@@ -470,10 +477,10 @@ pub async fn place(
     user: Option<&str>,
 ) -> sqlx::Result<Option<PlaceView>> {
     let sql =
-        format!("SELECT {PLACE_COLUMNS} FROM places p WHERE p.id = ? AND {NOT_SOMEONE_ELSES}");
+        format!("SELECT {PLACE_COLUMNS} FROM places p WHERE {NOT_SOMEONE_ELSES} AND p.id = ?2");
     let Some(row) = sqlx::query(&sql)
-        .bind(place_id)
         .bind(user)
+        .bind(place_id)
         .fetch_optional(db)
         .await?
     else {
@@ -892,10 +899,10 @@ pub async fn place_summary(
     id: &str,
     user: &str,
 ) -> sqlx::Result<Option<(String, f64, f64)>> {
-    let sql = format!("SELECT name, lat, lng FROM places p WHERE id = ? AND {NOT_SOMEONE_ELSES}");
+    let sql = format!("SELECT name, lat, lng FROM places p WHERE {NOT_SOMEONE_ELSES} AND id = ?2");
     let row = sqlx::query(&sql)
-        .bind(id)
         .bind(user)
+        .bind(id)
         .fetch_optional(db)
         .await?;
     Ok(row.map(|r| (r.get("name"), r.get("lat"), r.get("lng"))))
@@ -926,7 +933,7 @@ pub async fn replace_imported(
     for place in places {
         keep_imported(&mut tx, place).await?;
     }
-    let matched = match_pending(&mut tx).await?;
+    let matched = match_pending(&mut tx, now()).await?;
     tx.commit().await?;
     Ok(matched)
 }
@@ -1080,7 +1087,7 @@ pub async fn add_nearby(
             new.push(place.id.clone());
         }
     }
-    let matched = match_pending(&mut tx).await?;
+    let matched = match_pending(&mut tx, at).await?;
     tx.commit().await?;
     Ok((new, matched))
 }
@@ -1090,8 +1097,8 @@ const MATCH_RADIUS_M: f64 = 50.0;
 
 /// Swaps each pending place that now has an imported twin (same country, similar name,
 /// within [`MATCH_RADIUS_M`]) for that twin: its visits and areas move over and the
-/// pending row goes. Returns how many were swapped.
-async fn match_pending(tx: &mut sqlx::SqliteConnection) -> sqlx::Result<usize> {
+/// pending row goes. `at` is when they are confirmed. Returns how many were swapped.
+async fn match_pending(tx: &mut sqlx::SqliteConnection, at: i64) -> sqlx::Result<usize> {
     let pending = sqlx::query(
         "SELECT p.id, p.name, p.lat, p.lng, p.suggested_for, pc.country FROM places p
          JOIN place_countries pc ON pc.place_id = p.id
@@ -1136,7 +1143,6 @@ async fn match_pending(tx: &mut sqlx::SqliteConnection) -> sqlx::Result<usize> {
                 .await?
                 .and_then(found),
         };
-        let at = now();
         let twin = match (twin, overruled) {
             (Some((_, twin)), _) => {
                 confirm_addition(&mut *tx, &id, &twin.id, at).await?;
