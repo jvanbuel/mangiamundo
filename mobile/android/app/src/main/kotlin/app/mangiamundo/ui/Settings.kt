@@ -29,6 +29,12 @@ fun SettingsPanel(server: String?, account: @Composable () -> Unit = {}) {
             fontWeight = FontWeight.Bold,
             modifier = Modifier.padding(top = 16.dp).clickable { context.open("https://www.openstreetmap.org/copyright") },
         )
+        Text(
+            "Privacy policy",
+            color = colors.accent,
+            fontWeight = FontWeight.Bold,
+            modifier = Modifier.padding(top = 12.dp).clickable { context.open("https://mangiamundo.com/privacy/") },
+        )
         BuildLine(server)
     }
 }

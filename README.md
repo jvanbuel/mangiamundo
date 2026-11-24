@@ -63,6 +63,7 @@ Tests: `cargo test` in `backend/`, `npm run check` in `web/`. Mobile apps: see
 - [Celebrations and events](docs/celebrations-and-events.md): data files, time zones, reminders
 - [API](docs/api.md): wire conventions, error codes, sessions and accounts
 - [Deploy](docs/deploy.md): single binary and Fly
+- [Releasing the mobile apps](docs/release.md): release builds, the release workflows, what is left for the stores
 
 ## Data credits
 

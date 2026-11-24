@@ -8,6 +8,8 @@ settings:
   base:
     SWIFT_VERSION: "5.10"
     MARKETING_VERSION: "0.1.0"
+    # The build number. App Store Connect takes each one once, so a release from CI passes
+    # its run number on the command line: xcodebuild ... CURRENT_PROJECT_VERSION=42
     CURRENT_PROJECT_VERSION: "1"
 packages:
   # Sign in with Google; hands back an ID token for the server to check.
@@ -30,12 +32,17 @@ targets:
         buildPhase: resources
       - path: ../../shared/fonts/res/font
         buildPhase: resources
+      # What the app collects and which restricted APIs it uses, for App Store review.
+      - path: PrivacyInfo.xcprivacy
+        buildPhase: resources
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: app.mangiamundo
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
         CODE_SIGN_STYLE: Automatic
         DEVELOPMENT_TEAM: 3L3LXDY2VY
+        # iPhone only: the app is portrait-only, which an iPad app may not be.
+        TARGETED_DEVICE_FAMILY: "1"
         # Real devices use the deployed backend. The simulator shares the Mac's localhost.
         API_BASE_URL: https://mangiamundo.com
         "API_BASE_URL[sdk=iphonesimulator*]": http://localhost:8080
@@ -92,6 +99,8 @@ targets:
         # Where the app finds the backend: see API_BASE_URL above.
         APIBaseURL: $(API_BASE_URL)
         ITSAppUsesNonExemptEncryption: false
+        # For a backend on the Mac or the local network while developing. It only allows
+        # plain HTTP to local addresses, and a release build talks to API_BASE_URL alone.
         NSAppTransportSecurity:
           NSAllowsLocalNetworking: true
   MangiamundoTests:
