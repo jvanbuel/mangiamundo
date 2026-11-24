@@ -51,11 +51,18 @@ android {
     }
 }
 
-/** Copies the country outlines, shared with the iOS app and the backend, into a folder of their own. */
+/**
+ * Copies the country outlines, shared with the iOS app and the backend, into a folder of
+ * their own, with the licence of the fonts the app ships.
+ */
 abstract class CopyWorld : DefaultTask() {
     @get:InputFile
     @get:PathSensitive(PathSensitivity.NONE)
     abstract val world: RegularFileProperty
+
+    @get:InputFile
+    @get:PathSensitive(PathSensitivity.NONE)
+    abstract val fontLicence: RegularFileProperty
 
     @get:OutputDirectory
     abstract val assets: DirectoryProperty
@@ -63,12 +70,14 @@ abstract class CopyWorld : DefaultTask() {
     @TaskAction
     fun copy() {
         world.get().asFile.copyTo(assets.file("world.json").get().asFile, overwrite = true)
+        fontLicence.get().asFile.copyTo(assets.file("Nunito-OFL.txt").get().asFile, overwrite = true)
     }
 }
 
 // shared/ also holds the fonts, so it cannot be an assets folder as a whole.
 val copyWorld = tasks.register<CopyWorld>("copyWorld") {
     world.set(layout.projectDirectory.file("../../../shared/world.json"))
+    fontLicence.set(layout.projectDirectory.file("../../../shared/fonts/Nunito-OFL.txt"))
 }
 androidComponents.onVariants { variant ->
     variant.sources.assets?.addGeneratedSourceDirectory(copyWorld, CopyWorld::assets)

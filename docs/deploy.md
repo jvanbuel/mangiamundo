@@ -44,8 +44,13 @@ Nothing in the repository makes or tests a backup.
 - Fly takes a snapshot of every volume once a day and keeps it for 5 days unless the
   volume is set otherwise. That is the only copy there is, and it lives with Fly.
   `fly volumes list` and `fly volumes snapshots list <volume id>` show them;
-  `fly volumes create data --snapshot-id <id>` restores one into a new volume.
-  `snapshot_retention` under `[[mounts]]` in `fly.toml` keeps them for up to 60 days.
+  `fly volumes create data --snapshot-id <id>` restores one into a new volume. That
+  volume is not attached to anything: the running Machine keeps the old one until a
+  Machine is started on the new volume and the old one is stopped, so that only the
+  restored copy takes writes. Fly's volume documentation has the steps.
+  Snapshots can be kept for up to 60 days. `snapshot_retention` under `[[mounts]]` in
+  `fly.toml` only counts for a volume a deploy creates; for the `data` volume that
+  exists, the retention is changed on the volume itself.
 - For a copy outside Fly: `sqlite3 /data/mangiamundo.db ".backup /data/backup.db"`
   makes a consistent copy while the server runs, to fetch with `fly ssh sftp get`.
   The image has no `sqlite3`, so it has to be installed first.

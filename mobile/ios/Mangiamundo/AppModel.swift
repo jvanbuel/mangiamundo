@@ -504,6 +504,9 @@ final class AppModel {
         guard discover != nil, let here = location, busyPlace == nil else { return }
         busyPlace = place.id
         defer { busyPlace = nil }
+        let generation = accountGeneration
+        // Progress is only shown when it is still about this area and this account.
+        let stillHere = { self.location?.area.id == here.area.id && self.accountGeneration == generation }
         do {
             let update: ([Visit]) -> [Visit]
             var checkedIn: VisitResult?
@@ -529,8 +532,7 @@ final class AppModel {
             // Details still loading may have read the visits from before this change.
             if let detail, detail.id == place.id, detailVisits != .loaded { openPlace(detail) }
             if let checkedIn {
-                // Not when the user moved to another area meanwhile: this progress is the old one's.
-                if let progress = checkedIn.progress, location?.area.id == here.area.id { discover = progress }
+                if let progress = checkedIn.progress, stillHere() { discover = progress }
                 for unlocked in checkedIn.unlocked { toast(unlocked.announcement(catalog: catalog)) }
             } else {
                 // The server has the remaining visits; details shown here may be out of date.
@@ -542,7 +544,7 @@ final class AppModel {
                     places[index].visits = Array(detail.visits.prefix(1))
                 }
                 let after = try await api.discover(areaID: here.area.id)
-                if location?.area.id == here.area.id { discover = after }
+                if stillHere() { discover = after }
             }
         } catch {
             toast("That did not work: \(error.localizedDescription)")
@@ -940,8 +942,12 @@ final class AppModel {
         }
     }
 
+    /// Goes up with every change of account, so an answer for the previous one can be told apart.
+    private var accountGeneration = 0
+
     /// After this device switches account: drop the previous account's visits, then load this one's.
     private func accountChanged() async {
+        accountGeneration += 1
         detailTask?.cancel()
         detail = nil
         // Cancels the places loader, clears its places and loads the open country again.

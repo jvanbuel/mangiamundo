@@ -476,6 +476,9 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         val here = location ?: return
         if (busyPlace != null) return
         busyPlace = place.id
+        val generation = accountGeneration
+        // Progress is only shown when it is still about this area and this account.
+        val stillHere = { location?.area?.id == here.area.id && accountGeneration == generation }
         viewModelScope.launch {
             try {
                 // Visited today: undo that visit. Otherwise check in, also when there are older visits.
@@ -498,8 +501,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
                 detail?.takeIf { it.id == place.id && detailVisits != DetailVisits.LOADED }?.let { openPlace(it) }
                 val result = checkedIn
                 if (result != null) {
-                    // Not when the user moved to another area meanwhile: this progress is the old one's.
-                    if (result.progress != null && location?.area?.id == here.area.id) discover = result.progress
+                    if (result.progress != null && stillHere()) discover = result.progress
                     for (unlocked in result.unlocked) messageChannel.trySend(unlocked.announcement(catalog))
                 } else {
                     // The server has the remaining visits; details shown here may be out of date.
@@ -512,7 +514,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
                         places = places.map { if (it.id == place.id) it.copy(visits = loaded.visits.take(1)) else it }
                     }
                     val after = api.discover(here.area.id)
-                    if (location?.area?.id == here.area.id) discover = after
+                    if (stillHere()) discover = after
                 }
             } catch (e: Exception) {
                 messageChannel.trySend("That did not work: ${e.message}")
@@ -908,8 +910,12 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         accountChanged()
     }
 
+    /** Goes up with every change of account, so an answer for the previous one can be told apart. */
+    private var accountGeneration = 0
+
     /** This device is in another account now: drop what was loaded for the previous one. */
     private fun accountChanged() {
+        accountGeneration++
         closePlace()
         select(selected)
         refresh()

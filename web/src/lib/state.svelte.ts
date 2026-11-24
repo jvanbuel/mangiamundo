@@ -538,8 +538,12 @@ export async function select(code: string | null) {
 	await loadPlaces(code);
 }
 
+/** Goes up with every change of account, so an answer for the previous one can be told apart. */
+let accountGeneration = 0;
+
 /** After this device changes account: the open list and details show the new account's visits. */
 export async function accountChanged() {
+	accountGeneration++;
 	await Promise.all([refresh(), loadPlaces(app.selected), app.placeId && loadPlace(app.placeId), loadAccount()]);
 }
 
@@ -592,6 +596,9 @@ export async function toggleVisit(place: Place) {
 	// Visited today: undo that visit. Otherwise check in, also when there are older visits.
 	const undoing = visitedToday(place);
 	app.busyPlace = place.id;
+	const generation = accountGeneration;
+	// Progress is only shown when it is still about this area and this account.
+	const stillHere = () => app.location?.area.id === location.area.id && accountGeneration === generation;
 	try {
 		if (!undoing) {
 			const fresh = gpsFix && Date.now() - gpsFix.at < 10 * 60_000 ? gpsFix : null;
@@ -599,8 +606,7 @@ export async function toggleVisit(place: Place) {
 			setVisits(place.id, (visits) => [result.visit, ...visits.filter((v) => v.id !== result.visit.id)]);
 			// Details still loading may have read the visits from before this change.
 			if (app.placeId === place.id && !app.detail) void loadPlace(place.id);
-			// Not when the user moved to another area meanwhile: this progress is the old one's.
-			if (result.progress && app.location?.area.id === location.area.id) app.discover = { ...result.progress, area: before.area };
+			if (result.progress && stillHere()) app.discover = { ...result.progress, area: before.area };
 			celebrate(result.unlocked);
 		} else {
 			const removed = place.visits[0].id;
@@ -616,7 +622,7 @@ export async function toggleVisit(place: Place) {
 				if (card) card.visits = app.detail.visits.slice(0, 1);
 			}
 			const after = await api.discover(location.area.id);
-			if (app.location?.area.id === location.area.id) app.discover = after;
+			if (stillHere()) app.discover = after;
 		}
 	} catch (error) {
 		toast(null, 'That did not work', message(error));
