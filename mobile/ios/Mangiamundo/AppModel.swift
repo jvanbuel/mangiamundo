@@ -307,7 +307,8 @@ final class AppModel {
                 }
                 celebrations = (try? await api.celebrations(areaID: here.area.id)) ?? []
                 await announceConfirmedAdditions()
-                await rescheduleReminders()
+                // On its own, so loading doesn't wait for it.
+                Task { await rescheduleReminders() }
             } catch {
                 guard !Task.isCancelled else { return }
                 self.error = error.localizedDescription
@@ -346,9 +347,13 @@ final class AppModel {
         defaults.set(remindersOn, forKey: "mangiamundo.reminders")
     }
 
+    /// Schedules what the server plans for the area. Without an answer, what was scheduled stays.
     private func rescheduleReminders() async {
-        guard remindersOn else { return }
-        await reminders.schedule(ReminderPlan.plan(celebrations: celebrations, events: discover?.events ?? [], now: Date()))
+        guard remindersOn, let here = location else { return }
+        guard let plan = try? await api.reminders(areaID: here.area.id) else { return }
+        // Turned off or moved meanwhile: this plan is no longer wanted.
+        guard remindersOn, location?.area.id == here.area.id else { return }
+        await reminders.schedule(ReminderSchedule.requests(for: plan, now: Date()))
     }
 
     func select(_ code: String?) {

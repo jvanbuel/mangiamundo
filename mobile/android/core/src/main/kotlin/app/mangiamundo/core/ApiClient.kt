@@ -51,6 +51,10 @@ class ApiClient(private val baseUrl: String, private val tokens: TokenStore, pri
     suspend fun celebrations(areaId: String, days: Int = 60): List<Celebration> =
         json.decodeFromString(request("GET", "/api/celebrations?${area(areaId)}&days=$days&${tz()}"))
 
+    /** The reminders that become due in the area in the coming `days`, soonest first, for this user. */
+    suspend fun reminders(areaId: String, days: Int = 60): List<Reminder> =
+        json.decodeFromString(authed("GET", "/api/reminders?${area(areaId)}&days=$days&${tz()}"))
+
     /** One place with all of the user's visits. The distance is measured from `from` (lat, lng) when given. */
     suspend fun place(placeId: String, from: Pair<Double, Double>?): Place {
         val position = from?.let { "?lat=${it.first}&lng=${it.second}" }.orEmpty()

@@ -201,10 +201,17 @@ struct NearbyCountry: Decodable {
     let places: Int
 }
 
-/// Notification text, written by the server so every app says the same thing.
-struct Reminder: Decodable {
+/// A reminder the server plans, for the app to show as a local notification from `hour`
+/// o'clock on `localDate` (YYYY-MM-DD) in the device's time zone.
+struct Reminder: Decodable, Equatable {
+    /// Stable for this reminder: scheduling it again under the same key replaces it.
+    let key: String
+    let localDate: String
+    let hour: Int
     let title: String
     let body: String
+    /// Where a tap leads, relative to the web app: `/?country=JP` or `/?tab=badges`.
+    let url: String
 }
 
 struct Celebration: Decodable, Identifiable {
@@ -217,7 +224,6 @@ struct Celebration: Decodable, Identifiable {
     let approximate: Bool
     /// The celebration's countries that have places in the area.
     let nearby: [NearbyCountry]
-    let reminder: Reminder
 }
 
 struct Discover: Decodable {

@@ -60,6 +60,11 @@ actor APIClient {
         try decode(await request("GET", "/api/celebrations?\(area(areaID))&days=\(days)&\(timeZone())"))
     }
 
+    /// The reminders that become due in the area in the coming `days`, soonest first, for this user.
+    func reminders(areaID: String, days: Int = 60) async throws -> [Reminder] {
+        try decode(await authed("GET", "/api/reminders?\(area(areaID))&days=\(days)&\(timeZone())"))
+    }
+
     /// One place with all of the user's visits. The distance is measured from `from` when given.
     func place(id: String, from: (lat: Double, lng: Double)?) async throws -> Place {
         let position = from.map { "?lat=\($0.lat)&lng=\($0.lng)" } ?? ""

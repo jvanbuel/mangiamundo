@@ -1,8 +1,8 @@
 package app.mangiamundo.core
 
+import java.time.DateTimeException
 import java.time.Duration
 import java.time.LocalDate
-import java.time.LocalTime
 import java.time.ZonedDateTime
 
 /** One notification to schedule on the device. */
@@ -12,46 +12,43 @@ data class PlannedReminder(
     val at: ZonedDateTime,
     val title: String,
     val body: String,
-    /** Country to open on tap, if any. */
-    val country: String?,
-    /** Open the badges tab on tap. */
-    val badges: Boolean = false,
+    /** What a tap opens; see [ReminderTarget]. */
+    val url: String,
 )
 
 /**
- * Turns the calendar into local notifications: one at 10:00 on the first day of each
- * celebration and event, and a last-days nudge for events the user has not finished.
- * Reminders whose moment has passed are left out.
+ * Turns the reminders the server plans (`/api/reminders`) into local notifications. Which
+ * reminders there are and what they say is the server's business; the app only schedules.
  */
-object ReminderPlan {
-    val TIME: LocalTime = LocalTime.of(10, 0)
-    const val LAST_CHANCE_DAYS = 3L
-    /** Platforms cap pending notifications (iOS at 64), so keep the plan short. */
-    const val MAX = 20
+object ReminderSchedule {
+    /** Platforms cap pending notifications (iOS at 64), so only the soonest are scheduled. */
+    const val MAX = 48
 
-    fun plan(celebrations: List<Celebration>, events: List<EventProgress>, now: ZonedDateTime): List<PlannedReminder> {
-        fun at(day: String) = LocalDate.parse(day).atTime(TIME).atZone(now.zone)
-        val out = mutableListOf<PlannedReminder>()
-        for (c in celebrations) {
-            out += PlannedReminder("celebration:${c.id}:${c.starts}", at(c.starts), c.reminder.title, c.reminder.body, c.nearby.firstOrNull()?.code)
-        }
-        for (e in events) {
-            if (e.earned || e.placesNearby == 0) continue
-            out += PlannedReminder(
-                "event-start:${e.id}", at(e.starts), "${e.title} starts today",
-                "${e.description} There ${if (e.placesNearby == 1) "is 1 place" else "are ${e.placesNearby} places"} nearby.",
-                country = null, badges = true,
-            )
-            val left = e.target - e.progress
-            val lastChance = LocalDate.parse(e.ends).minusDays(LAST_CHANCE_DAYS - 1).toString()
-            out += PlannedReminder(
-                "event-last:${e.id}", at(lastChance), "Last days of ${e.title}",
-                "${if (left == 1) "1 more place" else "$left more places"} to earn the badge before it ends.",
-                country = null, badges = true,
-            )
-        }
-        return out.filter { it.at.isAfter(now) }.sortedBy { it.at }.take(MAX)
-    }
+    /**
+     * Each reminder at its hour on its day in the zone of `now`, soonest first. Reminders
+     * whose moment has passed, or whose date can't be read, are left out.
+     */
+    fun requests(reminders: List<Reminder>, now: ZonedDateTime): List<PlannedReminder> =
+        reminders.mapNotNull { r ->
+            val at = try {
+                LocalDate.parse(r.localDate).atTime(r.hour, 0).atZone(now.zone)
+            } catch (_: DateTimeException) {
+                return@mapNotNull null
+            }
+            PlannedReminder(r.key, at, r.title, r.body, r.url)
+        }.filter { it.at.isAfter(now) }.sortedBy { it.at }.distinctBy { it.key }.take(MAX)
 
     fun delay(reminder: PlannedReminder, now: ZonedDateTime): Duration = Duration.between(now, reminder.at)
+}
+
+/** What a tapped reminder opens: a country, the badges tab, or just the app. */
+data class ReminderTarget(val country: String? = null, val badges: Boolean = false) {
+    companion object {
+        /** Reads the server's link, such as `/?country=JP` or `/?tab=badges`. */
+        fun of(url: String?): ReminderTarget {
+            val query = url?.substringAfter('?', "")?.substringBefore('#').orEmpty()
+            val fields = query.split('&').filter { '=' in it }.associate { it.substringBefore('=') to it.substringAfter('=') }
+            return ReminderTarget(fields["country"]?.takeIf { it.isNotEmpty() }, fields["tab"] == "badges")
+        }
+    }
 }

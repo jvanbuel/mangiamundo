@@ -111,7 +111,7 @@ class CoreTest {
         assertEquals(2, places.count { it.visited })
         assertEquals(1, places.count { it.verified })
         val celebrations = json.decodeFromString<List<Celebration>>(fixture("celebrations"))
-        assertTrue(celebrations.all { it.nearby.isNotEmpty() && it.reminder.title.isNotEmpty() })
+        assertTrue(celebrations.all { it.nearby.isNotEmpty() })
         assertTrue(places.any { it.hours?.status != null })
         val visit = json.decodeFromString<VisitResult>(fixture("visit"))
         assertTrue(visit.visit.verified)
