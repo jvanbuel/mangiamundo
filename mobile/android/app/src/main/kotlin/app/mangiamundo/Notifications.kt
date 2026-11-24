@@ -18,20 +18,20 @@ import androidx.work.Worker
 import androidx.work.WorkerParameters
 import androidx.work.workDataOf
 import app.mangiamundo.core.PlannedReminder
-import app.mangiamundo.core.ReminderPlan
+import app.mangiamundo.core.ReminderSchedule
 import java.time.ZonedDateTime
 import java.util.concurrent.TimeUnit
 
 /**
- * Celebration and event reminders as local notifications. The dates are known in
- * advance, so the app schedules them itself: no push service or Firebase project needed.
+ * Reminders as local notifications. The server plans them days ahead (`/api/reminders`),
+ * so the app schedules them itself: no push service or Firebase project needed.
  * WorkManager keeps them across reboots.
  */
 object Notifications {
     private const val TAG = "reminder"
     private const val CHANNEL = "celebrations"
-    const val EXTRA_COUNTRY = "country"
-    const val EXTRA_BADGES = "badges"
+    /** The reminder's link, read with `ReminderTarget.of`. */
+    const val EXTRA_URL = "url"
 
     fun allowed(context: Context): Boolean =
         Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU ||
@@ -43,13 +43,12 @@ object Notifications {
         work.cancelAllWorkByTag(TAG)
         for (reminder in plan) {
             val request = OneTimeWorkRequestBuilder<ReminderWorker>()
-                .setInitialDelay(ReminderPlan.delay(reminder, now).toMillis(), TimeUnit.MILLISECONDS)
+                .setInitialDelay(ReminderSchedule.delay(reminder, now).toMillis(), TimeUnit.MILLISECONDS)
                 .setInputData(
                     workDataOf(
                         "title" to reminder.title,
                         "body" to reminder.body,
-                        EXTRA_COUNTRY to reminder.country,
-                        EXTRA_BADGES to reminder.badges,
+                        EXTRA_URL to reminder.url,
                     ),
                 )
                 .addTag(TAG)
@@ -62,7 +61,7 @@ object Notifications {
         WorkManager.getInstance(context).cancelAllWorkByTag(TAG)
     }
 
-    fun show(context: Context, id: Int, title: String, body: String, country: String?, badges: Boolean) {
+    fun show(context: Context, id: Int, title: String, body: String, url: String?) {
         if (!allowed(context)) return
         val manager = context.getSystemService(NotificationManager::class.java)
         manager.createNotificationChannel(
@@ -72,8 +71,7 @@ object Notifications {
         )
         val open = Intent(context, MainActivity::class.java)
             .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP)
-            .putExtra(EXTRA_COUNTRY, country)
-            .putExtra(EXTRA_BADGES, badges)
+            .putExtra(EXTRA_URL, url)
         val tap = PendingIntent.getActivity(context, id, open, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
         val notification = NotificationCompat.Builder(context, CHANNEL)
             .setSmallIcon(R.drawable.ic_notification)
@@ -99,8 +97,7 @@ class ReminderWorker(context: Context, params: WorkerParameters) : Worker(contex
             id.hashCode(),
             data.getString("title") ?: return Result.success(),
             data.getString("body").orEmpty(),
-            data.getString(Notifications.EXTRA_COUNTRY),
-            data.getBoolean(Notifications.EXTRA_BADGES, false),
+            data.getString(Notifications.EXTRA_URL),
         )
         return Result.success()
     }

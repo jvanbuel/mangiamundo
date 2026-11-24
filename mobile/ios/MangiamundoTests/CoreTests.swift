@@ -100,7 +100,7 @@ final class ContractTests: XCTestCase {
         XCTAssertEqual(places.filter(\.visited).count, 2)
         XCTAssertEqual(places.filter(\.verified).count, 1)
         let celebrations = try decode([Celebration].self, "celebrations")
-        XCTAssertTrue(celebrations.allSatisfy { !$0.nearby.isEmpty && !$0.reminder.title.isEmpty })
+        XCTAssertTrue(celebrations.allSatisfy { !$0.nearby.isEmpty })
         XCTAssertTrue(places.contains { $0.hours?.status != nil })
         let visit = try decode(VisitResult.self, "visit")
         XCTAssertTrue(visit.visit.verified)
