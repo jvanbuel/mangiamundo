@@ -341,9 +341,43 @@ struct Located: Decodable {
     var options: [Area] { [city, postalCode].compactMap { $0 } }
 }
 
+/// From `POST /api/places/{id}/visits`.
 struct VisitResult: Decodable {
     let visit: Visit
     let profile: Profile
+    /// The progress in the area after the check-in; nil when no area was sent.
+    let progress: Discover?
+    /// What the check-in unlocked, in the order to announce it.
+    let unlocked: [Unlocked]
+}
+
+enum UnlockedKind: String, Decodable {
+    case country, badge, event, level
+    /// A kind from a newer server. Announced with its words alone.
+    case unknown
+
+    init(from decoder: Decoder) throws {
+        self = UnlockedKind(rawValue: try decoder.singleValueContainer().decode(String.self)) ?? .unknown
+    }
+}
+
+/// One thing a check-in unlocked, with the server's words to announce it.
+struct Unlocked: Decodable {
+    let kind: UnlockedKind
+    /// For a country: its code, to show its flag.
+    let country: String?
+    /// For a badge: which medal it is.
+    let badge: BadgeKind?
+    /// For a level: the level reached.
+    let level: Int?
+    let title: String
+    let text: String
+
+    /// "🇦🇿 Azerbaijan: gold. 2 more for diamond."
+    func announcement(catalog: Catalog?) -> String {
+        let flag = catalog?.countries.first(where: { $0.code == country }).map { "\($0.flag) " } ?? ""
+        return text.isEmpty ? "\(flag)\(title)" : "\(flag)\(title). \(text)"
+    }
 }
 
 /// The area the user is exploring: a city or a postal code, found by GPS or a search.
@@ -355,13 +389,6 @@ struct SavedLocation: Codable, Equatable {
     var fromGPS: Bool
     /// The city and postal code found at the GPS position, to switch between.
     var options: [Area] = []
-}
-
-/// A location saved before areas existed: a point (and a radius, now ignored).
-struct LegacyLocation: Decodable {
-    var lat: Double
-    var lng: Double
-    var fromGPS: Bool
 }
 
 /// What a restaurant the user adds brings to their area, decided when they add it.
