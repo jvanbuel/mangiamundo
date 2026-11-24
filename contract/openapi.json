@@ -858,7 +858,7 @@
         "description": "Opening hours.",
         "properties": {
           "raw": {
-            "description": "OSM `opening_hours` syntax; Google hours are converted to it.",
+            "description": "OSM `opening_hours` syntax.",
             "type": "string"
           },
           "status": {

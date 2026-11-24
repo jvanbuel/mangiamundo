@@ -1080,7 +1080,7 @@ export interface components {
         };
         /** @description Opening hours. */
         Hours: {
-            /** @description OSM `opening_hours` syntax; Google hours are converted to it. */
+            /** @description OSM `opening_hours` syntax. */
             raw: string;
             status: components["schemas"]["HoursStatus"] | null;
             /**

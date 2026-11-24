@@ -350,7 +350,7 @@ pub struct Visit {
 /// Opening hours.
 #[derive(Debug, Serialize, utoipa::ToSchema)]
 pub struct Hours {
-    /// OSM `opening_hours` syntax; Google hours are converted to it.
+    /// OSM `opening_hours` syntax.
     pub raw: String,
     /// `None` when `raw` can't be parsed.
     #[schema(required = true)]
