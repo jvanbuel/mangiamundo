@@ -12,7 +12,7 @@ import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 class CoreTest {
-    private val world = World.parse(File("../../shared/world.json").readText())
+    private val world = World.parse(File("../../../shared/world.json").readText())
 
     @Test
     fun spinsLandOnTheMainland() {

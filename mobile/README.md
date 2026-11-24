@@ -4,8 +4,9 @@ Two fully native apps that talk to the same backend API as the web app:
 
 - `android/` — Kotlin and Jetpack Compose.
 - `ios/` — Swift and SwiftUI (iOS 17+).
-- `shared/world.json` — country outlines both apps draw. Regenerate with
-  `node tools/build-world.mjs` from the repository root.
+- `../shared/` at the repository root — the country outlines (`world.json`) and the
+  fonts both apps use. Regenerate the outlines with `node tools/build-world.mjs` from
+  the repository root.
 
 Neither app uses a map SDK. The globe (orthographic projection) and the flat map
 (Web Mercator) are drawn straight from the country outlines on a native canvas, so

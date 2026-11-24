@@ -56,5 +56,5 @@ places or dates. `DELETE /api/share` turns it off; `GET /api/account` has its pa
 `POST /api/visits/{id}/share` does the same for one check-in (`/c/{slug}`): the place, its
 food and the date. Removing the check-in removes the page.
 
-The card (`…/card.png`, 1200 × 630) is drawn on the server from `mobile/shared/world.json`
+The card (`…/card.png`, 1200 × 630) is drawn on the server from `shared/world.json`
 and the apps' Nunito font, so link previews and the share sheets show the same image.
