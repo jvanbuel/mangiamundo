@@ -22,7 +22,18 @@ local date, so it counts the same wherever the user is later. A missing or unkno
 
 ## Reminders
 
-The native apps schedule local notifications themselves.
+Which reminders are due on a day is decided in one place, `due` in
+`backend/src/push.rs`: celebrations and events on their first day, a "last days" nudge
+three days before an event ends for who hasn't earned its badge, and the month's quests
+on the 1st.
+
+`GET /api/reminders?area=<id>&tz=<iana>&days=<n>` lists what becomes due from today up
+to `days` days ahead (60 by default, at most 366), for apps that schedule local
+notifications themselves. Each item has the `key` to schedule it under, its
+`local_date`, the `hour` it is sent from (10), and the notification's `title`, `body`,
+`url` and `tag`. It works without a token, as for someone with no visits. The plan
+follows the user's visits, so apps ask again after a check-in. Asking sends and records
+nothing.
 
 The web app uses Web Push: the server generates a VAPID key on first start (or reads
 `VAPID_PRIVATE_KEY`), and every `PUSH_INTERVAL_SECS` (default 600, 0 turns it off)

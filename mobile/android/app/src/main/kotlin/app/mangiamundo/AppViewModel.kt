@@ -26,9 +26,8 @@ import app.mangiamundo.core.Refreshed
 import app.mangiamundo.core.pendingText
 import app.mangiamundo.core.ProjectionKind
 import app.mangiamundo.core.ReminderPlan
-import app.mangiamundo.core.Status
-import app.mangiamundo.ui.label
 import app.mangiamundo.core.Visit
+import app.mangiamundo.core.VisitResult
 import app.mangiamundo.core.World
 import app.mangiamundo.core.withRecent
 import kotlinx.coroutines.Dispatchers
@@ -132,7 +131,6 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
                 ready = true
                 return@launch
             }
-            if (location == null) settings.legacyLocation?.let { (lat, lng, fromGps) -> moveLegacy(lat, lng, fromGps) }
             // Without a location the welcome screen shows right away; refresh() sets it otherwise.
             if (location != null) refresh() else ready = true
             // Follow the device when there is no location yet or the last one came from GPS.
@@ -162,15 +160,6 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     fun forgetRecent(id: String) {
         recentAreas = recentAreas.filter { it.id != id }
         settings.recentAreas = recentAreas
-    }
-
-    /** Moves a location saved before areas existed to the city at that point. */
-    private suspend fun moveLegacy(lat: Double, lng: Double, fromGps: Boolean) {
-        val located = runCatching { api.locateArea(lat, lng) }.getOrNull() ?: return
-        val area = located.city ?: located.postalCode ?: return
-        val target = SavedLocation(area, lat, lng, fromGps, located.options)
-        location = target
-        settings.location = target
     }
 
     /** Where the user is, when known recently: distances are measured from it. */
@@ -483,17 +472,25 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun toggleVisit(place: Place) {
-        val before = discover ?: return
+        if (discover == null) return
         val here = location ?: return
         if (busyPlace != null) return
         busyPlace = place.id
+        val generation = accountGeneration
+        // Nothing of the answer is shown once the device is in another account.
+        val sameAccount = { accountGeneration == generation }
+        // Progress is only shown when it is also still about this area.
+        val stillHere = { location?.area?.id == here.area.id && sameAccount() }
         viewModelScope.launch {
             try {
                 // Visited today: undo that visit. Otherwise check in, also when there are older visits.
                 val undoing = place.visitedToday()
+                var checkedIn: VisitResult? = null
                 val update: (List<Visit>) -> List<Visit> = if (!undoing) {
                     val fix = gpsFix?.takeIf { System.currentTimeMillis() - it.third < 10 * 60_000 }
-                    val visit = api.checkIn(place.id, fix?.let { it.first to it.second }).visit
+                    val result = api.checkIn(place.id, here.area.id, fix?.let { it.first to it.second })
+                    checkedIn = result
+                    val visit = result.visit
                     // Checking in twice on one day returns that day's visit.
                     { old -> listOf(visit) + old.filter { it.id != visit.id } }
                 } else {
@@ -501,12 +498,18 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
                     api.removeVisit(removed);
                     { old -> old.filter { it.id != removed } }
                 }
+                if (!sameAccount()) return@launch
                 setVisits(place.id, update)
                 // Details still loading may have read the visits from before this change.
                 detail?.takeIf { it.id == place.id && detailVisits != DetailVisits.LOADED }?.let { openPlace(it) }
-                if (undoing) {
+                val result = checkedIn
+                if (result != null) {
+                    if (result.progress != null && stillHere()) discover = result.progress
+                    for (unlocked in result.unlocked) messageChannel.trySend(unlocked.announcement(catalog))
+                } else {
                     // The server has the remaining visits; details shown here may be out of date.
                     val rest = runCatching { api.place(place.id, null).visits }.getOrNull()
+                    if (!sameAccount()) return@launch
                     val loaded = detail?.takeIf { it.id == place.id && detailVisits == DetailVisits.LOADED }
                     if (rest != null) {
                         setVisits(place.id) { rest }
@@ -514,14 +517,14 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
                         // The card shows only the latest visit: fall back on the older ones in the details.
                         places = places.map { if (it.id == place.id) it.copy(visits = loaded.visits.take(1)) else it }
                     }
+                    val after = api.discover(here.area.id)
+                    if (stillHere()) discover = after
                 }
-                val after = api.discover(here.area.id)
-                discover = after
-                if (!undoing) celebrate(before, after, place)
             } catch (e: Exception) {
                 messageChannel.trySend("That did not work: ${e.message}")
+            } finally {
+                busyPlace = null
             }
-            busyPlace = null
         }
     }
 
@@ -756,31 +759,6 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         detail = detail?.let { if (it.id == id) it.copy(visits = update(it.visits)) else it }
     }
 
-    /** Announces everything a check-in unlocked by comparing progress before and after. */
-    private fun celebrate(before: Discover, after: Discover, place: Place) {
-        for (code in place.countries) {
-            val was = before.countries.firstOrNull { it.code == code } ?: continue
-            val now = after.countries.firstOrNull { it.code == code } ?: continue
-            val info = country(code) ?: continue
-            if (now.status == was.status || now.status == Status.AVAILABLE) continue
-            val more = if (now.status == Status.COMPLETED) "" else " ${now.goal - now.visited} more for diamond."
-            messageChannel.trySend("${info.flag} ${info.name}: ${now.status.label.lowercase()}.$more")
-        }
-        for (badge in after.badges) {
-            if (badge.earned && before.badges.none { it.id == badge.id && it.earned }) {
-                messageChannel.trySend("Badge earned: ${badge.title}")
-            }
-        }
-        for (event in after.events) {
-            if (event.earned && before.events.none { it.id == event.id && it.earned }) {
-                messageChannel.trySend("Badge earned: ${event.title}")
-            }
-        }
-        if (after.profile.level > before.profile.level) {
-            messageChannel.trySend("Level ${after.profile.level}")
-        }
-    }
-
     fun loadAccount() {
         viewModelScope.launch {
             try {
@@ -937,8 +915,12 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         accountChanged()
     }
 
+    /** Goes up with every change of account, so an answer for the previous one can be told apart. */
+    private var accountGeneration = 0
+
     /** This device is in another account now: drop what was loaded for the previous one. */
     private fun accountChanged() {
+        accountGeneration++
         closePlace()
         select(selected)
         refresh()

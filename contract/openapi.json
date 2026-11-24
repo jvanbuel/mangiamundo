@@ -858,7 +858,7 @@
         "description": "Opening hours.",
         "properties": {
           "raw": {
-            "description": "OSM `opening_hours` syntax; Google hours are converted to it.",
+            "description": "OSM `opening_hours` syntax.",
             "type": "string"
           },
           "status": {
@@ -1450,6 +1450,39 @@
           "gone"
         ],
         "type": "string"
+      },
+      "Reminder": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/Notification"
+          },
+          {
+            "properties": {
+              "hour": {
+                "description": "The local hour from which it is sent that day.",
+                "format": "int32",
+                "minimum": 0,
+                "type": "integer"
+              },
+              "key": {
+                "description": "Stable for this reminder: scheduling it again under the same key replaces it.",
+                "type": "string"
+              },
+              "local_date": {
+                "description": "The day it is due, in the user's time zone.",
+                "format": "date",
+                "type": "string"
+              }
+            },
+            "required": [
+              "key",
+              "local_date",
+              "hour"
+            ],
+            "type": "object"
+          }
+        ],
+        "description": "A reminder that will be sent, for apps that schedule their own notifications."
       },
       "Restore": {
         "properties": {
@@ -3232,6 +3265,75 @@
         "summary": "Unsubscribes a browser. A POST, because a DELETE with a body has no defined meaning\nand some proxies drop it.",
         "tags": [
           "push"
+        ]
+      }
+    },
+    "/api/reminders": {
+      "get": {
+        "operationId": "reminders",
+        "parameters": [
+          {
+            "description": "As for `/api/discover`.",
+            "in": "query",
+            "name": "area",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "How many days ahead to look, today included: 0 to 366, 60 when missing.",
+            "in": "query",
+            "name": "days",
+            "required": false,
+            "schema": {
+              "format": "int64",
+              "type": "integer"
+            }
+          },
+          {
+            "description": "As for `/api/discover`.",
+            "in": "query",
+            "name": "tz",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/Reminder"
+                  },
+                  "type": "array"
+                }
+              }
+            }
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "An error"
+          }
+        },
+        "security": [
+          {},
+          {
+            "token": []
+          }
+        ],
+        "summary": "The reminders that become due in the area from today on, soonest first, for apps that\nschedule their own notifications: the ones Web Push sends on those days. An event's\n\"last days\" reminder depends on the user's visits; without a token it is as for someone\nwith no visits. Ask again after a check-in or when the area changes.",
+        "tags": [
+          "calendar"
         ]
       }
     },

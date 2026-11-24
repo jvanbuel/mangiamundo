@@ -66,14 +66,15 @@ actor APIClient {
         return try decode(await authed("GET", "/api/places/\(encode(id))\(position)"))
     }
 
-    /// `here` is the device position, sent so the server can mark the visit as verified.
-    func checkIn(placeID: String, here: (lat: Double, lng: Double)?) async throws -> VisitResult {
+    /// Checks in, and answers with the progress in the area afterwards and what the check-in
+    /// unlocked. `here` is the device position, sent so the server can mark the visit as verified.
+    func checkIn(placeID: String, areaID: String, here: (lat: Double, lng: Double)?) async throws -> VisitResult {
         var body: [String: [String: Double]] = [:]
         if let here {
             body = ["position": ["lat": here.lat, "lng": here.lng]]
         }
         let data = try JSONSerialization.data(withJSONObject: body)
-        return try decode(await authed("POST", "/api/places/\(encode(placeID))/visits?\(timeZone())", body: data))
+        return try decode(await authed("POST", "/api/places/\(encode(placeID))/visits?\(area(areaID))&\(timeZone())", body: data))
     }
 
     func removeVisit(id: Int) async throws {

@@ -887,6 +887,92 @@ fn photon_areas(found: &Value) -> Vec<AreaInfo> {
         .collect()
 }
 
+/// The openstreetmap.org page of an OSM place, from an id like `osm-node-123`.
+pub fn link(place_id: &str) -> Option<String> {
+    let (kind, id) = place_id.strip_prefix("osm-")?.split_once('-')?;
+    Some(format!("https://www.openstreetmap.org/{kind}/{id}"))
+}
+
+/// An OSM note mappers can act on: the tags to add, ready to copy.
+pub fn missing_place_note(place: &store::NewPlace) -> String {
+    let mut text = format!(
+        "A Mangiamundo user who knows this place says a restaurant is missing here:\n\n\
+         amenity=restaurant\nname={}\ncuisine={}\n",
+        place.name, place.cuisine
+    );
+    if let Some(url) = &place.url {
+        text += &format!("website={url}\n");
+    }
+    if let Some(address) = &place.address {
+        text += &format!("\nAddress: {address}\n");
+    }
+    text + "\nCould someone check and add it?"
+}
+
+/// The OSM note asking mappers to tag a place's cuisine.
+pub fn cuisine_note(place: &store::UnknownPlace, country: &str, cuisine: &str) -> String {
+    let link = link(&place.id).map_or_else(String::new, |url| format!("\n\n{url}"));
+    format!(
+        "A Mangiamundo user who knows this place says {} serves food from {country}:\n\n\
+         cuisine={cuisine}{link}\n\nCould someone check and add the tag?",
+        place.name
+    )
+}
+
+/// The OSM note saying a place has closed. `page` is its page from [`link`].
+pub fn closed_note(name: &str, page: &str) -> String {
+    format!(
+        "Two Mangiamundo users reported that \"{name}\" ({page}) has closed. \
+         Could someone check and update or remove it?"
+    )
+}
+
+/// Posts an OSM note, as the account `token` belongs to or anonymously, and returns its id.
+/// Best effort: a failure is logged, not retried.
+pub async fn post_note(
+    url: String,
+    token: Option<String>,
+    lat: f64,
+    lng: f64,
+    text: String,
+) -> Option<i64> {
+    // The `.json` endpoint answers with the note as GeoJSON instead of XML.
+    let result = async {
+        let mut request = reqwest::Client::new()
+            .post(format!("{url}.json"))
+            .header(
+                reqwest::header::USER_AGENT,
+                concat!("mangiamundo/", env!("CARGO_PKG_VERSION")),
+            )
+            .form(&[
+                ("lat", lat.to_string()),
+                ("lon", lng.to_string()),
+                ("text", text),
+            ]);
+        if let Some(token) = token {
+            request = request.bearer_auth(token);
+        }
+        request
+            .send()
+            .await?
+            .error_for_status()?
+            .json::<serde_json::Value>()
+            .await
+    }
+    .await;
+    match result {
+        Ok(note) => {
+            let id = note["properties"]["id"].as_i64();
+            tracing::info!(lat, lng, id, "posted osm note");
+            id
+        }
+        Err(error) => {
+            tracing::warn!(%error, "osm note failed");
+            None
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
 

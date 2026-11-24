@@ -1,5 +1,7 @@
 # The Rust backend serves the built web app, so one image holds both.
-# .git is not copied in, so pass the commit to show in the apps:
+# Fly's GitHub app builds and deploys this on every push to main (docs/deploy.md).
+# .git is not copied in, so the commit shown in the apps comes from the GIT_COMMIT
+# build argument. The deploys from GitHub don't pass it; a deploy by hand can:
 #   fly deploy --build-arg GIT_COMMIT=$(git describe --always --dirty)
 
 FROM node:24-slim AS web
@@ -13,8 +15,8 @@ RUN npm run build
 FROM rust:1-bookworm AS backend
 WORKDIR /backend
 # The share card draws the apps' country outlines in their font.
-COPY mobile/shared/world.json /mobile/shared/
-COPY mobile/android/app/src/main/res/font/nunito_extrabold.ttf mobile/android/app/src/main/res/font/nunito_semibold.ttf /mobile/android/app/src/main/res/font/
+# It is included from ../../shared, seen from backend/src.
+COPY shared/ /shared/
 COPY backend/ ./
 ARG GIT_COMMIT
 RUN cargo build --release --locked

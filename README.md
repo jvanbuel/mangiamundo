@@ -53,6 +53,7 @@ Tests: `cargo test` in `backend/`, `npm run check` in `web/`. Mobile apps: see
 | `backend/` | Rust (axum + SQLite) API: place lookup, caching, accounts, game logic |
 | `web/` | SvelteKit single-page app with a MapLibre map; colours are CSS variables in `web/src/app.css` |
 | `mobile/` | Native Android (Kotlin, Compose) and iOS (Swift, SwiftUI) apps, no map SDK |
+| `shared/` | Country outlines and Nunito font files used by both apps and the backend's share card |
 | `contract/` | OpenAPI document and example responses shared by all clients |
 | `tools/` | Scripts that build the country outlines and logos |
 
@@ -68,4 +69,4 @@ Tests: `cargo test` in `backend/`, `npm run check` in `web/`. Mobile apps: see
 Restaurant data © OpenStreetMap contributors (ODbL) with the `osm` provider. Country
 borders: Natural Earth via `world-atlas`. Country metadata: `world-countries`.
 Typeface: Nunito by Vernon Adams and contributors, SIL Open Font License
-(`mobile/shared/Nunito-OFL.txt`).
+(`shared/fonts/Nunito-OFL.txt`).

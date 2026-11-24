@@ -85,12 +85,4 @@ class Settings(context: Context) : TokenStore {
                 .filterValues { it > System.currentTimeMillis() }
         }.getOrDefault(emptyMap())
         set(value) = prefs.edit { putString("notToday", json.encodeToString(notTodaySerializer, value)) }
-
-    /** A location saved before areas existed (a point and a radius): (lat, lng, from GPS). */
-    val legacyLocation: Triple<Double, Double, Boolean>?
-        get() = if (prefs.contains("lat") && !prefs.contains("area")) {
-            Triple(Double.fromBits(prefs.getLong("lat", 0)), Double.fromBits(prefs.getLong("lng", 0)), prefs.getBoolean("gps", false))
-        } else {
-            null
-        }
 }

@@ -147,8 +147,8 @@ export async function init() {
 	}
 	void checkReminders();
 	void loadAccount();
-	const stored = await storedLocation();
-	if (stored) {
+	const stored = load<Location>(LOCATION_KEY);
+	if (stored?.area) {
 		app.location = stored;
 		await refresh();
 		void hideSplash();
@@ -161,36 +161,6 @@ export async function init() {
 		if (await locationAllowed()) await locate(true);
 	}
 	await followLink();
-}
-
-/** The saved location. One saved before areas existed (a point and a radius) is moved to
- * the city at that point. */
-async function storedLocation(): Promise<Location | null> {
-	const stored = load<Partial<Location> & { lat?: number; lng?: number; source?: 'gps' | 'search' }>(LOCATION_KEY);
-	try {
-		localStorage.removeItem('mangiamundo.radius');
-	} catch {
-		// Storage unavailable: nothing to clean up.
-	}
-	if (!stored) return null;
-	if (stored.area && Array.isArray(stored.options)) return stored as Location;
-	if (typeof stored.lat !== 'number' || typeof stored.lng !== 'number') return null;
-	try {
-		const located = await api.locateArea(stored.lat, stored.lng);
-		const area = located.city ?? located.postal_code;
-		if (!area) return null;
-		const location: Location = {
-			area,
-			lat: stored.lat,
-			lng: stored.lng,
-			source: stored.source ?? 'search',
-			options: optionsOf(located)
-		};
-		localStorage.setItem(LOCATION_KEY, JSON.stringify(location));
-		return location;
-	} catch {
-		return null;
-	}
 }
 
 function optionsOf(located: Located): Area[] {
@@ -568,8 +538,12 @@ export async function select(code: string | null) {
 	await loadPlaces(code);
 }
 
+/** Goes up with every change of account, so an answer for the previous one can be told apart. */
+let accountGeneration = 0;
+
 /** After this device changes account: the open list and details show the new account's visits. */
 export async function accountChanged() {
+	accountGeneration++;
 	await Promise.all([refresh(), loadPlaces(app.selected), app.placeId && loadPlace(app.placeId), loadAccount()]);
 }
 
@@ -622,23 +596,30 @@ export async function toggleVisit(place: Place) {
 	// Visited today: undo that visit. Otherwise check in, also when there are older visits.
 	const undoing = visitedToday(place);
 	app.busyPlace = place.id;
+	const generation = accountGeneration;
+	// Nothing of the answer is shown once the device is in another account.
+	const sameAccount = () => accountGeneration === generation;
+	// Progress is only shown when it is also still about this area.
+	const stillHere = () => app.location?.area.id === location.area.id && sameAccount();
 	try {
 		if (!undoing) {
 			const fresh = gpsFix && Date.now() - gpsFix.at < 10 * 60_000 ? gpsFix : null;
 			const result = await api.checkIn(place.id, location.area.id, fresh && { lat: fresh.lat, lng: fresh.lng });
+			if (!sameAccount()) return;
 			setVisits(place.id, (visits) => [result.visit, ...visits.filter((v) => v.id !== result.visit.id)]);
 			// Details still loading may have read the visits from before this change.
 			if (app.placeId === place.id && !app.detail) void loadPlace(place.id);
-			// Not when the user moved to another area meanwhile: this progress is the old one's.
-			if (result.progress && app.location?.area.id === location.area.id) app.discover = { ...result.progress, area: before.area };
+			if (result.progress && stillHere()) app.discover = { ...result.progress, area: before.area };
 			celebrate(result.unlocked);
 		} else {
 			const removed = place.visits[0].id;
 			await api.removeVisit(removed);
+			if (!sameAccount()) return;
 			setVisits(place.id, (visits) => visits.filter((v) => v.id !== removed));
 			if (app.placeId === place.id && !app.detail) void loadPlace(place.id);
 			// The server has the remaining visits; details shown here may be out of date.
 			const rest = await api.place(place.id, null).then((p) => p.visits, () => null);
+			if (!sameAccount()) return;
 			if (rest) setVisits(place.id, () => rest);
 			else if (app.detail?.id === place.id) {
 				// The card shows only the latest visit: fall back on the older ones in the details.
@@ -646,7 +627,7 @@ export async function toggleVisit(place: Place) {
 				if (card) card.visits = app.detail.visits.slice(0, 1);
 			}
 			const after = await api.discover(location.area.id);
-			if (app.location?.area.id === location.area.id) app.discover = after;
+			if (stillHere()) app.discover = after;
 		}
 	} catch (error) {
 		toast(null, 'That did not work', message(error));

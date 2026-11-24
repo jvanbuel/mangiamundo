@@ -73,10 +73,6 @@ final class AreaTests: XCTestCase {
         let saved = SavedLocation(area: leuven, lat: 50.88, lng: 4.71, fromGPS: true, options: [leuven])
         let data = try JSONEncoder().encode(saved)
         XCTAssertEqual(try JSONDecoder().decode(SavedLocation.self, from: data), saved)
-        // A location from before areas still reads as a legacy one.
-        let old = try JSONDecoder().decode(LegacyLocation.self, from: Data(#"{"lat":50.88,"lng":4.7,"name":"Leuven","fromGPS":false}"#.utf8))
-        XCTAssertEqual(old.lat, 50.88)
-        XCTAssertNil(try? JSONDecoder().decode(SavedLocation.self, from: Data(#"{"lat":50.88,"lng":4.7,"name":"Leuven","fromGPS":false}"#.utf8)))
     }
 }
 
@@ -106,7 +102,17 @@ final class ContractTests: XCTestCase {
         let celebrations = try decode([Celebration].self, "celebrations")
         XCTAssertTrue(celebrations.allSatisfy { !$0.nearby.isEmpty && !$0.reminder.title.isEmpty })
         XCTAssertTrue(places.contains { $0.hours?.status != nil })
-        XCTAssertTrue(try decode(VisitResult.self, "visit").visit.verified)
+        let visit = try decode(VisitResult.self, "visit")
+        XCTAssertTrue(visit.visit.verified)
+        XCTAssertEqual(visit.progress?.placesVisited, 1)
+        XCTAssertEqual(visit.progress?.profile.level, 2)
+        XCTAssertEqual(visit.unlocked.map(\.kind), [.country, .badge, .level])
+        XCTAssertEqual(visit.unlocked[0].country, "AZ")
+        XCTAssertEqual(visit.unlocked[1].badge, .visits)
+        XCTAssertEqual(visit.unlocked[2].level, 2)
+        let catalog = try decode(Catalog.self, "countries")
+        XCTAssertEqual(visit.unlocked[0].announcement(catalog: catalog), "🇦🇿 Azerbaijan: gold. 2 more for diamond.")
+        XCTAssertEqual(visit.unlocked[2].announcement(catalog: catalog), "Level 2. 175 XP so far.")
         let place = try decode(Place.self, "place")
         XCTAssertEqual(place.visits.count, 1)
         XCTAssertTrue(place.verified)

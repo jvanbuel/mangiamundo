@@ -277,11 +277,48 @@ data class Located(
     val options: List<Area> get() = listOfNotNull(city, postalCode)
 }
 
+/** From `POST /api/places/{id}/visits`. */
 @Serializable
 data class VisitResult(
     val visit: Visit,
     val profile: Profile,
+    /** The progress in the area after the check-in; null when no area was sent. */
+    val progress: Discover? = null,
+    /** What the check-in unlocked, in the order to announce it. */
+    val unlocked: List<Unlocked> = emptyList(),
 )
+
+@Serializable
+enum class UnlockedKind {
+    @SerialName("country") COUNTRY,
+    @SerialName("badge") BADGE,
+    @SerialName("event") EVENT,
+    @SerialName("level") LEVEL,
+
+    /** A kind from a newer server. Announced with its words alone. */
+    UNKNOWN,
+}
+
+/** One thing a check-in unlocked, with the server's words to announce it. */
+@Serializable
+data class Unlocked(
+    /** Unknown kinds from a newer server read as [UnlockedKind.UNKNOWN]. */
+    val kind: UnlockedKind = UnlockedKind.UNKNOWN,
+    /** For a country: its code, to show its flag. */
+    val country: String? = null,
+    /** For a badge: which medal it is. Null too for a kind this app doesn't know. */
+    val badge: BadgeKind? = null,
+    /** For a level: the level reached. */
+    val level: Int? = null,
+    val title: String,
+    val text: String,
+) {
+    /** "🇦🇿 Azerbaijan: gold. 2 more for diamond." */
+    fun announcement(catalog: Catalog?): String {
+        val flag = catalog?.countries?.firstOrNull { it.code == country }?.flag?.let { "$it " }.orEmpty()
+        return if (text.isEmpty()) "$flag$title" else "$flag$title. $text"
+    }
+}
 
 @Serializable
 internal data class Session(val token: String)

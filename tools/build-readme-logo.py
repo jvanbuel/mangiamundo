@@ -16,7 +16,7 @@ from fontTools.pens.transformPen import TransformPen
 from fontTools.ttLib import TTFont
 
 ROOT = Path(__file__).resolve().parent.parent
-FONTS = ROOT / "mobile/android/app/src/main/res/font"
+FONTS = ROOT / "shared/fonts/res/font"
 
 ICON = 128
 GAP = 28

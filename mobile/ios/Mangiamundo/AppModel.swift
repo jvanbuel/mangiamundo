@@ -129,7 +129,6 @@ final class AppModel {
             ready = true
             return
         }
-        if location == nil { await moveLegacyLocation() }
         // Without a location the welcome screen shows right away; refresh() sets it otherwise.
         if location != nil { refresh() } else { ready = true }
         // Follow the device when there is no location yet or the last one came from GPS.
@@ -164,20 +163,6 @@ final class AppModel {
         guard var target = location, target.area.id != area.id else { return }
         target.area = area
         move(to: target)
-    }
-
-    /// Moves a location saved before areas existed to the city at that point.
-    private func moveLegacyLocation() async {
-        guard let data = defaults.data(forKey: "mangiamundo.location"),
-              let legacy = try? JSONDecoder().decode(LegacyLocation.self, from: data),
-              let located = try? await api.locateArea(lat: legacy.lat, lng: legacy.lng),
-              let area = located.city ?? located.postalCode,
-              location == nil else { return } // a choice made meanwhile wins
-        let target = SavedLocation(area: area, lat: legacy.lat, lng: legacy.lng, fromGPS: legacy.fromGPS, options: located.options)
-        location = target
-        if let data = try? JSONEncoder().encode(target) {
-            defaults.set(data, forKey: "mangiamundo.location")
-        }
     }
 
     /// Where the user is, when known recently: distances are measured from it.
@@ -516,11 +501,17 @@ final class AppModel {
     /// Checks in, or undoes today's visit. `visited` is what the button showed, so the
     /// action matches its label even if midnight passes in between.
     func toggleVisit(_ place: Place, visited: Bool? = nil) async {
-        guard let before = discover, let here = location, busyPlace == nil else { return }
+        guard discover != nil, let here = location, busyPlace == nil else { return }
         busyPlace = place.id
         defer { busyPlace = nil }
+        let generation = accountGeneration
+        // Nothing of the answer is shown once the device is in another account.
+        let sameAccount = { self.accountGeneration == generation }
+        // Progress is only shown when it is also still about this area.
+        let stillHere = { self.location?.area.id == here.area.id && sameAccount() }
         do {
             let update: ([Visit]) -> [Visit]
+            var checkedIn: VisitResult?
             // Visited today: undo that visit. Otherwise check in, also when there are older visits.
             let undoing = visited ?? place.visitedToday()
             if !undoing {
@@ -528,7 +519,9 @@ final class AppModel {
                 if let fix = gpsFix, Date().timeIntervalSince(fix.at) < 600 {
                     position = (fix.lat, fix.lng)
                 }
-                let visit = try await api.checkIn(placeID: place.id, here: position).visit
+                let result = try await api.checkIn(placeID: place.id, areaID: here.area.id, here: position)
+                checkedIn = result
+                let visit = result.visit
                 // Checking in twice on one day returns that day's visit.
                 update = { old in [visit] + old.filter { $0.id != visit.id } }
             } else if let latest = place.visits.first {
@@ -537,22 +530,27 @@ final class AppModel {
             } else {
                 return
             }
+            guard sameAccount() else { return }
             setVisits(place.id, update)
             // Details still loading may have read the visits from before this change.
             if let detail, detail.id == place.id, detailVisits != .loaded { openPlace(detail) }
-            if undoing {
+            if let checkedIn {
+                if let progress = checkedIn.progress, stillHere() { discover = progress }
+                for unlocked in checkedIn.unlocked { toast(unlocked.announcement(catalog: catalog)) }
+            } else {
                 // The server has the remaining visits; details shown here may be out of date.
-                if let rest = try? await api.place(id: place.id, from: nil).visits {
+                let rest = try? await api.place(id: place.id, from: nil).visits
+                guard sameAccount() else { return }
+                if let rest {
                     setVisits(place.id) { _ in rest }
                 } else if let detail, detail.id == place.id, detailVisits == .loaded,
                           let index = places.firstIndex(where: { $0.id == place.id }) {
                     // The card shows only the latest visit: fall back on the older ones in the details.
                     places[index].visits = Array(detail.visits.prefix(1))
                 }
+                let after = try await api.discover(areaID: here.area.id)
+                if stillHere() { discover = after }
             }
-            let after = try await api.discover(areaID: here.area.id)
-            discover = after
-            if !undoing { celebrate(before: before, after: after, place: place) }
         } catch {
             toast("That did not work: \(error.localizedDescription)")
         }
@@ -757,31 +755,6 @@ final class AppModel {
         }
     }
 
-    /// Announces everything a check-in unlocked by comparing progress before and after.
-    private func celebrate(before: Discover, after: Discover, place: Place) {
-        for code in place.countries {
-            guard let was = before.countries.first(where: { $0.code == code }),
-                  let now = after.countries.first(where: { $0.code == code }),
-                  let info = country(code) else { continue }
-            guard now.status != was.status, now.status != .available else { continue }
-            let more = now.status == .completed ? "" : " \(now.goal - now.visited) more for diamond."
-            toast("\(info.flag) \(info.name): \(now.status.label.lowercased()).\(more)")
-        }
-        for badge in after.badges where badge.earned {
-            if !before.badges.contains(where: { $0.id == badge.id && $0.earned }) {
-                toast("Badge earned: \(badge.title)")
-            }
-        }
-        for event in after.events where event.earned {
-            if !before.events.contains(where: { $0.id == event.id && $0.earned }) {
-                toast("Badge earned: \(event.title)")
-            }
-        }
-        if after.profile.level > before.profile.level {
-            toast("Level \(after.profile.level)")
-        }
-    }
-
     // MARK: - Account
 
     func loadAccount() async {
@@ -974,8 +947,12 @@ final class AppModel {
         }
     }
 
+    /// Goes up with every change of account, so an answer for the previous one can be told apart.
+    private var accountGeneration = 0
+
     /// After this device switches account: drop the previous account's visits, then load this one's.
     private func accountChanged() async {
+        accountGeneration += 1
         detailTask?.cancel()
         detail = nil
         // Cancels the places loader, clears its places and loads the open country again.

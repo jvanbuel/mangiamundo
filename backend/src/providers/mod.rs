@@ -8,6 +8,7 @@ use serde::Serialize;
 use crate::config::{Config, ProviderKind};
 use crate::geo;
 
+pub mod cached;
 pub mod demo;
 pub mod osm;
 

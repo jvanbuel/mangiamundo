@@ -18,16 +18,9 @@ dates are `YYYY-MM-DD`.
 
 Every error, including unknown `/api` paths, is
 `{ "error": "message", "code": "..." }` with a 4xx or 5xx status. The message is
-for people and may change; clients that react to a specific case check `code`:
-
-| `code` | Status | |
-| --- | --- | --- |
-| `bad_request` | 400, 413, 415, 422 | Invalid or missing parameters, a malformed or oversized (over 2 MiB) body, or a body without `Content-Type: application/json` |
-| `unauthorized` | 401 | Missing or unknown session token |
-| `not_found` | 404 | Unknown place, area or `/api` path |
-| `method_not_allowed` | 405 | The path exists, but not with this method |
-| `upstream` | 502 | The places or areas provider failed |
-| `internal` | 500 | Anything else, such as a database error |
+for people and may change; clients that react to a specific case check `code`. The
+codes, with their statuses, are listed in the description of `ErrorCode` in
+[`contract/openapi.json`](../contract/openapi.json).
 
 ## Sessions and accounts
 
@@ -63,5 +56,5 @@ places or dates. `DELETE /api/share` turns it off; `GET /api/account` has its pa
 `POST /api/visits/{id}/share` does the same for one check-in (`/c/{slug}`): the place, its
 food and the date. Removing the check-in removes the page.
 
-The card (`…/card.png`, 1200 × 630) is drawn on the server from `mobile/shared/world.json`
+The card (`…/card.png`, 1200 × 630) is drawn on the server from `shared/world.json`
 and the apps' Nunito font, so link previews and the share sheets show the same image.

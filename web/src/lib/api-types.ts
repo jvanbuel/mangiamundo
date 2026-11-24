@@ -536,6 +536,28 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/reminders": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * The reminders that become due in the area from today on, soonest first, for apps that
+         *     schedule their own notifications: the ones Web Push sends on those days. An event's
+         *     "last days" reminder depends on the user's visits; without a token it is as for someone
+         *     with no visits. Ask again after a check-in or when the area changes.
+         */
+        get: operations["reminders"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/session": {
         parameters: {
             query?: never;
@@ -1058,7 +1080,7 @@ export interface components {
         };
         /** @description Opening hours. */
         Hours: {
-            /** @description OSM `opening_hours` syntax; Google hours are converted to it. */
+            /** @description OSM `opening_hours` syntax. */
             raw: string;
             status: components["schemas"]["HoursStatus"] | null;
             /**
@@ -1254,6 +1276,21 @@ export interface components {
          * @enum {string}
          */
         Refreshed: "updated" | "unchanged" | "gone";
+        /** @description A reminder that will be sent, for apps that schedule their own notifications. */
+        Reminder: components["schemas"]["Notification"] & {
+            /**
+             * Format: int32
+             * @description The local hour from which it is sent that day.
+             */
+            hour: number;
+            /** @description Stable for this reminder: scheduling it again under the same key replaces it. */
+            key: string;
+            /**
+             * Format: date
+             * @description The day it is due, in the user's time zone.
+             */
+            local_date: string;
+        };
         Restore: {
             /**
              * @description A recovery code (`XXXX-XXXX-XXXX-XXXX-XXXX`) or a link code (`XXXX-XXXX`). Case,
@@ -2327,6 +2364,41 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+            /** @description An error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    reminders: {
+        parameters: {
+            query: {
+                /** @description As for `/api/discover`. */
+                area: string;
+                /** @description How many days ahead to look, today included: 0 to 366, 60 when missing. */
+                days?: number;
+                /** @description As for `/api/discover`. */
+                tz?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Reminder"][];
+                };
             };
             /** @description An error */
             default: {

@@ -46,7 +46,7 @@ class ScreensTest {
     @get:Rule
     val paparazzi = Paparazzi(deviceConfig = DeviceConfig.PIXEL_6, maxPercentDifference = 0.1)
 
-    private val world = World.parse(File("../../shared/world.json").readText())
+    private val world = World.parse(File("../../../shared/world.json").readText())
     private val leuven = SavedLocation(Area("demo-leuven", "Leuven", lat = 50.8798, lng = 4.7005), 50.8798, 4.7005, fromGps = true)
 
     private val countries = listOf(
@@ -176,7 +176,7 @@ class ScreensTest {
         val colors = LocalAppColors.current
         Column(Modifier.fillMaxSize().background(colors.panel).padding(16.dp)) {
             ComingUp(celebrations, remindersOn = false, onToggleReminders = {}, country = { code -> countries.firstOrNull { it.code == code } }, onOpen = {}, today = today)
-            BadgeGrid(discover.badges.take(2), events, today)
+            BadgeGrid(discover.badges.take(2), events, today = today)
         }
     }
 }

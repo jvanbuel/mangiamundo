@@ -1,4 +1,4 @@
-// Builds mobile/shared/world.json, the country outlines drawn by the native apps.
+// Builds shared/world.json, the country outlines drawn by the native apps and the share card.
 // Run from the repository root after `npm install` in web/:  node tools/build-world.mjs
 import { readFileSync, writeFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
@@ -38,6 +38,6 @@ const world = feature(atlas, atlas.objects.countries)
 		};
 	});
 
-const out = new URL('../mobile/shared/world.json', import.meta.url);
+const out = new URL('../shared/world.json', import.meta.url);
 writeFileSync(out, JSON.stringify(world));
 console.log(`${world.length} countries, ${world.reduce((n, c) => n + c.rings.reduce((m, r) => m + r.length / 2, 0), 0)} points`);

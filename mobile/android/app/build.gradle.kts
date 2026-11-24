@@ -33,8 +33,9 @@ android {
         buildConfig = true
     }
 
-    // The country outlines are shared with the iOS app.
-    sourceSets["main"].assets.srcDir("../../shared")
+    // The fonts are shared with the iOS app and the backend, in a res/ layout so that
+    // they are ordinary font resources here (R.font.nunito_*).
+    sourceSets["main"].res.srcDir("../../../shared/fonts/res")
 
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
@@ -48,6 +49,38 @@ android {
             buildConfigField("String", "API_BASE", "\"https://mangiamundo.com\"")
         }
     }
+}
+
+/**
+ * Copies the country outlines, shared with the iOS app and the backend, into a folder of
+ * their own, with the licence of the fonts the app ships.
+ */
+abstract class CopyWorld : DefaultTask() {
+    @get:InputFile
+    @get:PathSensitive(PathSensitivity.NONE)
+    abstract val world: RegularFileProperty
+
+    @get:InputFile
+    @get:PathSensitive(PathSensitivity.NONE)
+    abstract val fontLicence: RegularFileProperty
+
+    @get:OutputDirectory
+    abstract val assets: DirectoryProperty
+
+    @TaskAction
+    fun copy() {
+        world.get().asFile.copyTo(assets.file("world.json").get().asFile, overwrite = true)
+        fontLicence.get().asFile.copyTo(assets.file("Nunito-OFL.txt").get().asFile, overwrite = true)
+    }
+}
+
+// shared/ also holds the fonts, so it cannot be an assets folder as a whole.
+val copyWorld = tasks.register<CopyWorld>("copyWorld") {
+    world.set(layout.projectDirectory.file("../../../shared/world.json"))
+    fontLicence.set(layout.projectDirectory.file("../../../shared/fonts/Nunito-OFL.txt"))
+}
+androidComponents.onVariants { variant ->
+    variant.sources.assets?.addGeneratedSourceDirectory(copyWorld, CopyWorld::assets)
 }
 
 kotlin {
