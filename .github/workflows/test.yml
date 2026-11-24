@@ -69,3 +69,42 @@ jobs:
           name: paparazzi-failures
           path: mobile/android/app/build/paparazzi/failures
           if-no-files-found: ignore
+
+  # Deploys main to Fly once the tests above have passed (docs/deploy.md).
+  deploy:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs: [backend, web, android]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    # One deploy at a time; a deploy that has started is left to finish.
+    concurrency:
+      group: fly-deploy
+      cancel-in-progress: false
+    env:
+      FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+      # Without the secret there is nothing to deploy with, and that is not a failure.
+      # A run that waited for an earlier deploy may no longer be the newest commit: the
+      # newer one is deployed by its own run, and an older image must not replace it.
+      - name: Is there something to deploy?
+        id: check
+        run: |
+          if [ -z "$FLY_API_TOKEN" ]; then
+            echo "::notice::No FLY_API_TOKEN secret, so nothing is deployed (docs/deploy.md)."
+            exit 0
+          fi
+          tip=$(git ls-remote origin refs/heads/main | cut -f1)
+          if [ "$tip" != "$GITHUB_SHA" ]; then
+            echo "::notice::main is at $tip by now; that commit is deployed by its own run."
+            exit 0
+          fi
+          echo "deploy=true" >> "$GITHUB_OUTPUT"
+          echo "commit=$(git rev-parse --short HEAD)" >> "$GITHUB_OUTPUT"
+      - uses: superfly/flyctl-actions/setup-flyctl@master
+        if: steps.check.outputs.deploy == 'true'
+      # .git is not in the image, so the commit shown in the apps is passed in.
+      - name: Deploy
+        if: steps.check.outputs.deploy == 'true'
+        run: flyctl deploy --remote-only --build-arg GIT_COMMIT=${{ steps.check.outputs.commit }}
