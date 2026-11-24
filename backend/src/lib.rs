@@ -38,7 +38,8 @@ pub struct AppState {
     pub auth: Arc<auth::Auth>,
     /// Areas being fetched right now, for the clients' progress wheel.
     pub loads: areas::Loads,
-    /// Recent requests per user, for limits on the ones that ask OpenStreetMap.
+    /// Recent requests per user or client address, for limits on the ones that ask
+    /// OpenStreetMap.
     pub limits: api::Limits,
 }
 

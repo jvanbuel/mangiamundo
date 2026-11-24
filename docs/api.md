@@ -22,6 +22,11 @@ for people and may change; clients that react to a specific case check `code`. T
 codes, with their statuses, are listed in the description of `ErrorCode` in
 [`contract/openapi.json`](../contract/openapi.json).
 
+Looking up a location (`GET /api/areas`, `GET /api/areas/locate`, and any route with an
+`area` nobody opened before) can answer 429 `too_many_requests` when the client's
+address asked for too many new things or the lookups are busy; see
+[areas and places](areas-and-places.md#caching). The message says how long to wait.
+
 ## Sessions and accounts
 
 Accounts are anonymous: each device asks `POST /api/session` for a token once and

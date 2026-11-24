@@ -28,7 +28,7 @@ use chrono_tz::Tz;
 
 use crate::calendar::{self, Celebration};
 use crate::game::{self, Summary};
-use crate::providers::{osm, AreaInfo, Located, Lookup};
+use crate::providers::{osm, AreaInfo, Located, Lookup, Refused};
 use crate::store::{self, Area, HoursStatus, PlaceView, Visit};
 use crate::progress::{self, Progress, VisitChange};
 use crate::push::{self, Reminder};
@@ -120,9 +120,49 @@ pub fn router(state: AppState) -> Router {
     .route("/api/", any(not_found))
     .route("/api/{*rest}", any(not_found))
     .method_not_allowed_fallback(|| async { ApiError::MethodNotAllowed })
+    .layer(axum::middleware::from_fn(with_client))
     .layer(CorsLayer::permissive())
     .layer(TraceLayer::new_for_http())
     .with_state(state)
+}
+
+tokio::task_local! {
+    /// Who sent the request being handled, for limits counted below the handlers.
+    static CLIENT: String;
+}
+
+/// Who sent a request: the address Fly's proxy saw it come from, which the proxy puts in
+/// `Fly-Client-IP` itself, whatever the client sent. An IPv6 address counts as its /64,
+/// since one connection has all of those. Without the proxy (development, tests) everyone
+/// is `local`.
+fn client_of(headers: &header::HeaderMap) -> String {
+    let ip = headers
+        .get("fly-client-ip")
+        .and_then(|v| v.to_str().ok())
+        .and_then(|v| v.trim().parse::<std::net::IpAddr>().ok());
+    match ip {
+        Some(std::net::IpAddr::V4(ip)) => ip.to_string(),
+        Some(std::net::IpAddr::V6(ip)) => {
+            let [a, b, c, d, ..] = ip.segments();
+            format!("{a:x}:{b:x}:{c:x}:{d:x}::/64")
+        }
+        None => "local".into(),
+    }
+}
+
+/// Handles the request with its sender known to [`client`].
+async fn with_client(request: Request, next: axum::middleware::Next) -> Response {
+    as_client(client_of(request.headers()), next.run(request)).await
+}
+
+/// Runs `work` as if a request from `client` were being handled.
+pub(crate) async fn as_client<F: std::future::Future>(client: String, work: F) -> F::Output {
+    CLIENT.scope(client, work).await
+}
+
+/// Who sent the request being handled, or `None` in background work.
+pub(crate) fn client() -> Option<String> {
+    CLIENT.try_with(Clone::clone).ok()
 }
 
 #[derive(Serialize, ToSchema)]
@@ -174,7 +214,8 @@ struct ErrorBody {
 /// - `nothing_open` (404): `/api/suggestion` found unvisited places, but none open now;
 ///   ask again with `open=false`.
 /// - `nothing_left` (404): `/api/suggestion` found no unvisited place at all.
-/// - `too_many_requests` (429): a limit was reached, such as places added per day.
+/// - `too_many_requests` (429): a limit was reached, such as places added per day or
+///   location lookups per minute.
 /// - `upstream` (502): the places or areas provider failed.
 /// - `internal` (500): anything else, such as a database error.
 #[derive(Serialize, ToSchema, Clone, Copy)]
@@ -258,6 +299,20 @@ impl IntoResponse for ApiError {
     }
 }
 
+/// A provider's failure. When it only refused to ask its server, the client can wait
+/// that out.
+fn provider_error(error: anyhow::Error) -> ApiError {
+    match error.downcast_ref::<Refused>() {
+        Some(Refused::TooMany) => {
+            ApiError::TooManyRequests("too many location lookups; try again in a few minutes")
+        }
+        Some(Refused::Busy) => {
+            ApiError::TooManyRequests("location lookups are busy; try again in a moment")
+        }
+        None => ApiError::Upstream(error),
+    }
+}
+
 impl From<areas::Error> for ApiError {
     fn from(error: areas::Error) -> Self {
         match error {
@@ -265,7 +320,7 @@ impl From<areas::Error> for ApiError {
                 ApiError::BadRequest(error.to_string())
             }
             areas::Error::NotFound => ApiError::NotFound("area"),
-            areas::Error::Upstream(error) => ApiError::Upstream(error),
+            areas::Error::Upstream(error) => provider_error(error),
             areas::Error::Database(error) => ApiError::Database(error),
         }
     }
@@ -778,6 +833,28 @@ impl Limits {
         let times = all.entry((user.to_string(), kind)).or_default();
         times.retain(|&at| at > now - window);
         let allowed = times.len() < max;
+        if allowed {
+            times.push(now);
+        }
+        allowed
+    }
+
+    /// Like `allow`, for several budgets at once, each a `(max, window)`: the request is
+    /// counted, and true returned, when `user` is within all of them.
+    pub fn allow_each(
+        &self,
+        user: &str,
+        kind: &'static str,
+        budgets: &[(usize, i64)],
+        now: i64,
+    ) -> bool {
+        let mut all = self.0.lock().unwrap();
+        let times = all.entry((user.to_string(), kind)).or_default();
+        let longest = budgets.iter().map(|&(_, window)| window).max().unwrap_or(0);
+        times.retain(|&at| at > now - longest);
+        let allowed = budgets
+            .iter()
+            .all(|&(max, window)| times.iter().filter(|&&at| at > now - window).count() < max);
         if allowed {
             times.push(now);
         }
@@ -1953,9 +2030,15 @@ struct SearchQuery {
 }
 
 /// Cities and postal codes matching what someone typed.
+///
+/// For a search someone submits: `/api/areas/suggest` is the one to call while they type.
 #[utoipa::path(
     get, path = "/api/areas", tag = "areas", params(SearchQuery),
-    responses((status = 200, body = Vec<AreaInfo>), (status = "default", description = "An error", body = ErrorBody)),
+    responses(
+        (status = 200, body = Vec<AreaInfo>),
+        (status = 429, description = "`too_many_requests`: this client searched for too many new things (more than 10 in a minute or 60 in an hour), or too many lookups are waiting", body = ErrorBody),
+        (status = "default", description = "An error", body = ErrorBody),
+    ),
 )]
 async fn search_areas(
     State(state): State<AppState>,
@@ -1970,7 +2053,7 @@ async fn search_areas(
         .search(q)
         .await
         .map(Json)
-        .map_err(ApiError::Upstream)
+        .map_err(provider_error)
 }
 
 #[derive(Deserialize, IntoParams)]
@@ -2044,7 +2127,11 @@ async fn area_progress(
 /// The city and postal code a point (usually the device's position) lies in.
 #[utoipa::path(
     get, path = "/api/areas/locate", tag = "areas", params(LocateQuery),
-    responses((status = 200, body = Located), (status = "default", description = "An error", body = ErrorBody)),
+    responses(
+        (status = 200, body = Located),
+        (status = 429, description = "`too_many_requests`: this client asked about too many new places (more than 5 in a minute or 30 in an hour), or too many lookups are waiting", body = ErrorBody),
+        (status = "default", description = "An error", body = ErrorBody),
+    ),
 )]
 async fn locate_area(
     State(state): State<AppState>,
@@ -2058,5 +2145,5 @@ async fn locate_area(
         .locate(query.lat, query.lng)
         .await
         .map(Json)
-        .map_err(ApiError::Upstream)
+        .map_err(provider_error)
 }

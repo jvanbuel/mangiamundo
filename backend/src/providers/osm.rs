@@ -12,6 +12,7 @@ use std::time::{Duration, Instant};
 
 use super::{
     AreaDirectory, AreaInfo, AreaKind, Boundary, FoundPlace, Located, Lookup, PlacesProvider,
+    Refused,
 };
 use crate::geo::{Bbox, Shape};
 use crate::{catalog, store};
@@ -622,6 +623,14 @@ impl PlacesProvider for WithImport {
 /// Nominatim's usage policy allows one request per second.
 const NOMINATIM_INTERVAL: Duration = Duration::from_secs(1);
 
+/// How long a request waits for its turn. Those ahead of it take a second each, so this
+/// is also about how many can be waiting; the next one is told to try again.
+const NOMINATIM_PATIENCE: Duration = Duration::from_secs(10);
+
+/// How long Nominatim gets to answer, as everyone else waits meanwhile. It usually takes
+/// well under a second.
+const NOMINATIM_TIMEOUT: Duration = Duration::from_secs(15);
+
 /// What counts as a city: the municipality level, not districts or regions.
 const CITY_TYPES: &[&str] = &["city", "town", "village", "municipality"];
 
@@ -630,6 +639,8 @@ pub struct Nominatim {
     url: String,
     /// When the last request went out; held during a request so they never overlap.
     last: tokio::sync::Mutex<Option<Instant>>,
+    patience: Duration,
+    timeout: Duration,
 }
 
 impl Nominatim {
@@ -638,11 +649,16 @@ impl Nominatim {
             http,
             url,
             last: tokio::sync::Mutex::new(None),
+            patience: NOMINATIM_PATIENCE,
+            timeout: NOMINATIM_TIMEOUT,
         }
     }
 
     async fn get(&self, path: &str, params: &[(&str, &str)]) -> anyhow::Result<Value> {
-        let mut last = self.last.lock().await;
+        // Turns are given in the order they were asked for.
+        let Ok(mut last) = tokio::time::timeout(self.patience, self.last.lock()).await else {
+            return Err(Refused::Busy.into());
+        };
         if let Some(at) = *last {
             tokio::time::sleep(NOMINATIM_INTERVAL.saturating_sub(at.elapsed())).await;
         }
@@ -656,6 +672,7 @@ impl Nominatim {
                 ("accept-language", "en"),
             ])
             .query(params)
+            .timeout(self.timeout)
             .send()
             .await?
             .error_for_status()?
@@ -1250,6 +1267,50 @@ mod tests {
             "{:?}",
             started.elapsed()
         );
+    }
+
+    /// A fake Nominatim that finds nothing, after `delay`.
+    async fn slow_nominatim(delay: Duration) -> Nominatim {
+        let app = axum::Router::new().route(
+            "/search",
+            axum::routing::get(move || async move {
+                tokio::time::sleep(delay).await;
+                "[]"
+            }),
+        );
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let url = format!("http://{}", listener.local_addr().unwrap());
+        tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+        Nominatim::new(reqwest::Client::new(), url)
+    }
+
+    #[tokio::test]
+    async fn a_lookup_that_waits_too_long_for_its_turn_is_told_to_try_again() {
+        let nominatim = Nominatim {
+            patience: Duration::from_millis(50),
+            ..slow_nominatim(Duration::from_millis(400)).await
+        };
+        let (first, second) = tokio::join!(nominatim.search("Leuven"), async {
+            // Behind the first, which is still being answered.
+            tokio::time::sleep(Duration::from_millis(10)).await;
+            nominatim.search("Gent").await
+        });
+        assert!(first.unwrap().is_empty());
+        let error = second.unwrap_err();
+        assert_eq!(error.downcast_ref::<Refused>(), Some(&Refused::Busy));
+    }
+
+    #[tokio::test]
+    async fn an_answer_that_takes_too_long_gives_the_turn_to_the_next() {
+        let nominatim = Nominatim {
+            timeout: Duration::from_millis(50),
+            ..slow_nominatim(Duration::from_millis(400)).await
+        };
+        let started = Instant::now();
+        let error = nominatim.search("Leuven").await.unwrap_err();
+        assert!(error.downcast_ref::<Refused>().is_none(), "{error:#}");
+        assert!(started.elapsed() < Duration::from_millis(300));
+        assert!(nominatim.last.try_lock().is_ok());
     }
 
     /// Run by hand: `cargo test -- --ignored nominatim`.
