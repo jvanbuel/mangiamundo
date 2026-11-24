@@ -32,3 +32,64 @@ Results are cached per area (with its outline) and refreshed after `CACHE_TTL_DA
 Belgium and its border towns come from a local copy instead, refreshed from Overpass
 once a day with one query for the whole box; each refresh marks the cached areas there
 stale, so changes in OpenStreetMap show up within about a day.
+
+## From a place a player adds to a place on OpenStreetMap
+
+Four tables hold restaurants:
+
+| Table | Holds |
+| --- | --- |
+| `places` | What players see and check in at: places found on OpenStreetMap, and places players added that OpenStreetMap doesn't have yet (pending: id `user-…`, `added_by` set). |
+| `osm_places` | The local copy of OpenStreetMap. Emptied and refilled by the daily import; also updated when a player refreshes a place or looks again nearby. |
+| `unknown_places` | Named restaurants in the import box with no `cuisine` tag. Replaced at each import. Nobody can play them. |
+| `additions` | One row per place a player added, with its reward. It outlives the pending `places` row. |
+
+A player adds a place with `POST /api/places`, at most 5 a day:
+
+1. A pending row goes into `places` and into the cached areas whose outline holds it.
+   Only the player who added it sees it.
+2. An `additions` row records the bonus it claims, judged at that moment against the
+   places everyone sees in its city (never a postal code): `country` when none serves
+   that country, `continent` when none serves that continent. With no cached city
+   around it there is no bonus.
+3. Unless the request says `note: false` (the player maps it themselves), an
+   OpenStreetMap note at that spot asks mappers to add it, with the tags to copy. The
+   note's id is kept in `places.osm_note_id`.
+4. Nothing is paid yet: `/api/additions` lists it as `pending`, with the XP it would earn.
+
+At each daily import, and when a player looks again nearby
+(`POST /api/places/nearby/refresh`), every pending place, anyone's, is compared with
+`osm_places`. Its twin is the nearest place within 50 m that serves the same country
+and has a similar name: all the words of one name appear in the other, ignoring case
+and punctuation. When there is one:
+
+1. The addition is confirmed and points at the twin. The first addition confirmed for
+   a twin is rewarded; a later one for the same twin is a `duplicate` and earns nothing.
+2. The bonuses of its city are handed out again in the order the places were added: an
+   addition keeps the bonus it claimed unless an earlier one, pending or rewarded,
+   holds it. A bonus already granted is never lowered.
+3. The twin gets a `places` row, the pending place's visits, closed reports and areas
+   move to it, and the pending row is deleted. Now everyone sees the place.
+
+XP counts only rewarded additions, so it is paid at confirmation: 30 XP, plus 100 for a
+new country, plus another 250 for a new continent. `/api/additions` shows the
+confirmation as unseen until `PUT /api/additions/seen` says the player was told.
+
+### Restaurants with unknown food
+
+`GET /api/unknown-places` lists the `unknown_places` in an area. A player can answer
+for one in two ways:
+
+- `POST /api/unknown-places/{place_id}/cuisine` says which country's food it serves. This
+  adds a pending place as above, with the unknown place's name and position and with
+  `suggested_for` set to its id; the note asks mappers to tag the cuisine. It is
+  confirmed like any other pending place. If OpenStreetMap gives that place a cuisine
+  and no twin matches (another country, say), OpenStreetMap wins: the pending place is
+  swapped for the OpenStreetMap one and the addition is deleted, so it earns nothing.
+- `PUT /api/unknown-places/{place_id}/no-cuisine` says it serves no particular country's
+  food.
+
+The list leaves out what the player already answered for, and what two players said
+serves nothing specific. For everyone else the place becomes playable only once
+OpenStreetMap has a national cuisine for it: the import keeps those places in
+`osm_places`, and only places with no `cuisine` tag in `unknown_places`.
