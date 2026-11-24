@@ -236,13 +236,14 @@ async fn visiting_every_place_completes_a_country() {
     assert!(places.windows(2).all(|w| key(&w[0]) <= key(&w[1])));
     assert!(places.iter().all(|p| p["visits"] == Value::Array(vec![])));
 
-    // First check-in, made on the spot: 10 XP for the visit, 15 for being there, 50 for the country.
+    // First check-in, made on the spot: 10 XP for the visit, 15 for being there, 50 for the
+    // country, and 100 for the "taste a new country" quest it finishes.
     let first = &places[0];
     let here = at(first);
     let (status, visit) = call(&app, "POST", &visits_uri(first), Some(&token), Some(&here)).await;
     assert_eq!(status, StatusCode::OK);
     assert_eq!(visit["visit"]["verified"], true);
-    assert_eq!(visit["profile"]["xp"], 75);
+    assert_eq!(visit["profile"]["xp"], 175);
 
     for place in &places[1..] {
         let uri = visits_uri(place);
@@ -334,7 +335,8 @@ async fn visits_are_a_history_with_one_visit_per_day() {
     assert_eq!(status, StatusCode::OK);
     assert_eq!(first["visit"]["at"], START);
     assert_eq!(first["visit"]["verified"], true);
-    assert_eq!(first["profile"]["xp"], 75);
+    // With the 100 XP of the "taste a new country" quest.
+    assert_eq!(first["profile"]["xp"], 175);
     let (_, same_day) = call(&app, "POST", &uri, Some(&token), None).await;
     assert_eq!(same_day["visit"], first["visit"]);
 
@@ -2717,16 +2719,27 @@ async fn monthly_quests_pay_once_and_the_streak_shows() {
         None,
     )
     .await;
-    for place in &places.as_array().unwrap()[..2] {
-        call(&app, "POST", &visits_uri(place), Some(&token), None).await;
-    }
+    let places = places.as_array().unwrap();
+    let uri = format!("{}?{HERE}", visits_uri(&places[0]));
+    let (_, first) = call(&app, "POST", &uri, Some(&token), None).await;
+    // Looking doesn't pay anything, however often.
+    let between = discover(app.clone(), token.clone()).await;
+    assert_eq!(check_ins(&between)["done"], false);
+    assert_eq!(between["profile"]["xp"], first["profile"]["xp"]);
+    // The check-in that finishes a quest answers with its XP, with or without an area.
+    let (_, second) = call(&app, "POST", &visits_uri(&places[1]), Some(&token), None).await;
+    let xp = second["profile"]["xp"].as_u64().unwrap();
+    assert!(xp >= first["profile"]["xp"].as_u64().unwrap() + 10 + 50);
     let after = discover(app.clone(), token.clone()).await;
     assert_eq!(check_ins(&after)["done"], true);
     assert_eq!(after["profile"]["streak"], 1);
-    let xp = after["profile"]["xp"].as_u64().unwrap();
-    // Asking again doesn't pay the quest twice.
-    let again = discover(app, token).await;
+    assert_eq!(after["profile"]["xp"].as_u64().unwrap(), xp);
+    // Asking again doesn't pay the quest twice, and neither does checking in again.
+    let again = discover(app.clone(), token.clone()).await;
     assert_eq!(again["profile"]["xp"].as_u64().unwrap(), xp);
+    let (_, repeat) = call(&app, "POST", &uri, Some(&token), None).await;
+    assert_eq!(repeat["profile"]["xp"].as_u64().unwrap(), xp);
+    assert_eq!(repeat["progress"]["profile"]["xp"].as_u64().unwrap(), xp);
     let quest_xp: u64 = after["quests"]["quests"]
         .as_array()
         .unwrap()
@@ -2738,6 +2751,74 @@ async fn monthly_quests_pay_once_and_the_streak_shows() {
 }
 
 #[tokio::test]
+async fn quests_are_paid_per_area_at_check_in_and_taken_back_with_it() {
+    let db = store::connect("sqlite::memory:").await.unwrap();
+    let (app, _) = app_with(db.clone(), None, START).await;
+    let token = session(&app).await;
+    // Who was paid for "two check-ins", per area.
+    let paid = || async {
+        sqlx::query_scalar::<_, String>(
+            "SELECT area_id FROM quest_rewards WHERE quest = 'check-ins' ORDER BY area_id",
+        )
+        .fetch_all(&db)
+        .await
+        .unwrap()
+    };
+    let done = |app: Router, token: String, area: &'static str| async move {
+        let uri = format!("/api/discover?area={area}");
+        let (_, d) = call(&app, "GET", &uri, Some(&token), None).await;
+        let quests = d["quests"]["quests"].as_array().unwrap().clone();
+        let q = quests.into_iter().find(|q| q["id"] == "check-ins").unwrap();
+        (q["progress"].as_u64().unwrap(), q["done"] == true)
+    };
+    // A postal code of Leuven, the city around it, and another city: all three cached.
+    let (_, west) = call(&app, "GET", "/api/places?area=demo-leuven-3000", None, None).await;
+    let (_, tokyo) = call(&app, "GET", "/api/places?area=demo-tokyo", None, None).await;
+    call(&app, "GET", &format!("/api/discover?{HERE}"), None, None).await;
+    let (west, tokyo) = (west.as_array().unwrap(), tokyo.as_array().unwrap());
+
+    // Two check-ins in the postal code, made while looking at the city, finish the quest
+    // in both: the places are in both.
+    let mut visits = Vec::new();
+    for place in &west[..2] {
+        let uri = format!("{}?{HERE}", visits_uri(place));
+        let (status, body) = call(&app, "POST", &uri, Some(&token), None).await;
+        assert_eq!(status, StatusCode::OK);
+        visits.push(body);
+    }
+    assert_eq!(paid().await, ["demo-leuven", "demo-leuven-3000"]);
+    let xp = visits[1]["profile"]["xp"].as_u64().unwrap();
+    assert!(xp >= 2 * 10 + 2 * 50);
+    assert_eq!(visits[1]["progress"]["profile"]["xp"].as_u64().unwrap(), xp);
+    for area in ["demo-leuven", "demo-leuven-3000"] {
+        assert_eq!(done(app.clone(), token.clone(), area).await, (2, true));
+    }
+
+    // They don't count in Tokyo, which has the quest too: one check-in there is one of two.
+    assert_eq!(done(app.clone(), token.clone(), "demo-tokyo").await, (0, false));
+    let uri = format!("{}?area=demo-tokyo", visits_uri(&tokyo[0]));
+    call(&app, "POST", &uri, Some(&token), None).await;
+    assert_eq!(done(app.clone(), token.clone(), "demo-tokyo").await, (1, false));
+    assert_eq!(paid().await, ["demo-leuven", "demo-leuven-3000"]);
+    let uri = format!("{}?area=demo-tokyo", visits_uri(&tokyo[1]));
+    call(&app, "POST", &uri, Some(&token), None).await;
+    assert_eq!(paid().await, ["demo-leuven", "demo-leuven-3000", "demo-tokyo"]);
+
+    // Taking a check-in back takes back the quests it finished, where it finished them.
+    let uri = format!("/api/visits/{}", visits[0]["visit"]["id"]);
+    let (status, _) = call(&app, "DELETE", &uri, Some(&token), None).await;
+    assert_eq!(status, StatusCode::NO_CONTENT);
+    assert_eq!(paid().await, ["demo-tokyo"]);
+    assert_eq!(done(app.clone(), token.clone(), "demo-leuven").await, (1, false));
+    // And checking in again pays them again, once.
+    let uri = visits_uri(&west[0]);
+    let (_, back) = call(&app, "POST", &uri, Some(&token), None).await;
+    assert_eq!(paid().await, ["demo-leuven", "demo-leuven-3000", "demo-tokyo"]);
+    let (_, d) = call(&app, "GET", "/api/discover?area=demo-tokyo", Some(&token), None).await;
+    assert_eq!(d["profile"]["xp"], back["profile"]["xp"]);
+}
+
+#[tokio::test]
 async fn planning_reminders_books_no_quest_rewards() {
     // 1 December 2026, 12:00 UTC: the day the quests reminder is due.
     let first = START + 15 * DAY;
@@ -2745,11 +2826,6 @@ async fn planning_reminders_books_no_quest_rewards() {
     let (app, _) = app_with(db.clone(), None, first).await;
     let token = session(&app).await;
     let (_, places) = call(&app, "GET", &format!("/api/places?{HERE}"), None, None).await;
-    // Two check-ins finish a quest. Without an area, checking in doesn't look at quests.
-    for place in &places.as_array().unwrap()[..2] {
-        let (status, _) = call(&app, "POST", &visits_uri(place), Some(&token), None).await;
-        assert_eq!(status, StatusCode::OK);
-    }
     let booked = || async {
         sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM quest_rewards")
             .fetch_one(&db)
@@ -2757,6 +2833,13 @@ async fn planning_reminders_books_no_quest_rewards() {
             .unwrap()
     };
     assert_eq!(booked().await, 0);
+    // Two check-ins finish quests, which are booked right then, also without an area.
+    for place in &places.as_array().unwrap()[..2] {
+        let (status, _) = call(&app, "POST", &visits_uri(place), Some(&token), None).await;
+        assert_eq!(status, StatusCode::OK);
+    }
+    let finished = booked().await;
+    assert!(finished > 0);
 
     let uri = format!("/api/reminders?{HERE}&days=366");
     let (status, plan) = call(&app, "GET", &uri, Some(&token), None).await;
@@ -2777,7 +2860,7 @@ async fn planning_reminders_books_no_quest_rewards() {
         .map(|r| r["local_date"].as_str().unwrap())
         .collect();
     assert!(dates.is_sorted());
-    assert_eq!(booked().await, 0);
+    assert_eq!(booked().await, finished);
 
     // The plan is the same for nobody in particular, and `days` is how far it looks.
     let (status, anonymous) = call(&app, "GET", &uri, None, None).await;
@@ -2790,12 +2873,12 @@ async fn planning_reminders_books_no_quest_rewards() {
         .unwrap()
         .iter()
         .all(|r| r["local_date"] == "2026-12-01"));
-    assert_eq!(booked().await, 0);
+    assert_eq!(booked().await, finished);
 
-    // Looking at the quests themselves is what books the finished one.
+    // Neither does looking at the quests themselves.
     let uri = format!("/api/discover?{HERE}");
     call(&app, "GET", &uri, Some(&token), None).await;
-    assert!(booked().await > 0);
+    assert_eq!(booked().await, finished);
 }
 
 #[tokio::test]

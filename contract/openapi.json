@@ -1847,7 +1847,8 @@
       "VisitResult": {
         "properties": {
           "profile": {
-            "$ref": "#/components/schemas/Profile"
+            "$ref": "#/components/schemas/Profile",
+            "description": "After the check-in, with the XP of the quests it finished."
           },
           "progress": {
             "oneOf": [
@@ -3081,6 +3082,7 @@
     },
     "/api/places/{place_id}/visits": {
       "post": {
+        "description": "Monthly quests belong to an area and are paid here, with or without `area`: in every\narea the place is in, the quests this check-in finished add their XP to the profile.",
         "operationId": "add_visit",
         "parameters": [
           {
@@ -3805,7 +3807,7 @@
             "token": []
           }
         ],
-        "summary": "Removes one visit. The place stays visited while the user has other visits to it.",
+        "summary": "Removes one visit. The place stays visited while the user has other visits to it. The\nXP of quests that are no longer finished without it is taken back.",
         "tags": [
           "game"
         ]

@@ -28,8 +28,7 @@ pub async fn load(
     today: NaiveDate,
 ) -> sqlx::Result<Progress> {
     let rows = store::area_rows(&state.db, area_id, user).await?;
-    let quests = monthly_quests(state, user, area_id, today, &rows).await?;
-    // After the rewards, so finished quests count in the profile.
+    let quests = quests(state, user, area_id, today, &rows).await?;
     let lifetime = match user {
         Some(user) => store::lifetime(&state.db, user, today).await?,
         None => Lifetime::default(),
@@ -142,25 +141,49 @@ pub async fn quests(
     ))
 }
 
-/// This month's quests in the area, keeping the XP of the ones the user finished.
-pub async fn monthly_quests(
+/// Whether a check-in was made or taken back, for [`settle_quests`].
+#[derive(Clone, Copy, PartialEq)]
+pub enum VisitChange {
+    Added,
+    Removed,
+}
+
+/// Brings the XP of quests in line with a check-in at `place_id` on `day` that was just
+/// made or taken back. Quests belong to an area and only check-ins at its places move
+/// them, so this looks at every cached area the place is in, whichever one the player was
+/// looking at. A new check-in pays the quests that are now finished; a removed one takes
+/// back those of its month that no longer are. This is the only place quest XP changes.
+pub async fn settle_quests(
     state: &AppState,
-    user: Option<&str>,
-    area_id: &str,
-    today: NaiveDate,
-    rows: &[PlaceRow],
-) -> sqlx::Result<MonthlyQuests> {
-    let monthly = quests(state, user, area_id, today, rows).await?;
-    if let Some(user) = user {
-        let done: Vec<(&str, u32)> = monthly
-            .quests
-            .iter()
-            .filter(|q| q.done)
-            .map(|q| (q.id.as_str(), q.xp))
-            .collect();
-        store::reward_quests(&state.db, user, &monthly.month, &done).await?;
+    user: &str,
+    place_id: &str,
+    day: NaiveDate,
+    change: VisitChange,
+) -> sqlx::Result<()> {
+    for area_id in store::areas_of_place(&state.db, place_id).await? {
+        let rows = store::area_rows(&state.db, &area_id, Some(user)).await?;
+        let monthly = quests(state, Some(user), &area_id, day, &rows).await?;
+        match change {
+            VisitChange::Added => {
+                let done: Vec<(&str, u32)> = monthly
+                    .quests
+                    .iter()
+                    .filter(|q| q.done)
+                    .map(|q| (q.id.as_str(), q.xp))
+                    .collect();
+                store::reward_quests(&state.db, user, &area_id, &monthly.month, &done).await?;
+            }
+            // For a month that is over, later check-ins count too, so XP is rather kept
+            // than taken back.
+            VisitChange::Removed => {
+                for quest in monthly.quests.iter().filter(|q| !q.done) {
+                    store::unreward_quest(&state.db, user, &area_id, &monthly.month, &quest.id)
+                        .await?;
+                }
+            }
+        }
     }
-    Ok(monthly)
+    Ok(())
 }
 
 /// What a check-in unlocked, announced to the player.

@@ -404,12 +404,6 @@ async fn remind(
     let counts = progress::places_per_country(&rows);
 
     let day = local.date_naive();
-    if day.day() == 1 {
-        // The quests reminder goes out today; quests already finished get their XP now.
-        // ponytail: booked on every pass of the 1st; harmless, they pay once.
-        progress::monthly_quests(state, Some(user), area_id, day, &rows).await?;
-    }
-
     let mut sent = 0;
     let mut gone = false;
     for (dedupe, notification) in due(state, Some(user), day, area_id, &rows, &counts).await? {

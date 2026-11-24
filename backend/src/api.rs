@@ -30,7 +30,7 @@ use crate::calendar::{self, Celebration};
 use crate::game::{self, Summary};
 use crate::providers::{osm, AreaInfo, Located, Lookup};
 use crate::store::{self, Area, HoursStatus, PlaceView, Visit};
-use crate::progress::{self, Progress};
+use crate::progress::{self, Progress, VisitChange};
 use crate::push::{self, Reminder};
 use crate::{account, areas, auth, catalog, geo, hours, share, AppState};
 
@@ -1558,6 +1558,7 @@ struct VisitQuery {
 #[derive(Serialize, ToSchema)]
 struct VisitResult {
     visit: Visit,
+    /// After the check-in, with the XP of the quests it finished.
     profile: game::Profile,
     /// The progress in `area` after the check-in; `null` without `area`.
     #[schema(required = true)]
@@ -1569,6 +1570,9 @@ struct VisitResult {
 
 /// Checks in at a place. There is at most one visit per place per day: checking in again the
 /// same day returns that day's visit, verified if either check-in was made on the spot.
+///
+/// Monthly quests belong to an area and are paid here, with or without `area`: in every
+/// area the place is in, the quests this check-in finished add their XP to the profile.
 #[utoipa::path(
     post, path = "/api/places/{place_id}/visits", tag = "game",
     params(("place_id" = String, Path, description = "A place id from `/api/places`."), VisitQuery),
@@ -1607,6 +1611,9 @@ async fn add_visit(
         .position
         .is_some_and(|p| geo::distance_m(p.lat, p.lng, plat, plng) <= VERIFY_DISTANCE_M);
     let visit = store::add_visit(&state.db, &user, &place_id, verified, now, today).await?;
+    // Before the progress and the profile are read, so both have the XP of the quests
+    // this check-in finished.
+    progress::settle_quests(&state, &user, &place_id, today, VisitChange::Added).await?;
     let (progress, unlocked) = match (&area, before) {
         (Some(area), Some(before)) => {
             let after = progress::load(&state, Some(&user), area.id(), today).await?;
@@ -1615,7 +1622,6 @@ async fn add_visit(
         }
         _ => (None, Vec::new()),
     };
-    // After the progress, which books the XP of quests this check-in finished.
     let profile = game::profile(store::lifetime(&state.db, &user, today).await?);
     Ok(Json(VisitResult {
         visit,
@@ -1625,7 +1631,8 @@ async fn add_visit(
     }))
 }
 
-/// Removes one visit. The place stays visited while the user has other visits to it.
+/// Removes one visit. The place stays visited while the user has other visits to it. The
+/// XP of quests that are no longer finished without it is taken back.
 #[utoipa::path(
     delete, path = "/api/visits/{visit_id}", tag = "game",
     params(("visit_id" = i64, Path, description = "A visit id from a place's `visits`.")),
@@ -1637,7 +1644,11 @@ async fn remove_visit(
     User(user): User,
     Path(visit_id): Path<i64>,
 ) -> Result<StatusCode, ApiError> {
-    store::remove_visit(&state.db, &user, visit_id).await?;
+    if let Some((place_id, local_date)) = store::remove_visit(&state.db, &user, visit_id).await? {
+        if let Ok(day) = local_date.parse() {
+            progress::settle_quests(&state, &user, &place_id, day, VisitChange::Removed).await?;
+        }
+    }
     Ok(StatusCode::NO_CONTENT)
 }
 

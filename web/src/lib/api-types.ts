@@ -474,6 +474,8 @@ export interface paths {
         /**
          * Checks in at a place. There is at most one visit per place per day: checking in again the
          *     same day returns that day's visit, verified if either check-in was made on the spot.
+         * @description Monthly quests belong to an area and are paid here, with or without `area`: in every
+         *     area the place is in, the quests this check-in finished add their XP to the profile.
          */
         post: operations["add_visit"];
         delete?: never;
@@ -715,7 +717,10 @@ export interface paths {
         get?: never;
         put?: never;
         post?: never;
-        /** Removes one visit. The place stays visited while the user has other visits to it. */
+        /**
+         * Removes one visit. The place stays visited while the user has other visits to it. The
+         *     XP of quests that are no longer finished without it is taken back.
+         */
         delete: operations["remove_visit"];
         options?: never;
         head?: never;
@@ -1415,6 +1420,7 @@ export interface components {
             verified: boolean;
         };
         VisitResult: {
+            /** @description After the check-in, with the XP of the quests it finished. */
             profile: components["schemas"]["Profile"];
             progress: components["schemas"]["Progress"] | null;
             /**
