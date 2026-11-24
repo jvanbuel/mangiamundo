@@ -107,8 +107,9 @@ export const place = (placeId: string, from: { lat: number; lng: number } | null
 		`/api/places/${encodeURIComponent(placeId)}${from ? `?lat=${from.lat}&lng=${from.lng}` : ''}`
 	);
 
-export const checkIn = (placeId: string, here: { lat: number; lng: number } | null) =>
-	authed<VisitResult>('POST', `/api/places/${encodeURIComponent(placeId)}/visits?${tz()}`, {
+/** Checks in, and answers with the progress in the area afterwards and what the check-in unlocked. */
+export const checkIn = (placeId: string, areaId: string, here: { lat: number; lng: number } | null) =>
+	authed<VisitResult>('POST', `/api/places/${encodeURIComponent(placeId)}/visits?${area(areaId)}&${tz()}`, {
 		position: here
 	});
 

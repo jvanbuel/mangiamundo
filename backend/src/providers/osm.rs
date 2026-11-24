@@ -553,7 +553,7 @@ fn covered(b: Bbox) -> bool {
 }
 
 /// The places in an area from the local copy, or `None` when the copy doesn't cover it.
-pub async fn from_import(
+async fn from_import(
     db: &SqlitePool,
     area: &Boundary,
 ) -> anyhow::Result<Option<Vec<FoundPlace>>> {
@@ -590,10 +590,14 @@ impl PlacesProvider for WithImport {
         area: &Boundary,
         on_next_server: &(dyn Fn() + Send + Sync),
     ) -> anyhow::Result<Vec<FoundPlace>> {
-        match from_import(&self.db, area).await? {
+        match self.local(area).await? {
             Some(places) => Ok(places),
             None => self.live.search(area, on_next_server).await,
         }
+    }
+
+    async fn local(&self, area: &Boundary) -> anyhow::Result<Option<Vec<FoundPlace>>> {
+        from_import(&self.db, area).await
     }
 
     fn expected_secs(&self, area: &Boundary) -> f64 {

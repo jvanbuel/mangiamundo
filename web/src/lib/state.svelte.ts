@@ -19,6 +19,7 @@ import {
 	type Location,
 	type Place,
 	type UnknownPlace,
+	type Unlocked,
 	type Visit,
 	visitedToday
 } from './types';
@@ -601,35 +602,16 @@ async function loadPlaces(code: string | null) {
 	}
 }
 
-/** Announces everything a check-in unlocked by comparing progress before and after. */
-function celebrate(before: Discover, after: Discover, place: Place) {
-	for (const code of place.countries) {
-		const was = before.countries.find((c) => c.code === code);
-		const now = after.countries.find((c) => c.code === code);
-		const info = country(code);
-		if (!was || !now || !info) continue;
-		if (now.status === was.status) continue;
-		const more = `${now.goal - now.visited} more for diamond.`;
-		if (now.status === 'completed') {
-			toast({ text: info.flag }, `${info.name}: diamond`, `You visited ${now.visited} of its places in ${app.location?.area.name ?? 'this area'}.`);
-		} else if (now.status === 'platinum') {
-			toast({ text: info.flag }, `${info.name}: platinum`, more);
-		} else if (now.status === 'discovered') {
-			toast({ text: info.flag }, `${info.name}: gold`, more);
-		}
-	}
-	for (const badge of after.badges) {
-		if (badge.earned && !before.badges.find((b) => b.id === badge.id)?.earned) {
-			toast({ badge: badge.kind }, `Badge earned: ${badge.title}`, badge.description);
-		}
-	}
-	for (const event of after.events) {
-		if (event.earned && !before.events.find((e) => e.id === event.id)?.earned) {
-			toast({ badge: 'event' }, `Badge earned: ${event.title}`, 'Earned while it lasted.');
-		}
-	}
-	if (after.profile.level > before.profile.level) {
-		toast({ text: String(after.profile.level) }, `Level ${after.profile.level}`, `${after.profile.xp} XP so far.`);
+/** Announces what the server says a check-in unlocked. */
+function celebrate(unlocked: Unlocked[]) {
+	for (const u of unlocked) {
+		const icon: ToastIcon =
+			u.kind === 'country' ? { text: country(u.country ?? '')?.flag ?? '' }
+			: u.kind === 'badge' && u.badge ? { badge: u.badge }
+			: u.kind === 'event' ? { badge: 'event' }
+			: u.kind === 'level' ? { text: String(u.level ?? '') }
+			: null;
+		toast(icon, u.title, u.text);
 	}
 }
 
@@ -643,16 +625,18 @@ export async function toggleVisit(place: Place) {
 	try {
 		if (!undoing) {
 			const fresh = gpsFix && Date.now() - gpsFix.at < 10 * 60_000 ? gpsFix : null;
-			const result = await api.checkIn(place.id, fresh && { lat: fresh.lat, lng: fresh.lng });
+			const result = await api.checkIn(place.id, location.area.id, fresh && { lat: fresh.lat, lng: fresh.lng });
 			setVisits(place.id, (visits) => [result.visit, ...visits.filter((v) => v.id !== result.visit.id)]);
+			// Details still loading may have read the visits from before this change.
+			if (app.placeId === place.id && !app.detail) void loadPlace(place.id);
+			// Not when the user moved to another area meanwhile: this progress is the old one's.
+			if (result.progress && app.location?.area.id === location.area.id) app.discover = { ...result.progress, area: before.area };
+			celebrate(result.unlocked);
 		} else {
 			const removed = place.visits[0].id;
 			await api.removeVisit(removed);
 			setVisits(place.id, (visits) => visits.filter((v) => v.id !== removed));
-		}
-		// Details still loading may have read the visits from before this change.
-		if (app.placeId === place.id && !app.detail) void loadPlace(place.id);
-		if (undoing) {
+			if (app.placeId === place.id && !app.detail) void loadPlace(place.id);
 			// The server has the remaining visits; details shown here may be out of date.
 			const rest = await api.place(place.id, null).then((p) => p.visits, () => null);
 			if (rest) setVisits(place.id, () => rest);
@@ -661,10 +645,9 @@ export async function toggleVisit(place: Place) {
 				const card = app.places.find((p) => p.id === place.id);
 				if (card) card.visits = app.detail.visits.slice(0, 1);
 			}
+			const after = await api.discover(location.area.id);
+			if (app.location?.area.id === location.area.id) app.discover = after;
 		}
-		const after = await api.discover(location.area.id);
-		app.discover = after;
-		if (!undoing) celebrate(before, after, place);
 	} catch (error) {
 		toast(null, 'That did not work', message(error));
 	} finally {

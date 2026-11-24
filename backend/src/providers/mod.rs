@@ -42,6 +42,11 @@ pub trait PlacesProvider: Send + Sync {
     fn expected_secs(&self, _area: &Boundary) -> f64 {
         20.0
     }
+    /// The area's places from a copy this server keeps, without asking a remote one, or
+    /// `None` when there is no such copy of the area.
+    async fn local(&self, _area: &Boundary) -> anyhow::Result<Option<Vec<FoundPlace>>> {
+        Ok(None)
+    }
     /// One place read again from the source, by its id.
     async fn place(&self, _id: &str) -> anyhow::Result<Lookup> {
         anyhow::bail!("{} places can't be read one at a time", self.name())

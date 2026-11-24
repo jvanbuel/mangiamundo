@@ -1,5 +1,6 @@
 pub mod account;
 pub mod api;
+pub mod areas;
 pub mod auth;
 pub mod calendar;
 pub mod catalog;
@@ -7,6 +8,7 @@ pub mod config;
 pub mod game;
 pub mod geo;
 pub mod hours;
+pub mod progress;
 pub mod providers;
 pub mod push;
 pub mod share;
@@ -35,7 +37,7 @@ pub struct AppState {
     /// Signing in with Apple, Google or an emailed code.
     pub auth: Arc<auth::Auth>,
     /// Areas being fetched right now, for the clients' progress wheel.
-    pub loads: api::Loads,
+    pub loads: areas::Loads,
     /// Recent requests per user, for limits on the ones that ask OpenStreetMap.
     pub limits: api::Limits,
 }

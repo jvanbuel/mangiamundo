@@ -958,10 +958,8 @@ export interface components {
              */
             name: string | null;
         };
-        Discover: components["schemas"]["Summary"] & {
+        Discover: components["schemas"]["Progress"] & {
             area: components["schemas"]["AreaView"];
-            events: components["schemas"]["EventProgress"][];
-            quests: components["schemas"]["MonthlyQuests"];
         };
         EmailCodeRequest: {
             email: string;
@@ -1215,6 +1213,11 @@ export interface components {
             /** Format: int32 */
             xp: number;
         };
+        /** @description Everything the game shows about one area for one player, or for nobody in particular. */
+        Progress: components["schemas"]["Summary"] & {
+            events: components["schemas"]["EventProgress"][];
+            quests: components["schemas"]["MonthlyQuests"];
+        };
         PushKey: {
             /** @description The VAPID public key browsers subscribe with. */
             public_key: string;
@@ -1340,6 +1343,25 @@ export interface components {
             lng: number;
             name: string;
         };
+        /** @description One thing a check-in unlocked, with the words to announce it. */
+        Unlocked: {
+            badge: components["schemas"]["BadgeKind"] | null;
+            /** @description For `country`: its code, to show its flag. */
+            country: string | null;
+            kind: components["schemas"]["UnlockedKind"];
+            /**
+             * Format: int32
+             * @description For `level`: the level reached.
+             */
+            level: number | null;
+            text: string;
+            title: string;
+        };
+        /**
+         * @description What a check-in unlocked, announced to the player.
+         * @enum {string}
+         */
+        UnlockedKind: "country" | "badge" | "event" | "level";
         UnsubscribeBody: {
             endpoint: string;
         };
@@ -1357,6 +1379,12 @@ export interface components {
         };
         VisitResult: {
             profile: components["schemas"]["Profile"];
+            progress: components["schemas"]["Progress"] | null;
+            /**
+             * @description What the check-in unlocked in `area`, in the order to announce it. Empty without
+             *     `area`, and for a second check-in at a place.
+             */
+            unlocked: components["schemas"]["Unlocked"][];
             visit: components["schemas"]["Visit"];
         };
     };
@@ -2182,6 +2210,11 @@ export interface operations {
             query?: {
                 /** @description As for `/api/discover`: the check-in counts for events by its date in this zone. */
                 tz?: string;
+                /**
+                 * @description The area the user is playing in. With it, the answer has the progress there after
+                 *     the check-in and what it unlocked, so there is no need to ask `/api/discover` again.
+                 */
+                area?: string;
             };
             header?: never;
             path: {
