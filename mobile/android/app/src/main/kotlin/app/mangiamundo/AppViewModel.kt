@@ -477,8 +477,10 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         if (busyPlace != null) return
         busyPlace = place.id
         val generation = accountGeneration
-        // Progress is only shown when it is still about this area and this account.
-        val stillHere = { location?.area?.id == here.area.id && accountGeneration == generation }
+        // Nothing of the answer is shown once the device is in another account.
+        val sameAccount = { accountGeneration == generation }
+        // Progress is only shown when it is also still about this area.
+        val stillHere = { location?.area?.id == here.area.id && sameAccount() }
         viewModelScope.launch {
             try {
                 // Visited today: undo that visit. Otherwise check in, also when there are older visits.
@@ -496,6 +498,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
                     api.removeVisit(removed);
                     { old -> old.filter { it.id != removed } }
                 }
+                if (!sameAccount()) return@launch
                 setVisits(place.id, update)
                 // Details still loading may have read the visits from before this change.
                 detail?.takeIf { it.id == place.id && detailVisits != DetailVisits.LOADED }?.let { openPlace(it) }
@@ -506,6 +509,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
                 } else {
                     // The server has the remaining visits; details shown here may be out of date.
                     val rest = runCatching { api.place(place.id, null).visits }.getOrNull()
+                    if (!sameAccount()) return@launch
                     val loaded = detail?.takeIf { it.id == place.id && detailVisits == DetailVisits.LOADED }
                     if (rest != null) {
                         setVisits(place.id) { rest }
@@ -518,8 +522,9 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
                 }
             } catch (e: Exception) {
                 messageChannel.trySend("That did not work: ${e.message}")
+            } finally {
+                busyPlace = null
             }
-            busyPlace = null
         }
     }
 

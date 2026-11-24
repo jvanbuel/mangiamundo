@@ -505,8 +505,10 @@ final class AppModel {
         busyPlace = place.id
         defer { busyPlace = nil }
         let generation = accountGeneration
-        // Progress is only shown when it is still about this area and this account.
-        let stillHere = { self.location?.area.id == here.area.id && self.accountGeneration == generation }
+        // Nothing of the answer is shown once the device is in another account.
+        let sameAccount = { self.accountGeneration == generation }
+        // Progress is only shown when it is also still about this area.
+        let stillHere = { self.location?.area.id == here.area.id && sameAccount() }
         do {
             let update: ([Visit]) -> [Visit]
             var checkedIn: VisitResult?
@@ -528,6 +530,7 @@ final class AppModel {
             } else {
                 return
             }
+            guard sameAccount() else { return }
             setVisits(place.id, update)
             // Details still loading may have read the visits from before this change.
             if let detail, detail.id == place.id, detailVisits != .loaded { openPlace(detail) }
@@ -536,7 +539,9 @@ final class AppModel {
                 for unlocked in checkedIn.unlocked { toast(unlocked.announcement(catalog: catalog)) }
             } else {
                 // The server has the remaining visits; details shown here may be out of date.
-                if let rest = try? await api.place(id: place.id, from: nil).visits {
+                let rest = try? await api.place(id: place.id, from: nil).visits
+                guard sameAccount() else { return }
+                if let rest {
                     setVisits(place.id) { _ in rest }
                 } else if let detail, detail.id == place.id, detailVisits == .loaded,
                           let index = places.firstIndex(where: { $0.id == place.id }) {

@@ -597,12 +597,15 @@ export async function toggleVisit(place: Place) {
 	const undoing = visitedToday(place);
 	app.busyPlace = place.id;
 	const generation = accountGeneration;
-	// Progress is only shown when it is still about this area and this account.
-	const stillHere = () => app.location?.area.id === location.area.id && accountGeneration === generation;
+	// Nothing of the answer is shown once the device is in another account.
+	const sameAccount = () => accountGeneration === generation;
+	// Progress is only shown when it is also still about this area.
+	const stillHere = () => app.location?.area.id === location.area.id && sameAccount();
 	try {
 		if (!undoing) {
 			const fresh = gpsFix && Date.now() - gpsFix.at < 10 * 60_000 ? gpsFix : null;
 			const result = await api.checkIn(place.id, location.area.id, fresh && { lat: fresh.lat, lng: fresh.lng });
+			if (!sameAccount()) return;
 			setVisits(place.id, (visits) => [result.visit, ...visits.filter((v) => v.id !== result.visit.id)]);
 			// Details still loading may have read the visits from before this change.
 			if (app.placeId === place.id && !app.detail) void loadPlace(place.id);
@@ -611,10 +614,12 @@ export async function toggleVisit(place: Place) {
 		} else {
 			const removed = place.visits[0].id;
 			await api.removeVisit(removed);
+			if (!sameAccount()) return;
 			setVisits(place.id, (visits) => visits.filter((v) => v.id !== removed));
 			if (app.placeId === place.id && !app.detail) void loadPlace(place.id);
 			// The server has the remaining visits; details shown here may be out of date.
 			const rest = await api.place(place.id, null).then((p) => p.visits, () => null);
+			if (!sameAccount()) return;
 			if (rest) setVisits(place.id, () => rest);
 			else if (app.detail?.id === place.id) {
 				// The card shows only the latest visit: fall back on the older ones in the details.
