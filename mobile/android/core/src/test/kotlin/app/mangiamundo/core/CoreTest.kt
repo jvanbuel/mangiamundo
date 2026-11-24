@@ -149,6 +149,40 @@ class CoreTest {
         assertEquals("ABCD-EFGH", json.decodeFromString<LinkCode>(fixture("link-code")).code)
     }
 
+    /** The answers that are not lists of places: one fixture each. */
+    @Test
+    fun decodesTheSmallerAnswers() {
+        val health = json.decodeFromString<Health>(fixture("health"))
+        assertEquals("0123abc", health.commit)
+        assertFalse(health.version.isNullOrEmpty())
+        assertEquals("0123456789abcdef0123456789abcdef", json.decodeFromString<Session>(fixture("session")).token)
+        assertEquals("ABCD-EFGH-JKLM-NPQR-STUV", json.decodeFromString<RecoveryCode>(fixture("recovery-code")).code)
+        val link = json.decodeFromString<ShareLink>(fixture("share-link"))
+        assertEquals("https://mangiamundo.test/p/abcd2345ef", link.url)
+        assertEquals(link.url + "/card.png", link.imageUrl)
+        assertTrue("Leuven" in link.text)
+        assertEquals(
+            AreaProgress(15, "Looking for restaurants"),
+            json.decodeFromString<AreaProgress?>(fixture("area-progress")),
+        )
+    }
+
+    @Test
+    fun decodesASuggestionAndWhatARefreshFound() {
+        val suggestion = json.decodeFromString<Suggestion>(fixture("suggestion"))
+        assertEquals(listOf(suggestion.country), suggestion.place.countries)
+        assertTrue(suggestion.place.visits.isEmpty())
+        assertEquals(true, suggestion.place.hours?.status?.open)
+        val refreshed = json.decodeFromString<RefreshResult>(fixture("refresh"))
+        assertEquals(Refreshed.UPDATED, refreshed.status)
+        assertEquals("Lalibela", refreshed.place?.name)
+        assertEquals(7, refreshed.place?.hours?.week?.size)
+        val nearby = json.decodeFromString<NearbyResult>(fixture("nearby"))
+        assertEquals(listOf("Restaurant Inti"), nearby.added.map { it.name })
+        assertEquals("https://www.openstreetmap.org/node/43", nearby.added.first().osmUrl)
+        assertEquals(1, nearby.matched)
+    }
+
     @Test
     fun decodesRefreshResults() {
         val gone = json.decodeFromString<RefreshResult>("""{"status":"gone","place":null}""")

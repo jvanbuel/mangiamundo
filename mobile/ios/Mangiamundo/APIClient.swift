@@ -188,7 +188,6 @@ actor APIClient {
 
     /// A new recovery code, shown once. The previous one stops working.
     func newRecoveryCode() async throws -> String {
-        struct RecoveryCode: Decodable { let code: String }
         let made: RecoveryCode = try decode(await authed("POST", "/api/account/recovery-code"))
         return made.code
     }
@@ -239,7 +238,6 @@ actor APIClient {
         var body = fields
         body["device"] = deviceName
         let data = try JSONSerialization.data(withJSONObject: body)
-        struct Session: Decodable { let token: String }
         let current = defaults.string(forKey: Self.tokenKey)
         let session: Session
         do {
@@ -288,7 +286,6 @@ actor APIClient {
         if let stored = defaults.string(forKey: Self.tokenKey) { return stored }
         if let pendingToken { return try await pendingToken.value }
         let task = Task<String, Error> {
-            struct Session: Decodable { let token: String }
             var body: [String: Any] = [:]
             body["device"] = deviceName
             let data = try JSONSerialization.data(withJSONObject: body)

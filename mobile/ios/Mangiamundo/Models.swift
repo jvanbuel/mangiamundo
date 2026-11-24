@@ -53,6 +53,16 @@ struct Device: Decodable, Identifiable {
     let current: Bool
 }
 
+/// From `POST /api/session` and the sign-in endpoints: what the device sends from then on.
+struct Session: Decodable {
+    let token: String
+}
+
+/// From `POST /api/account/recovery-code`. Shown once.
+struct RecoveryCode: Decodable {
+    let code: String
+}
+
 /// A code that signs another device in to the account, once, until `expiresAt` (Unix seconds).
 struct LinkCode: Decodable, Equatable {
     let code: String
