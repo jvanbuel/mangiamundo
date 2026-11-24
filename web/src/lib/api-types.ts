@@ -129,7 +129,10 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Cities and postal codes matching what someone typed. */
+        /**
+         * Cities and postal codes matching what someone typed.
+         * @description For a search someone submits: `/api/areas/suggest` is the one to call while they type.
+         */
         get: operations["search_areas"];
         put?: never;
         post?: never;
@@ -474,6 +477,8 @@ export interface paths {
         /**
          * Checks in at a place. There is at most one visit per place per day: checking in again the
          *     same day returns that day's visit, verified if either check-in was made on the spot.
+         * @description Monthly quests belong to an area and are paid here, with or without `area`: in every
+         *     area the place is in, the quests this check-in finished add their XP to the profile.
          */
         post: operations["add_visit"];
         delete?: never;
@@ -567,7 +572,12 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Creates an anonymous account. A device asks for a token once and keeps it. */
+        /**
+         * Creates an anonymous account and returns the token of its first device.
+         * @description A device asks for one before its first write, not before: what it shows until then it
+         *     can read without a token. It keeps the token. At most 20 accounts an hour are made from
+         *     one address.
+         */
         post: operations["create_session"];
         delete?: never;
         options?: never;
@@ -715,7 +725,10 @@ export interface paths {
         get?: never;
         put?: never;
         post?: never;
-        /** Removes one visit. The place stays visited while the user has other visits to it. */
+        /**
+         * Removes one visit. The place stays visited while the user has other visits to it. The
+         *     XP of quests that are no longer finished without it is taken back.
+         */
         delete: operations["remove_visit"];
         options?: never;
         head?: never;
@@ -1010,7 +1023,8 @@ export interface components {
          *     - `nothing_open` (404): `/api/suggestion` found unvisited places, but none open now;
          *       ask again with `open=false`.
          *     - `nothing_left` (404): `/api/suggestion` found no unvisited place at all.
-         *     - `too_many_requests` (429): a limit was reached, such as places added per day.
+         *     - `too_many_requests` (429): a limit was reached, such as places added per day or
+         *       location lookups per minute.
          *     - `upstream` (502): the places or areas provider failed.
          *     - `internal` (500): anything else, such as a database error.
          * @enum {string}
@@ -1415,6 +1429,7 @@ export interface components {
             verified: boolean;
         };
         VisitResult: {
+            /** @description After the check-in, with the XP of the quests it finished. */
             profile: components["schemas"]["Profile"];
             progress: components["schemas"]["Progress"] | null;
             /**
@@ -1662,6 +1677,15 @@ export interface operations {
                     "application/json": components["schemas"]["AreaInfo"][];
                 };
             };
+            /** @description `too_many_requests`: this client searched for too many new things (more than 10 in a minute or 60 in an hour), or too many lookups are waiting */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
             /** @description An error */
             default: {
                 headers: {
@@ -1691,6 +1715,15 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["Located"];
+                };
+            };
+            /** @description `too_many_requests`: this client asked about too many new places (more than 5 in a minute or 30 in an hour), or too many lookups are waiting */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
                 };
             };
             /** @description An error */
@@ -2431,6 +2464,15 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["Session"];
+                };
+            };
+            /** @description `too_many_requests`: too many accounts were made from this address in the last hour */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
                 };
             };
             /** @description An error */

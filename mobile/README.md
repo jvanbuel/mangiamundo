@@ -49,11 +49,13 @@ open Mangiamundo.xcodeproj
 The backend address is the `APIBaseURL` entry in `project.yml` (default
 `http://localhost:8080`, which works from the simulator). Unit tests run with ⌘U.
 
-## Celebration reminders
+## Reminders
 
-Both apps schedule local notifications for the celebrations and limited-time events
-the server lists for the user's area (10:00 on the first day, plus a last-days nudge
-for unfinished events). The dates are known in advance, so no push service is
-involved: no Firebase project or Apple push certificate is needed. The plan is
-recomputed whenever progress or location changes.
+Both apps schedule local notifications from the plan the server gives for the user's
+area (`GET /api/reminders`): celebrations, limited-time events and the month's quests,
+with the server's times and texts. The plan is known days ahead, so no push service is
+involved: no Firebase project or Apple push certificate is needed. It is fetched again
+when the app starts, when the area changes and when reminders are turned on; offline,
+what was scheduled last stays. See
+[Celebrations and events](../docs/celebrations-and-events.md#reminders).
 

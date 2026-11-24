@@ -18,8 +18,21 @@ interface TokenStore {
     var token: String?
 }
 
-/** `deviceName` is how this device shows up in the account's device list, such as "Pixel 8". */
-class ApiClient(private val baseUrl: String, private val tokens: TokenStore, private val deviceName: String? = null) {
+/**
+ * `deviceName` is how this device shows up in the account's device list, such as "Pixel 8".
+ *
+ * The device gets its account with the first thing it changes (a check-in, an added place):
+ * what it only reads, it reads without one. `onSignedOut` is called when the server turns out
+ * not to know the device's token any more, after the token is dropped: the device was signed
+ * out from another one, or its account was deleted. No new account is made then; that waits
+ * for the next change.
+ */
+class ApiClient(
+    private val baseUrl: String,
+    private val tokens: TokenStore,
+    private val deviceName: String? = null,
+    private val onSignedOut: () -> Unit = {},
+) {
     @PublishedApi
     internal val json = Json {
         ignoreUnknownKeys = true
@@ -33,28 +46,32 @@ class ApiClient(private val baseUrl: String, private val tokens: TokenStore, pri
     suspend fun catalog(): Catalog = json.decodeFromString(request("GET", "/api/countries"))
 
     suspend fun discover(areaId: String): Discover =
-        json.decodeFromString(authed("GET", "/api/discover?${area(areaId)}&${tz()}"))
+        json.decodeFromString(read("/api/discover?${area(areaId)}&${tz()}"))
 
     /** Distances are measured from `from` (lat, lng) when given, otherwise from the area's centre. */
     suspend fun places(areaId: String, country: String, from: Pair<Double, Double>?): List<Place> {
         val position = from?.let { "&lat=${it.first}&lng=${it.second}" }.orEmpty()
-        return json.decodeFromString(authed("GET", "/api/places?${area(areaId)}&country=$country$position"))
+        return json.decodeFromString(read("/api/places?${area(areaId)}&country=$country$position"))
     }
 
     /** A random unvisited place to try, open now unless `open` is false, skipping `exclude`. */
     suspend fun suggestion(areaId: String, from: Pair<Double, Double>?, exclude: Collection<String>, open: Boolean): Suggestion {
         val position = from?.let { "&lat=${it.first}&lng=${it.second}" }.orEmpty()
         val skip = exclude.joinToString(",") { encode(it) }
-        return json.decodeFromString(authed("GET", "/api/suggestion?${area(areaId)}&open=$open&exclude=$skip$position"))
+        return json.decodeFromString(read("/api/suggestion?${area(areaId)}&open=$open&exclude=$skip$position"))
     }
 
     suspend fun celebrations(areaId: String, days: Int = 60): List<Celebration> =
         json.decodeFromString(request("GET", "/api/celebrations?${area(areaId)}&days=$days&${tz()}"))
 
+    /** The reminders that become due in the area in the coming `days`, soonest first, for this user. */
+    suspend fun reminders(areaId: String, days: Int = 60): List<Reminder> =
+        json.decodeFromString(read("/api/reminders?${area(areaId)}&days=$days&${tz()}"))
+
     /** One place with all of the user's visits. The distance is measured from `from` (lat, lng) when given. */
     suspend fun place(placeId: String, from: Pair<Double, Double>?): Place {
         val position = from?.let { "?lat=${it.first}&lng=${it.second}" }.orEmpty()
-        return json.decodeFromString(authed("GET", "/api/places/${encode(placeId)}$position"))
+        return json.decodeFromString(read("/api/places/${encode(placeId)}$position"))
     }
 
     /**
@@ -64,25 +81,25 @@ class ApiClient(private val baseUrl: String, private val tokens: TokenStore, pri
     suspend fun checkIn(placeId: String, areaId: String, here: Pair<Double, Double>?): VisitResult {
         val position = here?.let { LatLng(it.first, it.second) }
         val body = json.encodeToString(CheckInBody.serializer(), CheckInBody(position))
-        return json.decodeFromString(authed("POST", "/api/places/${encode(placeId)}/visits?${area(areaId)}&${tz()}", body))
+        return json.decodeFromString(write("POST", "/api/places/${encode(placeId)}/visits?${area(areaId)}&${tz()}", body))
     }
 
     suspend fun removeVisit(visitId: Long) {
-        authed("DELETE", "/api/visits/$visitId")
+        write("DELETE", "/api/visits/$visitId")
     }
 
     /** Makes (or moves to this area) the public page of the user's progress. */
     suspend fun shareProgress(areaId: String): ShareLink =
-        json.decodeFromString(authed("POST", "/api/share?${area(areaId)}"))
+        json.decodeFromString(write("POST", "/api/share?${area(areaId)}"))
 
     /** Turns the public page off. */
     suspend fun unshareProgress() {
-        authed("DELETE", "/api/share")
+        writeMine("DELETE", "/api/share")
     }
 
     /** A public page for one check-in. */
     suspend fun shareVisit(visitId: Long): ShareLink =
-        json.decodeFromString(authed("POST", "/api/visits/$visitId/share"))
+        json.decodeFromString(write("POST", "/api/visits/$visitId/share"))
 
     /** The share card; null when it can't be loaded, so the link is shared alone. */
     suspend fun card(link: ShareLink): ByteArray? = withContext(Dispatchers.IO) {
@@ -100,7 +117,7 @@ class ApiClient(private val baseUrl: String, private val tokens: TokenStore, pri
 
     /** "This place has closed": hides it for this user, and for everyone after a second report. */
     suspend fun reportClosed(placeId: String) {
-        authed("PUT", "/api/places/${encode(placeId)}/closed")
+        write("PUT", "/api/places/${encode(placeId)}/closed")
     }
 
     /** How far loading an area has come while `discover` waits on it; null when it isn't loading. */
@@ -111,7 +128,7 @@ class ApiClient(private val baseUrl: String, private val tokens: TokenStore, pri
     /** `note = false` when the user adds it to OSM themselves, so no note asks mappers to. */
     suspend fun addPlace(name: String, country: String, lat: Double, lng: Double, address: String?, website: String?, note: Boolean = true): AddedPlace {
         val body = json.encodeToString(AddPlaceBody.serializer(), AddPlaceBody(name, country, lat, lng, address, website, note))
-        return decodeAdded(authed("POST", "/api/places", body))
+        return decodeAdded(write("POST", "/api/places", body))
     }
 
     internal fun decodeAdded(text: String): AddedPlace =
@@ -120,34 +137,34 @@ class ApiClient(private val baseUrl: String, private val tokens: TokenStore, pri
     /** Restaurants in the area OpenStreetMap gives no cuisine, nearest to `from` first. */
     suspend fun unknownPlaces(areaId: String, from: Pair<Double, Double>?): List<UnknownPlace> {
         val position = from?.let { "&lat=${it.first}&lng=${it.second}" }.orEmpty()
-        return json.decodeFromString(authed("GET", "/api/unknown-places?${area(areaId)}$position"))
+        return json.decodeFromString(read("/api/unknown-places?${area(areaId)}$position"))
     }
 
     /** "It serves food from …": like adding a place, only this user sees it until OSM has the cuisine. */
     suspend fun suggestCuisine(placeId: String, country: String): AddedPlace =
-        decodeAdded(authed("POST", "/api/unknown-places/${encode(placeId)}/cuisine", jsonObject(mapOf("country" to country))))
+        decodeAdded(write("POST", "/api/unknown-places/${encode(placeId)}/cuisine", jsonObject(mapOf("country" to country))))
 
     /** "It serves no particular country's food": hides it for this user, and for everyone after two. */
     suspend fun noCuisine(placeId: String) {
-        authed("PUT", "/api/unknown-places/${encode(placeId)}/no-cuisine")
+        write("PUT", "/api/unknown-places/${encode(placeId)}/no-cuisine")
     }
 
     /** Reads a place again from OpenStreetMap, for an edit made there since the daily import. */
     suspend fun refreshPlace(placeId: String, from: Pair<Double, Double>?): RefreshResult {
         val position = from?.let { "?lat=${it.first}&lng=${it.second}" }.orEmpty()
-        return json.decodeFromString(authed("POST", "/api/places/${encode(placeId)}/refresh$position"))
+        return json.decodeFromString(write("POST", "/api/places/${encode(placeId)}/refresh$position"))
     }
 
     /** Asks OpenStreetMap for restaurants within 150 m of (lat, lng), for one just mapped there. */
     suspend fun refreshNearby(lat: Double, lng: Double): NearbyResult =
-        json.decodeFromString(authed("POST", "/api/places/nearby/refresh?lat=$lat&lng=$lng"))
+        json.decodeFromString(write("POST", "/api/places/nearby/refresh?lat=$lat&lng=$lng"))
 
     /** The restaurants this user added, newest first, with their rewards. */
-    suspend fun additions(): List<Addition> = json.decodeFromString(authed("GET", "/api/additions"))
+    suspend fun additions(): List<Addition> = mine("/api/additions")?.let { json.decodeFromString(it) } ?: emptyList()
 
     /** The user was told about these confirmed additions, by `id` (at most 100). */
     suspend fun markAdditionsSeen(ids: List<String>) {
-        authed("PUT", "/api/additions/seen", json.encodeToString(SeenBody.serializer(), SeenBody(ids)))
+        writeMine("PUT", "/api/additions/seen", json.encodeToString(SeenBody.serializer(), SeenBody(ids)))
     }
 
     /** Cities and postal codes matching what someone typed. */
@@ -158,15 +175,21 @@ class ApiClient(private val baseUrl: String, private val tokens: TokenStore, pri
     suspend fun locateArea(lat: Double, lng: Double): Located =
         json.decodeFromString(request("GET", "/api/areas/locate?lat=$lat&lng=$lng"))
 
-    /** The account's recovery code status and the devices signed in to it. */
-    suspend fun account(): Account = json.decodeFromString(authed("GET", "/api/account"))
+    /** Whether this device has an account yet; it gets one with its first check-in or other change. */
+    val hasAccount: Boolean get() = tokens.token != null
+
+    /**
+     * The account's recovery code status and the devices signed in to it. A device without an
+     * account has an empty one, with no devices: nothing is on the server until its first change.
+     */
+    suspend fun account(): Account = mine("/api/account")?.let { json.decodeFromString(it) } ?: Account(createdAt = 0)
 
     /** A new recovery code, shown once. The previous one stops working. */
     suspend fun newRecoveryCode(): String =
-        json.decodeFromString<RecoveryCode>(authed("POST", "/api/account/recovery-code")).code
+        json.decodeFromString<RecoveryCode>(write("POST", "/api/account/recovery-code")).code
 
     /** A code that signs another device in to this account, once, within 10 minutes. */
-    suspend fun newLinkCode(): LinkCode = json.decodeFromString(authed("POST", "/api/account/link-code"))
+    suspend fun newLinkCode(): LinkCode = json.decodeFromString(write("POST", "/api/account/link-code"))
 
     /**
      * Signs this device in to the account of a recovery or link code. What this device did
@@ -186,7 +209,7 @@ class ApiClient(private val baseUrl: String, private val tokens: TokenStore, pri
     /** Signs in with an ID token from Google's sign-in. */
     suspend fun signInWithGoogle(idToken: String) = switchAccount("/api/auth/google", mapOf("id_token" to idToken))
 
-    /** Signs this device out of its account; it starts afresh with a new, empty one. */
+    /** Signs this device out of its account; it starts afresh, without one. */
     suspend fun signOut() {
         account().devices.firstOrNull { it.current }?.let { removeDevice(it.id) }
         tokenLock.withLock { tokens.token = null }
@@ -214,12 +237,12 @@ class ApiClient(private val baseUrl: String, private val tokens: TokenStore, pri
 
     /** Signs another device out of this account. */
     suspend fun removeDevice(id: String) {
-        authed("DELETE", "/api/account/devices/${encode(id)}")
+        writeMine("DELETE", "/api/account/devices/${encode(id)}")
     }
 
-    /** Deletes the account and everything in it. This device starts over with a new one. */
+    /** Deletes the account and everything in it. This device starts over without one. */
     suspend fun deleteAccount() {
-        authed("DELETE", "/api/account")
+        writeMine("DELETE", "/api/account")
         tokenLock.withLock { tokens.token = null }
     }
 
@@ -237,16 +260,69 @@ class ApiClient(private val baseUrl: String, private val tokens: TokenStore, pri
             .also { tokens.token = it }
     }
 
-    private suspend fun authed(method: String, path: String, body: String? = null): String {
+    /**
+     * The server answered 401 to `sent`: this device was signed out. The token goes and the
+     * app is told. A token stored meanwhile, by a restore, is newer and stays.
+     */
+    private suspend fun signedOut(sent: String) {
+        val dropped = tokenLock.withLock { (tokens.token == sent).also { if (it) tokens.token = null } }
+        if (dropped) onSignedOut()
+    }
+
+    /**
+     * Reads something the server also shows to nobody in particular: with this device's token
+     * when it has one, without an account otherwise. Reading never makes an account.
+     */
+    private suspend fun read(path: String): String {
+        val sent = tokens.token
+        return try {
+            request("GET", path, token = sent)
+        } catch (e: ApiException) {
+            if (e.status != 401 || sent == null) throw e
+            signedOut(sent)
+            // With the token a restore stored meanwhile, or as nobody.
+            request("GET", path, token = tokens.token)
+        }
+    }
+
+    /** Reads something of the account's; null when this device has no account (any more). */
+    private suspend fun mine(path: String): String? {
+        val sent = tokens.token ?: return null
+        return try {
+            request("GET", path, token = sent)
+        } catch (e: ApiException) {
+            if (e.status != 401) throw e
+            signedOut(sent)
+            tokens.token?.let { request("GET", path, token = it) }
+        }
+    }
+
+    /**
+     * Changes something, as this device's account, which is made now when there is none yet.
+     * A device that was signed out is told so and the change fails: doing it again starts a
+     * new account, knowingly.
+     */
+    private suspend fun write(method: String, path: String, body: String? = null): String {
         val sent = token()
         return try {
             request(method, path, body, sent)
         } catch (e: ApiException) {
-            // The server no longer knows this token (its database was reset): start over once.
-            // A token stored meanwhile, by a restore, is newer and stays.
             if (e.status != 401) throw e
-            tokenLock.withLock { if (tokens.token == sent) tokens.token = null }
-            request(method, path, body, token())
+            signedOut(sent)
+            val newer = tokens.token
+                ?: throw ApiException(401, "This device was signed out. Sign in again, or repeat this to start afresh here.", "unauthorized")
+            request(method, path, body, newer)
+        }
+    }
+
+    /** Like [write], for a change that only matters to an account that exists: nothing happens without one. */
+    private suspend fun writeMine(method: String, path: String, body: String? = null) {
+        val sent = tokens.token ?: return
+        try {
+            request(method, path, body, sent)
+        } catch (e: ApiException) {
+            if (e.status != 401) throw e
+            signedOut(sent)
         }
     }
 

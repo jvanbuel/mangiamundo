@@ -17,6 +17,13 @@ pub const LINK_TTL_SECS: i64 = 600;
 /// `last_used_at` is written at most this often, not on every request.
 const TOUCH_SECS: i64 = 3600;
 const MAX_DEVICE_NAME: usize = 60;
+/// An account with nothing in it and no way back to it goes once it is this old and no
+/// device used it for this long.
+pub const ABANDONED_AFTER_SECS: i64 = 90 * 86_400;
+/// How long it is remembered that a reminder was sent. Each is only due on one day.
+const PUSH_SENT_KEPT_SECS: i64 = 60 * 86_400;
+/// How often [`run_cleanup`] looks.
+const CLEANUP_EVERY: std::time::Duration = std::time::Duration::from_secs(86_400);
 
 /// The session a request was made with.
 #[derive(Debug, Clone)]
@@ -126,7 +133,38 @@ fn device_name(name: Option<&str>) -> Option<String> {
     (!name.is_empty()).then(|| name.chars().take(MAX_DEVICE_NAME).collect())
 }
 
-/// Starts a session for `user` and returns its token.
+/// What migration 0018 put before the session tokens it found in plain text.
+const PLAIN: &str = "plain:";
+
+/// Hashes the session tokens from before only their hash was kept. Run at every start,
+/// after the migrations: it only touches the rows migration 0018 marked, so a second run
+/// finds nothing. Returns how many it hashed.
+pub async fn hash_plain_tokens(db: &SqlitePool) -> sqlx::Result<usize> {
+    let mut tx = db.begin().await?;
+    let marked: Vec<(String, String)> =
+        sqlx::query_as("SELECT id, token_hash FROM sessions WHERE token_hash LIKE ? || '%'")
+            .bind(PLAIN)
+            .fetch_all(&mut *tx)
+            .await?;
+    let mut hashed = 0;
+    for (id, value) in &marked {
+        // LIKE ignores case; only the exact mark counts.
+        let Some(token) = value.strip_prefix(PLAIN) else {
+            continue;
+        };
+        sqlx::query("UPDATE sessions SET token_hash = ? WHERE id = ?")
+            .bind(hash(token))
+            .bind(id)
+            .execute(&mut *tx)
+            .await?;
+        hashed += 1;
+    }
+    tx.commit().await?;
+    Ok(hashed)
+}
+
+/// Starts a session for `user` and returns its token. Only the token's hash is kept: the
+/// token can't be read back from the database.
 async fn start_session(
     db: impl sqlx::SqliteExecutor<'_>,
     user: &str,
@@ -138,9 +176,9 @@ async fn start_session(
         uuid::Uuid::new_v4().simple(),
         uuid::Uuid::new_v4().simple()
     );
-    sqlx::query("INSERT INTO sessions (id, token, user_id, device, created_at, last_used_at) VALUES (?, ?, ?, ?, ?, ?)")
+    sqlx::query("INSERT INTO sessions (id, token_hash, user_id, device, created_at, last_used_at) VALUES (?, ?, ?, ?, ?, ?)")
         .bind(uuid::Uuid::new_v4().simple().to_string())
-        .bind(&token)
+        .bind(hash(&token))
         .bind(user)
         .bind(device_name(device))
         .bind(now)
@@ -178,8 +216,8 @@ pub async fn session_for_token(
     token: &str,
     now: i64,
 ) -> sqlx::Result<Option<Session>> {
-    let Some(row) = sqlx::query("SELECT id, user_id, last_used_at FROM sessions WHERE token = ?")
-        .bind(token)
+    let Some(row) = sqlx::query("SELECT id, user_id, last_used_at FROM sessions WHERE token_hash = ?")
+        .bind(hash(token))
         .fetch_optional(db)
         .await?
     else {
@@ -399,6 +437,17 @@ pub async fn sign_in_with(
     Ok(token)
 }
 
+/// Every table and column that refers to `users`, read from the schema, so that a new
+/// table of a user's is found without being listed anywhere.
+async fn owned(db: impl sqlx::SqliteExecutor<'_>) -> sqlx::Result<Vec<(String, String)>> {
+    sqlx::query_as(
+        r#"SELECT m.name, f."from" FROM sqlite_master m, pragma_foreign_key_list(m.name) f
+           WHERE m.type = 'table' AND f."table" = 'users' ORDER BY m.name"#,
+    )
+    .fetch_all(db)
+    .await
+}
+
 /// Tables whose rows stay behind in a merge, and so go with the merged user: a link code
 /// made for that account no longer signs anyone in.
 const NOT_MERGED: &[&str] = &["link_codes"];
@@ -410,13 +459,7 @@ const NOT_MERGED: &[&str] = &["link_codes"];
 /// What a user has is read from the schema: every column that refers to `users`. A new
 /// table of theirs is merged without being listed here.
 async fn merge(tx: &mut sqlx::SqliteConnection, from: &str, into: &str) -> sqlx::Result<()> {
-    let owned: Vec<(String, String)> = sqlx::query_as(
-        r#"SELECT m.name, f."from" FROM sqlite_master m, pragma_foreign_key_list(m.name) f
-           WHERE m.type = 'table' AND f."table" = 'users' ORDER BY m.name"#,
-    )
-    .fetch_all(&mut *tx)
-    .await?;
-    for (table, column) in owned {
+    for (table, column) in owned(&mut *tx).await? {
         if NOT_MERGED.contains(&table.as_str()) {
             continue;
         }
@@ -456,6 +499,82 @@ pub async fn delete(db: &SqlitePool, user: &str) -> sqlx::Result<()> {
     Ok(())
 }
 
+/// Tables whose rows don't make an account worth keeping: its sessions count by when they
+/// were last used, and a link code is gone within [`LINK_TTL_SECS`].
+const NOT_DATA: &[&str] = &["sessions", "link_codes"];
+
+/// What a [`clean_up`] deleted.
+#[derive(Debug, Default, PartialEq)]
+pub struct Cleaned {
+    pub users: u64,
+    pub email_codes: u64,
+    pub link_codes: u64,
+    pub push_sent: u64,
+}
+
+/// Deletes what nobody will come back for: abandoned accounts, expired sign-in and link
+/// codes, and the record of reminders sent long ago.
+///
+/// An account is abandoned when all of this holds: it is older than
+/// [`ABANDONED_AFTER_SECS`], none of its devices used it since, it has no recovery code and
+/// no identity to sign in with, and no row of any table refers to it apart from its
+/// sessions and link codes. Like [`merge`], the tables are read from the schema: a row in
+/// a table added later keeps its account.
+pub async fn clean_up(db: &SqlitePool, now: i64) -> sqlx::Result<Cleaned> {
+    let mut tx = db.begin().await?;
+    let mut abandoned = String::from(
+        "DELETE FROM users WHERE created_at < ?1 AND recovery_hash IS NULL
+         AND NOT EXISTS (SELECT 1 FROM sessions WHERE user_id = users.id AND last_used_at >= ?1)",
+    );
+    for (table, column) in owned(&mut *tx).await? {
+        if !NOT_DATA.contains(&table.as_str()) {
+            abandoned.push_str(&format!(
+                r#" AND NOT EXISTS (SELECT 1 FROM "{table}" WHERE "{column}" = users.id)"#
+            ));
+        }
+    }
+    let users = sqlx::query(&abandoned)
+        .bind(now - ABANDONED_AFTER_SECS)
+        .execute(&mut *tx)
+        .await?
+        .rows_affected();
+    let email_codes = sqlx::query("DELETE FROM email_codes WHERE expires_at <= ?")
+        .bind(now)
+        .execute(&mut *tx)
+        .await?
+        .rows_affected();
+    let link_codes = sqlx::query("DELETE FROM link_codes WHERE expires_at <= ?")
+        .bind(now)
+        .execute(&mut *tx)
+        .await?
+        .rows_affected();
+    let push_sent = sqlx::query("DELETE FROM push_sent WHERE sent_at < ?")
+        .bind(now - PUSH_SENT_KEPT_SECS)
+        .execute(&mut *tx)
+        .await?
+        .rows_affected();
+    tx.commit().await?;
+    Ok(Cleaned {
+        users,
+        email_codes,
+        link_codes,
+        push_sent,
+    })
+}
+
+/// Cleans up once a day, starting now.
+pub async fn run_cleanup(state: crate::AppState) {
+    let mut ticker = tokio::time::interval(CLEANUP_EVERY);
+    loop {
+        ticker.tick().await;
+        match clean_up(&state.db, state.now()).await {
+            Ok(cleaned) if cleaned == Cleaned::default() => {}
+            Ok(cleaned) => tracing::info!(?cleaned, "cleaned up"),
+            Err(error) => tracing::error!(%error, "cleanup failed"),
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -480,6 +599,225 @@ mod tests {
             device_name(Some(&"x".repeat(100))).unwrap().len(),
             MAX_DEVICE_NAME
         );
+    }
+
+    /// A database as it was before tokens were hashed, with one device signed in.
+    #[tokio::test]
+    async fn a_token_from_before_hashing_still_signs_in() {
+        let db = sqlx::sqlite::SqlitePoolOptions::new()
+            .max_connections(1)
+            .connect("sqlite::memory:")
+            .await
+            .unwrap();
+        let mut before = sqlx::migrate!();
+        before.migrations = before
+            .migrations
+            .iter()
+            .filter(|m| m.version < 18)
+            .cloned()
+            .collect();
+        before.run(&db).await.unwrap();
+        sqlx::query("INSERT INTO users (id, token, created_at) VALUES ('u', 'u', 0)")
+            .execute(&db)
+            .await
+            .unwrap();
+        sqlx::query("INSERT INTO sessions (id, token, user_id, created_at, last_used_at) VALUES ('s', 'old-token', 'u', 0, 0)")
+            .execute(&db)
+            .await
+            .unwrap();
+
+        // Twice: the server does this at every start.
+        crate::store::migrate(&db).await.unwrap();
+        crate::store::migrate(&db).await.unwrap();
+
+        let stored: Vec<String> = sqlx::query_scalar("SELECT token_hash FROM sessions")
+            .fetch_all(&db)
+            .await
+            .unwrap();
+        assert_eq!(stored, [hash("old-token")]);
+        let session = session_for_token(&db, "old-token", 0).await.unwrap();
+        assert_eq!(session.unwrap().user, "u");
+        // What is stored signs nobody in.
+        assert!(session_for_token(&db, &stored[0], 0).await.unwrap().is_none());
+        assert!(session_for_token(&db, "plain:old-token", 0).await.unwrap().is_none());
+    }
+
+    #[tokio::test]
+    async fn a_new_token_is_stored_as_its_hash() {
+        let db = crate::store::connect("sqlite::memory:").await.unwrap();
+        let token = create_user(&db, None, 0).await.unwrap();
+        let stored: String = sqlx::query_scalar("SELECT token_hash FROM sessions")
+            .fetch_one(&db)
+            .await
+            .unwrap();
+        assert_eq!(stored, hash(&token));
+        assert_ne!(stored, token);
+        assert_eq!(hash_plain_tokens(&db).await.unwrap(), 0);
+        assert!(session_for_token(&db, &token, 0).await.unwrap().is_some());
+    }
+
+    async fn users(db: &SqlitePool) -> Vec<String> {
+        sqlx::query_scalar("SELECT id FROM users ORDER BY id")
+            .fetch_all(db)
+            .await
+            .unwrap()
+    }
+
+    #[tokio::test]
+    async fn an_empty_account_goes_once_it_is_old_and_unused() {
+        const DAY: i64 = 86_400;
+        let db = crate::store::connect("sqlite::memory:").await.unwrap();
+        let token = create_user(&db, None, 0).await.unwrap();
+        let user = session_for_token(&db, &token, 0).await.unwrap().unwrap().user;
+
+        // Too young, whatever it holds.
+        let at = ABANDONED_AFTER_SECS;
+        assert_eq!(clean_up(&db, at).await.unwrap().users, 0);
+        // Old, but a device used it lately.
+        session_for_token(&db, &token, at + 30 * DAY).await.unwrap();
+        assert_eq!(clean_up(&db, at + 31 * DAY).await.unwrap().users, 0);
+        assert_eq!(clean_up(&db, at + 30 * DAY + ABANDONED_AFTER_SECS).await.unwrap().users, 0);
+        assert_eq!(users(&db).await, [user.clone()]);
+        // A recovery code is a way back in.
+        new_recovery_code(&db, &user, 0).await.unwrap();
+        let later = at + 31 * DAY + ABANDONED_AFTER_SECS;
+        assert_eq!(clean_up(&db, later).await.unwrap().users, 0);
+        sqlx::query("UPDATE users SET recovery_hash = NULL")
+            .execute(&db)
+            .await
+            .unwrap();
+        // An unused link code is not.
+        new_link_code(&db, &user, later).await.unwrap();
+
+        assert_eq!(clean_up(&db, later).await.unwrap().users, 1);
+        assert!(users(&db).await.is_empty());
+        assert!(session_for_token(&db, &token, later).await.unwrap().is_none());
+        // Without any session left it is just as gone.
+        let token = create_user(&db, None, 0).await.unwrap();
+        sqlx::query("DELETE FROM sessions").execute(&db).await.unwrap();
+        assert!(session_for_token(&db, &token, 0).await.unwrap().is_none());
+        assert_eq!(clean_up(&db, later).await.unwrap().users, 1);
+    }
+
+    /// One old, unused user per table with a column that names a user, each with a row in
+    /// just that table. Found by the column's name and not the way `clean_up` finds them.
+    #[tokio::test]
+    async fn an_account_with_a_row_in_any_table_is_kept() {
+        let db = crate::store::connect("sqlite::memory:").await.unwrap();
+        let mut conn = db.acquire().await.unwrap();
+        // The rows are made up, as in `a_merge_leaves_no_row_of_the_user_behind`.
+        for pragma in ["foreign_keys = OFF", "ignore_check_constraints = ON"] {
+            sqlx::query(&format!("PRAGMA {pragma}"))
+                .execute(&mut *conn)
+                .await
+                .unwrap();
+        }
+        let named: Vec<(String, String)> = sqlx::query_as(
+            "SELECT m.name, c.name FROM sqlite_master m, pragma_table_info(m.name) c
+             WHERE m.type = 'table' AND c.name IN ('user_id', 'added_by') ORDER BY m.name",
+        )
+        .fetch_all(&mut *conn)
+        .await
+        .unwrap();
+        assert!(named.len() >= 10, "{named:?}");
+        for (table, user_column) in &named {
+            sqlx::query("INSERT INTO users (id, token, created_at) VALUES (?, ?, 0)")
+                .bind(table)
+                .bind(table)
+                .execute(&mut *conn)
+                .await
+                .unwrap();
+            let columns: Vec<(String, String)> =
+                sqlx::query_as("SELECT name, type FROM pragma_table_info(?)")
+                    .bind(table)
+                    .fetch_all(&mut *conn)
+                    .await
+                    .unwrap();
+            let names: Vec<String> = columns.iter().map(|(n, _)| format!(r#""{n}""#)).collect();
+            let values: Vec<String> = columns
+                .iter()
+                .map(|(name, kind)| match (name == user_column, kind.as_str()) {
+                    (true, _) => format!("'{table}'"),
+                    // Unique per row: some of these columns are keys.
+                    (false, "TEXT") => format!("'x-{table}'"),
+                    // Also the time a session was last used: long ago.
+                    (false, _) => "1".into(),
+                })
+                .collect();
+            let insert = format!(
+                r#"INSERT INTO "{table}" ({}) VALUES ({})"#,
+                names.join(", "),
+                values.join(", ")
+            );
+            sqlx::query(&insert).execute(&mut *conn).await.unwrap();
+        }
+        drop(conn);
+
+        let cleaned = clean_up(&db, 10 * ABANDONED_AFTER_SECS).await.unwrap();
+
+        // Named here again on purpose: what doesn't keep an account is a decision.
+        let kept: Vec<String> = named
+            .iter()
+            .map(|(table, _)| table.clone())
+            .filter(|table| table != "sessions" && table != "link_codes")
+            .collect();
+        assert_eq!(users(&db).await, kept);
+        assert_eq!(cleaned.users, 2);
+    }
+
+    #[tokio::test]
+    async fn expired_codes_and_old_reminder_records_are_deleted() {
+        let db = crate::store::connect("sqlite::memory:").await.unwrap();
+        let token = create_user(&db, None, 0).await.unwrap();
+        let user = session_for_token(&db, &token, 0).await.unwrap().unwrap().user;
+        let now = 100 * 86_400;
+        for (email, expires_at) in [("old@example.com", now), ("new@example.com", now + 1)] {
+            sqlx::query("INSERT INTO email_codes (email, hash, expires_at) VALUES (?, 'h', ?)")
+                .bind(email)
+                .bind(expires_at)
+                .execute(&db)
+                .await
+                .unwrap();
+        }
+        sqlx::query("INSERT INTO push_subscriptions (endpoint, user_id, p256dh, auth, timezone, created_at) VALUES ('e', ?, 'p', 'a', 'UTC', 0)")
+            .bind(&user)
+            .execute(&db)
+            .await
+            .unwrap();
+        for (key, sent_at) in [("old", now - PUSH_SENT_KEPT_SECS - 1), ("new", now - PUSH_SENT_KEPT_SECS)] {
+            sqlx::query("INSERT INTO push_sent (endpoint, key, sent_at) VALUES ('e', ?, ?)")
+                .bind(key)
+                .bind(sent_at)
+                .execute(&db)
+                .await
+                .unwrap();
+        }
+        // In this order: making a link code deletes the ones that expired before it.
+        new_link_code(&db, &user, now).await.unwrap();
+        new_link_code(&db, &user, now - LINK_TTL_SECS).await.unwrap();
+
+        let cleaned = clean_up(&db, now).await.unwrap();
+
+        assert_eq!(
+            cleaned,
+            Cleaned {
+                users: 0,
+                email_codes: 1,
+                link_codes: 1,
+                push_sent: 1
+            }
+        );
+        let emails: Vec<String> = sqlx::query_scalar("SELECT email FROM email_codes")
+            .fetch_all(&db)
+            .await
+            .unwrap();
+        assert_eq!(emails, ["new@example.com"]);
+        let keys: Vec<String> = sqlx::query_scalar("SELECT key FROM push_sent")
+            .fetch_all(&db)
+            .await
+            .unwrap();
+        assert_eq!(keys, ["new"]);
+        assert_eq!(clean_up(&db, now).await.unwrap(), Cleaned::default());
     }
 
     /// Every table that refers to a user, with a row of the merged user's in it.

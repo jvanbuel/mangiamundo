@@ -11,7 +11,24 @@
   event count; earned event badges stay.
 
 `GET /api/celebrations` lists what is coming up for countries that have places in
-the area, including the reminder text.
+the area. Each has the text of its reminder too (`reminder`); the mobile apps no longer
+read it, they schedule what `/api/reminders` plans.
+
+## Monthly quests
+
+Every area has its own quests each month (`monthly_quests` in `backend/src/game.rs`):
+"two check-ins" and up to two more, picked by area and month from what the area has and
+what the player had done before the month began. They are done in the area: only that
+month's check-ins at the area's places count, so the same quest can be finished, and
+paid, in two areas. What makes a country new is the player's whole history, anywhere.
+
+The XP of a finished quest is kept in `quest_rewards`, per user, area, month and quest.
+It is booked by the check-in that finishes the quest (`settle_quests` in
+`backend/src/progress.rs`), in every cached area the place is in, whether or not the
+check-in names an `area`; a postal code and the city around it both pay. The check-in's
+`profile` already has it. Removing a check-in takes back the quests of its month that are
+no longer finished. Nothing else books quest XP: `GET /api/discover`, the reminders plan
+and the push loop only read.
 
 ## Time zones
 
@@ -34,6 +51,18 @@ notifications themselves. Each item has the `key` to schedule it under, its
 `url` and `tag`. It works without a token, as for someone with no visits. The plan
 follows the user's visits, so apps ask again after a check-in. Asking sends and records
 nothing.
+
+The iOS and Android apps only schedule: with reminders turned on they ask for the plan
+of the current area in the device's time zone when the app starts, when the area
+changes and when reminders are turned on, and schedule one local notification per item
+at `hour` on `local_date`, local time, with the server's `title` and `body`. The `key`
+is the notification's identifier, so scheduling again replaces instead of duplicating,
+and what is no longer in the plan is cancelled. The `url` travels with the notification
+and decides what a tap opens (`?country=JP` the country, `?tab=badges` the badges tab).
+Only the soonest 48 are scheduled, as iOS keeps at most 64 pending notifications per
+app, and items whose moment has passed are left out. When the server can't be reached
+what was scheduled last stays. No rules or texts live in the apps; a change to `due`
+reaches them with the next plan they fetch.
 
 The web app uses Web Push: the server generates a VAPID key on first start (or reads
 `VAPID_PRIVATE_KEY`), and every `PUSH_INTERVAL_SECS` (default 600, 0 turns it off)

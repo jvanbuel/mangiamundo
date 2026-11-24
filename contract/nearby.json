@@ -1,0 +1,21 @@
+{
+  "added": [
+    {
+      "address": null,
+      "countries": [
+        "PE"
+      ],
+      "cuisine": "peruvian",
+      "distance_m": 64,
+      "hours": null,
+      "id": "osm-node-43",
+      "lat": 50.8801,
+      "lng": 4.7009,
+      "name": "Restaurant Inti",
+      "osm_url": "https://www.openstreetmap.org/node/43",
+      "url": null,
+      "visits": []
+    }
+  ],
+  "matched": 1
+}

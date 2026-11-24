@@ -211,9 +211,12 @@
 		</div>
 	{/if}
 
-	<div class="group">
-		<button class="danger" disabled={busy} onclick={deleteEverything}>Delete my account</button>
-	</div>
+	<!-- A device that only looked around has no account yet: there is nothing to delete. -->
+	{#if account?.devices.length}
+		<div class="group">
+			<button class="danger" disabled={busy} onclick={deleteEverything}>Delete my account</button>
+		</div>
+	{/if}
 </section>
 
 <style>

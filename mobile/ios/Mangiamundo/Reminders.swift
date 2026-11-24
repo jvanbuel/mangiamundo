@@ -8,49 +8,59 @@ struct PlannedReminder: Equatable {
     let date: Date
     let title: String
     let body: String
-    /// Country to open on tap, if any.
-    let country: String?
-    /// Open the badges tab on tap.
-    var badges = false
+    /// What a tap opens; see `ReminderTarget`.
+    let url: String
 }
 
-/// Turns the calendar into local notifications: one at 10:00 on the first day of each
-/// celebration and event, and a last-days nudge for events the user has not finished.
-/// Reminders whose moment has passed are left out. Mirrors ReminderPlan on Android.
-enum ReminderPlan {
-    static let hour = 10
-    static let lastChanceDays = 3
-    /// iOS keeps at most 64 pending notifications per app; stay well below.
-    static let max = 20
+/// Turns the reminders the server plans (`/api/reminders`) into local notifications. Which
+/// reminders there are and what they say is the server's business; the app only schedules.
+/// Mirrors ReminderSchedule on Android.
+enum ReminderSchedule {
+    /// iOS keeps at most 64 pending notifications per app: only the soonest are scheduled.
+    static let max = 48
 
-    static func plan(celebrations: [Celebration], events: [EventProgress], now: Date, calendar: Calendar = .current) -> [PlannedReminder] {
-        func at(_ day: String, minusDays: Int = 0) -> Date? {
-            let parts = day.split(separator: "-").compactMap { Int($0) }
-            guard parts.count == 3,
-                  let date = calendar.date(from: DateComponents(year: parts[0], month: parts[1], day: parts[2], hour: hour))
-            else { return nil }
-            return calendar.date(byAdding: .day, value: -minusDays, to: date)
-        }
+    /// Each reminder at its hour on its day in the calendar's time zone, soonest first.
+    /// Reminders whose moment has passed, or whose date can't be read, are left out.
+    static func requests(for reminders: [Reminder], now: Date, calendar: Calendar = .current) -> [PlannedReminder] {
+        var seen = Set<String>()
         var out: [PlannedReminder] = []
-        for c in celebrations {
-            guard let date = at(c.starts) else { continue }
-            out.append(PlannedReminder(key: "celebration:\(c.id):\(c.starts)", date: date, title: c.reminder.title, body: c.reminder.body, country: c.nearby.first?.code))
+        for reminder in reminders {
+            guard let date = moment(of: reminder, calendar: calendar), date > now, seen.insert(reminder.key).inserted else { continue }
+            out.append(PlannedReminder(key: reminder.key, date: date, title: reminder.title, body: reminder.body, url: reminder.url))
         }
-        for e in events where !e.earned && e.placesNearby > 0 {
-            let nearby = e.placesNearby == 1 ? "is 1 place" : "are \(e.placesNearby) places"
-            if let date = at(e.starts) {
-                out.append(PlannedReminder(key: "event-start:\(e.id)", date: date, title: "\(e.title) starts today", body: "\(e.description) There \(nearby) nearby.", country: nil, badges: true))
-            }
-            let left = e.target - e.progress
-            if let date = at(e.ends, minusDays: lastChanceDays - 1) {
-                out.append(PlannedReminder(
-                    key: "event-last:\(e.id)", date: date, title: "Last days of \(e.title)",
-                    body: "\(left == 1 ? "1 more place" : "\(left) more places") to earn the badge before it ends.",
-                    country: nil, badges: true
-                ))
-            }
-        }
-        return Array(out.filter { $0.date > now }.sorted { $0.date < $1.date }.prefix(max))
+        // Reminders of the same moment stay in the server's order.
+        let sorted = out.enumerated().sorted { ($0.element.date, $0.offset) < ($1.element.date, $1.offset) }
+        return sorted.prefix(max).map(\.element)
+    }
+
+    private static func moment(of reminder: Reminder, calendar: Calendar) -> Date? {
+        let parts = reminder.localDate.split(separator: "-").compactMap { Int($0) }
+        guard parts.count == 3, (0..<24).contains(reminder.hour),
+              let date = calendar.date(from: DateComponents(year: parts[0], month: parts[1], day: parts[2], hour: reminder.hour))
+        else { return nil }
+        // The calendar rolls a 13th month over into the next year; that is not a date.
+        let read = calendar.dateComponents([.year, .month, .day], from: date)
+        guard read.year == parts[0], read.month == parts[1], read.day == parts[2] else { return nil }
+        return date
+    }
+}
+
+/// What a tapped reminder opens: a country, the badges tab, or just the app.
+struct ReminderTarget: Equatable {
+    var country: String?
+    var badges = false
+
+    init(country: String? = nil, badges: Bool = false) {
+        self.country = country
+        self.badges = badges
+    }
+
+    /// Reads the server's link, such as `/?country=JP` or `/?tab=badges`.
+    init(url: String?) {
+        let items = url.flatMap { URLComponents(string: $0) }?.queryItems ?? []
+        func value(_ name: String) -> String? { items.first { $0.name == name }?.value }
+        if let code = value("country"), !code.isEmpty { country = code }
+        badges = value("tab") == "badges"
     }
 }
 
@@ -82,17 +92,19 @@ final class ReminderCenter: NSObject, UNUserNotificationCenterDelegate {
         return status == .authorized || status == .provisional || status == .ephemeral
     }
 
-    /// Replaces everything scheduled before with `plan`.
+    /// Replaces everything scheduled before with `plan`. A reminder scheduled before under
+    /// the same key is replaced by the system, as the key is its identifier.
     func schedule(_ plan: [PlannedReminder]) async {
-        await cancelAll()
+        let wanted = Set(plan.map { Self.prefix + $0.key })
+        let stale = await center.pendingNotificationRequests().map(\.identifier)
+            .filter { $0.hasPrefix(Self.prefix) && !wanted.contains($0) }
+        center.removePendingNotificationRequests(withIdentifiers: stale)
         for reminder in plan {
             let content = UNMutableNotificationContent()
             content.title = reminder.title
             content.body = reminder.body
             content.sound = .default
-            var info: [String: Any] = ["badges": reminder.badges]
-            if let country = reminder.country { info["country"] = country }
-            content.userInfo = info
+            content.userInfo = ["url": reminder.url]
             let parts = Calendar.current.dateComponents([.year, .month, .day, .hour, .minute], from: reminder.date)
             let trigger = UNCalendarNotificationTrigger(dateMatching: parts, repeats: false)
             try? await center.add(UNNotificationRequest(identifier: Self.prefix + reminder.key, content: content, trigger: trigger))
@@ -109,9 +121,8 @@ final class ReminderCenter: NSObject, UNUserNotificationCenterDelegate {
         didReceive response: UNNotificationResponse
     ) async {
         let info = response.notification.request.content.userInfo
-        let country = info["country"] as? String
-        let badges = info["badges"] as? Bool ?? false
-        await MainActor.run { onOpen?(country, badges) }
+        let target = ReminderTarget(url: info["url"] as? String)
+        await MainActor.run { onOpen?(target.country, target.badges) }
     }
 
     /// Show reminders even while the app is open.

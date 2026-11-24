@@ -148,9 +148,21 @@ data class MonthlyQuests(val month: String, val starts: String, val ends: String
 @Serializable
 data class NearbyCountry(val code: String, val places: Int)
 
-/** Notification text, written by the server so every app says the same thing. */
+/**
+ * A reminder the server plans, for the app to show as a local notification from `hour`
+ * o'clock on `localDate` (YYYY-MM-DD) in the device's time zone.
+ */
 @Serializable
-data class Reminder(val title: String, val body: String)
+data class Reminder(
+    /** Stable for this reminder: scheduling it again under the same key replaces it. */
+    val key: String,
+    @SerialName("local_date") val localDate: String,
+    val hour: Int,
+    val title: String,
+    val body: String,
+    /** Where a tap leads, relative to the web app: `/?country=JP` or `/?tab=badges`. */
+    val url: String,
+)
 
 @Serializable
 data class Celebration(
@@ -163,7 +175,6 @@ data class Celebration(
     val approximate: Boolean = false,
     /** The celebration's countries that have places in the area. */
     val nearby: List<NearbyCountry>,
-    val reminder: Reminder,
 )
 
 @Serializable

@@ -12,15 +12,23 @@ fun gitCommit(): String = providers.exec {
     isIgnoreExitValue = true
 }.standardOutput.asText.get().trim().ifEmpty { "unknown" }
 
+/** A setting of the release build: the environment variable, or else the Gradle property. */
+fun release(variable: String, property: String): String? =
+    providers.environmentVariable(variable).orElse(providers.gradleProperty(property)).orNull?.ifBlank { null }
+
+// The upload key that signs a release, which is not in the repository (docs/release.md).
+val keystoreFile = release("MANGIAMUNDO_KEYSTORE_FILE", "mangiamundo.keystoreFile")
+
 android {
     namespace = "app.mangiamundo"
-    compileSdk = 35
+    compileSdk = 36
 
     defaultConfig {
         applicationId = "app.mangiamundo"
         minSdk = 26
-        targetSdk = 35
-        versionCode = 1
+        targetSdk = 36
+        // Play takes each number once, so a release from CI passes its run number.
+        versionCode = release("MANGIAMUNDO_VERSION_CODE", "mangiamundo.versionCode")?.toInt() ?: 1
         versionName = "0.1.0"
         buildConfigField("String", "GIT_COMMIT", "\"${gitCommit()}\"")
         buildConfigField("String", "API_BASE", "\"${providers.gradleProperty("mangiamundo.apiBase").get()}\"")
@@ -42,8 +50,23 @@ android {
         targetCompatibility = JavaVersion.VERSION_17
     }
 
+    signingConfigs {
+        // Without a keystore the release build still works; its bundle is just not signed.
+        if (keystoreFile != null) {
+            create("release") {
+                storeFile = rootProject.file(keystoreFile)
+                storePassword = release("MANGIAMUNDO_KEYSTORE_PASSWORD", "mangiamundo.keystorePassword")
+                keyAlias = release("MANGIAMUNDO_KEY_ALIAS", "mangiamundo.keyAlias")
+                keyPassword = release("MANGIAMUNDO_KEY_PASSWORD", "mangiamundo.keyPassword")
+            }
+        }
+    }
+
     buildTypes {
         release {
+            signingConfig = signingConfigs.findByName("release")
+            // Not shrunk: no test runs a shrunk build, so nothing would show R8 breaking
+            // kotlinx.serialization or MapLibre before it is on someone's phone.
             isMinifyEnabled = false
             // Release builds run on real phones, so they use the deployed backend.
             buildConfigField("String", "API_BASE", "\"https://mangiamundo.com\"")

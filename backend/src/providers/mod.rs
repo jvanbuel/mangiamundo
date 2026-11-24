@@ -111,6 +111,18 @@ pub struct Located {
     pub postal_code: Option<AreaInfo>,
 }
 
+/// Why a directory did not ask its remote server. An error of this kind is the client's to
+/// wait out, not a failure of the server behind it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
+pub enum Refused {
+    /// This client used up its lookups.
+    #[error("too many location lookups; try again in a few minutes")]
+    TooMany,
+    /// Too many lookups are waiting for their turn already.
+    #[error("location lookups are busy; try again in a moment")]
+    Busy,
+}
+
 #[async_trait]
 pub trait AreaDirectory: Send + Sync {
     /// Cities and postal codes matching what someone typed.

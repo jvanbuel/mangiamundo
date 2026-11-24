@@ -25,7 +25,7 @@ import app.mangiamundo.core.Place
 import app.mangiamundo.core.Refreshed
 import app.mangiamundo.core.pendingText
 import app.mangiamundo.core.ProjectionKind
-import app.mangiamundo.core.ReminderPlan
+import app.mangiamundo.core.ReminderSchedule
 import app.mangiamundo.core.Visit
 import app.mangiamundo.core.VisitResult
 import app.mangiamundo.core.World
@@ -48,7 +48,7 @@ private const val SPIN_MS = 1600L
 
 class AppViewModel(application: Application) : AndroidViewModel(application) {
     private val settings = Settings(application)
-    private val api = ApiClient(BuildConfig.API_BASE, settings, android.os.Build.MODEL)
+    private val api = ApiClient(BuildConfig.API_BASE, settings, android.os.Build.MODEL) { signedOut() }
 
     var world by mutableStateOf<World?>(null); private set
     var catalog by mutableStateOf<Catalog?>(null); private set
@@ -111,6 +111,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     /** The last real device position, used to verify check-ins while browsing another city. */
     private var gpsFix: Triple<Double, Double, Long>? = null
     private var refreshJob: Job? = null
+    private var remindersJob: Job? = null
     /** A country to open once progress has loaded, from a notification tap. */
     private var pendingCountry: String? = null
     private var placesJob: Job? = null
@@ -320,10 +321,23 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    /** Schedules what the server plans for the area. Without an answer, what was scheduled stays. */
     private fun rescheduleReminders() {
         if (!remindersOn) return
-        val plan = ReminderPlan.plan(celebrations, discover?.events.orEmpty(), java.time.ZonedDateTime.now())
-        Notifications.schedule(getApplication(), plan)
+        val here = location ?: return
+        remindersJob?.cancel()
+        remindersJob = viewModelScope.launch {
+            val plan = try {
+                api.reminders(here.area.id)
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                return@launch
+            }
+            // Turned off or moved meanwhile: this plan is no longer wanted.
+            if (!remindersOn || location?.area?.id != here.area.id) return@launch
+            Notifications.schedule(getApplication(), ReminderSchedule.requests(plan, java.time.ZonedDateTime.now()))
+        }
     }
 
     fun select(code: String?) {
@@ -913,6 +927,22 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         linkCode = null
         messageChannel.trySend("Account deleted. You start fresh on this device.")
         accountChanged()
+    }
+
+    /**
+     * The server no longer knows this device: it was signed out from another device, or its
+     * account is gone. Says so, and shows everything again as for someone without an account,
+     * so nothing of the old account stays on screen as if it were still here. A new account
+     * only starts with the next check-in or other change.
+     */
+    private fun signedOut() {
+        // On its own: the request that found out is often part of what this starts again.
+        viewModelScope.launch {
+            messageChannel.trySend("You were signed out. Sign in or use a recovery code to get your progress back.")
+            recoveryCode = null
+            linkCode = null
+            accountChanged()
+        }
     }
 
     /** Goes up with every change of account, so an answer for the previous one can be told apart. */

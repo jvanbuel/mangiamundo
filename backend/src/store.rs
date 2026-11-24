@@ -31,8 +31,18 @@ pub async fn connect(url: &str) -> anyhow::Result<SqlitePool> {
         .max_connections(max)
         .connect_with(options)
         .await?;
-    sqlx::migrate!().run(&pool).await?;
+    migrate(&pool).await?;
     Ok(pool)
+}
+
+/// Brings the database up to date: the migrations, then what they leave to the server.
+pub(crate) async fn migrate(pool: &SqlitePool) -> anyhow::Result<()> {
+    sqlx::migrate!().run(pool).await?;
+    let hashed = crate::account::hash_plain_tokens(pool).await?;
+    if hashed > 0 {
+        tracing::info!(hashed, "session tokens are now kept as hashes");
+    }
+    Ok(())
 }
 
 /// A cached provider lookup for a city or postal code.
@@ -107,6 +117,7 @@ pub async fn save_area(db: &SqlitePool, area: &Area, places: &[FoundPlace]) -> s
     .bind(info.lat)
     .bind(info.lng)
     .bind(shape)
+    // Never read back for anything, but the column is NOT NULL without a default.
     .bind(&area.provider)
     .bind(area.fetched_at)
     .execute(&mut *tx)
@@ -187,17 +198,6 @@ async fn upsert_place(
             .await?;
     }
     Ok(())
-}
-
-/// A new anonymous user, with one session. Returns its token.
-pub async fn create_user(db: &SqlitePool) -> sqlx::Result<String> {
-    crate::account::create_user(db, None, now()).await
-}
-
-pub async fn user_for_token(db: &SqlitePool, token: &str) -> sqlx::Result<Option<String>> {
-    Ok(crate::account::session_for_token(db, token, now())
-        .await?
-        .map(|s| s.user))
 }
 
 /// Places added by users are pending: only whoever added them can see them. The user is
@@ -316,18 +316,21 @@ pub async fn tasted(db: &SqlitePool, user: &str) -> sqlx::Result<Vec<Tasted>> {
         .collect())
 }
 
-/// Keeps the XP of finished quests. A quest pays once per month, whatever happens after.
+/// Keeps the XP of the quests the user finished in an area. A quest pays once per area
+/// and month.
 pub async fn reward_quests(
     db: &SqlitePool,
     user: &str,
+    area_id: &str,
     month: &str,
     quests: &[(&str, u32)],
 ) -> sqlx::Result<()> {
     for (quest, xp) in quests {
         sqlx::query(
-            "INSERT OR IGNORE INTO quest_rewards (user_id, month, quest, xp) VALUES (?, ?, ?, ?)",
+            "INSERT OR IGNORE INTO quest_rewards (user_id, area_id, month, quest, xp) VALUES (?, ?, ?, ?, ?)",
         )
         .bind(user)
+        .bind(area_id)
         .bind(month)
         .bind(quest)
         .bind(xp)
@@ -335,6 +338,34 @@ pub async fn reward_quests(
         .await?;
     }
     Ok(())
+}
+
+/// Takes back the XP of one quest in an area and month, when it is no longer finished.
+pub async fn unreward_quest(
+    db: &SqlitePool,
+    user: &str,
+    area_id: &str,
+    month: &str,
+    quest: &str,
+) -> sqlx::Result<()> {
+    sqlx::query(
+        "DELETE FROM quest_rewards WHERE user_id = ? AND area_id = ? AND month = ? AND quest = ?",
+    )
+    .bind(user)
+    .bind(area_id)
+    .bind(month)
+    .bind(quest)
+    .execute(db)
+    .await?;
+    Ok(())
+}
+
+/// The cached areas a place is in.
+pub async fn areas_of_place(db: &SqlitePool, place_id: &str) -> sqlx::Result<Vec<String>> {
+    sqlx::query_scalar("SELECT area_id FROM area_places WHERE place_id = ? ORDER BY area_id")
+        .bind(place_id)
+        .fetch_all(db)
+        .await
 }
 
 /// One check-in.
@@ -558,14 +589,18 @@ pub async fn add_visit(
     .await
 }
 
-/// Removes one of the user's visits. Visits of other users are left alone.
-pub async fn remove_visit(db: &SqlitePool, user: &str, visit_id: i64) -> sqlx::Result<()> {
-    sqlx::query("DELETE FROM visits WHERE user_id = ? AND id = ?")
+/// Removes one of the user's visits and returns its place and local date, if there was
+/// such a visit. Visits of other users are left alone.
+pub async fn remove_visit(
+    db: &SqlitePool,
+    user: &str,
+    visit_id: i64,
+) -> sqlx::Result<Option<(String, String)>> {
+    sqlx::query_as("DELETE FROM visits WHERE user_id = ? AND id = ? RETURNING place_id, local_date")
         .bind(user)
         .bind(visit_id)
-        .execute(db)
-        .await?;
-    Ok(())
+        .fetch_optional(db)
+        .await
 }
 
 pub async fn setting(db: &SqlitePool, key: &str) -> sqlx::Result<Option<String>> {
@@ -1534,6 +1569,13 @@ pub async fn areas_containing(db: &SqlitePool, lat: f64, lng: f64) -> sqlx::Resu
 mod tests {
     use super::*;
 
+    /// A new anonymous user's id.
+    async fn new_user(db: &SqlitePool) -> String {
+        let token = crate::account::create_user(db, None, now()).await.unwrap();
+        let session = crate::account::session_for_token(db, &token, now()).await;
+        session.unwrap().unwrap().user
+    }
+
     fn place(id: &str, lat: f64, lng: f64, cuisine: &str) -> FoundPlace {
         FoundPlace {
             id: id.into(),
@@ -1597,8 +1639,7 @@ mod tests {
         let db = connect("sqlite::memory:").await.unwrap();
         let mut users = vec![];
         for _ in 0..2 {
-            let token = create_user(&db).await.unwrap();
-            users.push(user_for_token(&db, &token).await.unwrap().unwrap());
+            users.push(new_user(&db).await);
         }
         let (a, b) = (&users[0], &users[1]);
         let new = |name: &str, lat, lng| NewPlace {
@@ -1699,8 +1740,7 @@ mod tests {
     #[tokio::test]
     async fn additions_made_at_the_same_second_are_settled_in_one_order() {
         let db = connect("sqlite::memory:").await.unwrap();
-        let token = create_user(&db).await.unwrap();
-        let user = user_for_token(&db, &token).await.unwrap().unwrap();
+        let user = new_user(&db).await;
         // Two additions of the same new restaurant in the same second. "user-b" is inserted
         // first, so an order by time alone would likely settle it first.
         for id in ["user-b", "user-a"] {
@@ -1740,8 +1780,7 @@ mod tests {
     #[tokio::test]
     async fn two_additions_of_one_place_are_marked_seen_one_at_a_time() {
         let db = connect("sqlite::memory:").await.unwrap();
-        let token = create_user(&db).await.unwrap();
-        let user = user_for_token(&db, &token).await.unwrap().unwrap();
+        let user = new_user(&db).await;
         let new = NewPlace {
             name: "Lalibela".into(),
             lat: 50.88,
@@ -1794,8 +1833,7 @@ mod tests {
     #[tokio::test]
     async fn the_bonus_is_judged_in_the_city_never_the_postal_code() {
         let db = connect("sqlite::memory:").await.unwrap();
-        let token = create_user(&db).await.unwrap();
-        let user = user_for_token(&db, &token).await.unwrap().unwrap();
+        let user = new_user(&db).await;
         let shape = serde_json::to_string(&Shape::rect(Bbox {
             south: 50.8,
             west: 4.6,
@@ -1837,8 +1875,7 @@ mod tests {
     #[tokio::test]
     async fn a_bonus_held_by_an_addition_that_turns_out_a_duplicate_goes_to_the_next_in_line() {
         let db = connect("sqlite::memory:").await.unwrap();
-        let token = create_user(&db).await.unwrap();
-        let user = user_for_token(&db, &token).await.unwrap().unwrap();
+        let user = new_user(&db).await;
         // Three Ethiopian additions in one city, each claiming the country bonus. Habesha is
         // 220 m from the two Lalibelas, which are the same restaurant.
         for (id, name, lat, at) in [
@@ -1956,8 +1993,7 @@ mod tests {
     #[tokio::test]
     async fn a_suggestion_gives_way_to_the_cuisine_osm_tags() {
         let db = connect("sqlite::memory:").await.unwrap();
-        let token = create_user(&db).await.unwrap();
-        let user = user_for_token(&db, &token).await.unwrap().unwrap();
+        let user = new_user(&db).await;
         let suggest = |country, cuisine| NewPlace {
             name: "Lalibela".into(),
             lat: 50.88,

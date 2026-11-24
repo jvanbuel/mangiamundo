@@ -1,0 +1,76 @@
+{
+  "place": {
+    "address": null,
+    "countries": [
+      "ET"
+    ],
+    "cuisine": "ethiopian",
+    "distance_m": 42,
+    "hours": {
+      "raw": "Mo-Su 12:00-22:00",
+      "status": {
+        "open": true,
+        "text": "Open until 22:00"
+      },
+      "week": [
+        {
+          "name": "Monday",
+          "open": [
+            "12:00-22:00"
+          ],
+          "today": true
+        },
+        {
+          "name": "Tuesday",
+          "open": [
+            "12:00-22:00"
+          ],
+          "today": false
+        },
+        {
+          "name": "Wednesday",
+          "open": [
+            "12:00-22:00"
+          ],
+          "today": false
+        },
+        {
+          "name": "Thursday",
+          "open": [
+            "12:00-22:00"
+          ],
+          "today": false
+        },
+        {
+          "name": "Friday",
+          "open": [
+            "12:00-22:00"
+          ],
+          "today": false
+        },
+        {
+          "name": "Saturday",
+          "open": [
+            "12:00-22:00"
+          ],
+          "today": false
+        },
+        {
+          "name": "Sunday",
+          "open": [
+            "12:00-22:00"
+          ],
+          "today": false
+        }
+      ]
+    },
+    "id": "osm-node-42",
+    "lat": 50.8798,
+    "lng": 4.7005,
+    "name": "Lalibela",
+    "osm_url": "https://www.openstreetmap.org/node/42",
+    "url": null,
+    "visits": []
+  },
+  "status": "updated"
+}

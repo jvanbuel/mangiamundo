@@ -121,6 +121,9 @@ final class AppModel {
         reminders.onOpen = { [weak self] country, badges in self?.openFromNotification(country: country, badges: badges) }
         remindersOn = defaults.bool(forKey: "mangiamundo.reminders") ? await reminders.isAllowed() : false
         world = World.bundled()
+        Task { [weak self, events = api.signedOut] in
+            for await _ in events { await self?.signedOut() }
+        }
         loadServer()
         do {
             catalog = try await api.catalog()
@@ -307,7 +310,8 @@ final class AppModel {
                 }
                 celebrations = (try? await api.celebrations(areaID: here.area.id)) ?? []
                 await announceConfirmedAdditions()
-                await rescheduleReminders()
+                // On its own, so loading doesn't wait for it.
+                Task { await rescheduleReminders() }
             } catch {
                 guard !Task.isCancelled else { return }
                 self.error = error.localizedDescription
@@ -346,9 +350,13 @@ final class AppModel {
         defaults.set(remindersOn, forKey: "mangiamundo.reminders")
     }
 
+    /// Schedules what the server plans for the area. Without an answer, what was scheduled stays.
     private func rescheduleReminders() async {
-        guard remindersOn else { return }
-        await reminders.schedule(ReminderPlan.plan(celebrations: celebrations, events: discover?.events ?? [], now: Date()))
+        guard remindersOn, let here = location else { return }
+        guard let plan = try? await api.reminders(areaID: here.area.id) else { return }
+        // Turned off or moved meanwhile: this plan is no longer wanted.
+        guard remindersOn, location?.area.id == here.area.id else { return }
+        await reminders.schedule(ReminderSchedule.requests(for: plan, now: Date()))
     }
 
     func select(_ code: String?) {
@@ -945,6 +953,17 @@ final class AppModel {
             self.toast("Account deleted. You start fresh on this device.")
             await self.accountChanged()
         }
+    }
+
+    /// The server no longer knows this device: it was signed out from another device, or its
+    /// account is gone. Says so, and shows everything again as for someone without an
+    /// account, so nothing of the old account stays on screen as if it were still here. A
+    /// new account only starts with the next check-in or other change.
+    private func signedOut() async {
+        toast("You were signed out. Sign in or use a recovery code to get your progress back.")
+        recoveryCode = nil
+        linkCode = nil
+        await accountChanged()
     }
 
     /// Goes up with every change of account, so an answer for the previous one can be told apart.

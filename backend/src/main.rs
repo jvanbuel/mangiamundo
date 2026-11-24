@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use mangiamundo::config::{Config, ProviderKind};
 use mangiamundo::providers::{self, cached::CachedDirectory, osm};
-use mangiamundo::{api, auth, calendar, push, store, AppState};
+use mangiamundo::{account, api, auth, calendar, push, store, AppState};
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
@@ -11,6 +11,7 @@ async fn main() -> anyhow::Result<()> {
     let config = Config::from_env()?;
     let (mut places, mut areas) = providers::build(&config)?;
     let db = store::connect(&config.database_url).await?;
+    let limits = api::Limits::default();
     if config.provider == ProviderKind::Osm {
         // Belgium comes from a daily import, so searches there skip the slow live query.
         let http = reqwest::Client::builder()
@@ -22,7 +23,7 @@ async fn main() -> anyhow::Result<()> {
         ));
         places = Arc::new(osm::WithImport::new(db.clone(), places));
         // Nominatim answers one request per second for everyone, so ask it as little as possible.
-        areas = Arc::new(CachedDirectory::new(db.clone(), areas));
+        areas = Arc::new(CachedDirectory::new(db.clone(), areas, limits.clone()));
     }
     let pusher = push::Pusher::load(
         &db,
@@ -32,7 +33,7 @@ async fn main() -> anyhow::Result<()> {
     .await?;
     let state = AppState {
         loads: Default::default(),
-        limits: Default::default(),
+        limits,
         db,
         places,
         areas,
@@ -63,6 +64,9 @@ async fn main() -> anyhow::Result<()> {
             std::time::Duration::from_secs(config.push_interval_secs),
         ));
     }
+
+    // Accounts nobody came back to, expired codes and old reminder records go once a day.
+    tokio::spawn(account::run_cleanup(state.clone()));
 
     let mut app = api::router(state);
     if let Some(dir) = config

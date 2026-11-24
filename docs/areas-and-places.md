@@ -37,6 +37,26 @@ Finding the city and postal code around a GPS position is answered from the cach
 outlines when both are among them, and otherwise by Nominatim, whose answer is kept
 in memory for a day per cell of about 100 m. So people opening the app in a place
 someone has played before don't queue behind Nominatim's one request per second.
+A submitted search (`GET /api/areas`) is kept in memory the same way, by what was typed
+in lower case with single spaces: a day when it found something, ten minutes when it
+found nothing. Suggestions while typing come from Photon and never wait on Nominatim.
+
+What is left does go to Nominatim, and is counted per client address (the one Fly's
+proxy reports in `Fly-Client-IP`; an IPv6 address counts as its /64), so a client that
+loops uses up its own lookups rather than everyone's turns. Answers from memory or the
+cache are not counted:
+
+| Lookup | Per minute | Per hour |
+|---|---|---|
+| A new search | 10 | 60 |
+| A position in a new cell, outside the cached outlines | 5 | 30 |
+| The outline of an area nobody opened before | 20 | 100 |
+
+Past that the answer is a 429 `too_many_requests`. So is the answer to a lookup that
+waited 10 seconds for its turn at Nominatim without getting it: about ten are waiting
+then, and the client can try again in a moment. A request Nominatim doesn't answer
+within 15 seconds fails with `upstream`, and the next one gets its turn. The counts and
+the memory live in the one server process and start empty after a restart.
 
 ## From a place a player adds to a place on OpenStreetMap
 

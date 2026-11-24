@@ -294,7 +294,8 @@ async fn tells_subscribers_once_about_new_food_from_the_import() {
         .as_str()
         .unwrap()
         .to_string();
-    let user = store::user_for_token(&db, &token).await.unwrap().unwrap();
+    let session = mangiamundo::account::session_for_token(&db, &token, START).await;
+    let user = session.unwrap().unwrap().user;
     let (p256dh, auth) = browser_keys();
     let body = serde_json::json!({
         "endpoint": format!("{push_url}/push/me"),

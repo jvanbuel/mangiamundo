@@ -44,7 +44,7 @@ async function raw<T>(method: string, path: string, token: string | null, body?:
 
 let pendingToken: Promise<string> | null = null;
 
-/** The anonymous account of this device, created on first use. */
+/** The anonymous account of this device, created the first time it has something to keep. */
 function token(): Promise<string> {
 	const stored = localStorage.getItem(TOKEN_KEY);
 	if (stored) return Promise.resolve(stored);
@@ -60,18 +60,84 @@ function token(): Promise<string> {
 	return pendingToken;
 }
 
-async function authed<T>(method: string, path: string, body?: unknown): Promise<T> {
+let signedOutListener: (() => void) | null = null;
+
+/** Calls `listener` when the server turns out not to know this device's token any more. */
+export function onSignedOut(listener: () => void) {
+	signedOutListener = listener;
+}
+
+/**
+ * The server answered 401 to `sent`: the device was signed out (from another device, or
+ * its account was deleted). The token goes and the app is told, so it can say so. No new
+ * account is made here: that waits for the next write. A newer token, such as one a
+ * restore stored meanwhile, stays.
+ */
+function signedOut(sent: string) {
+	if (localStorage.getItem(TOKEN_KEY) !== sent) return;
+	localStorage.removeItem(TOKEN_KEY);
+	signedOutListener?.();
+}
+
+const unauthorized = (error: unknown) => error instanceof ApiError && error.status === 401;
+
+/**
+ * Reads something the server also shows to nobody in particular: with this device's
+ * token when it has one, without an account otherwise. Reading never makes an account.
+ */
+async function read<T>(path: string): Promise<T> {
+	const sent = localStorage.getItem(TOKEN_KEY);
+	try {
+		return await raw<T>('GET', path, sent);
+	} catch (error) {
+		if (!sent || !unauthorized(error)) throw error;
+		signedOut(sent);
+		// With the token a restore stored meanwhile, or as nobody.
+		return raw<T>('GET', path, localStorage.getItem(TOKEN_KEY));
+	}
+}
+
+/** Reads something of the account's: `none` when this device has no account (any more). */
+async function mine<T>(path: string, none: T): Promise<T> {
+	const sent = localStorage.getItem(TOKEN_KEY);
+	if (!sent) return none;
+	try {
+		return await raw<T>('GET', path, sent);
+	} catch (error) {
+		if (!unauthorized(error)) throw error;
+		signedOut(sent);
+		const newer = localStorage.getItem(TOKEN_KEY);
+		return newer ? raw<T>('GET', path, newer) : none;
+	}
+}
+
+/**
+ * Changes something, as this device's account, which is made now when there is none yet.
+ * A device that was signed out is told so and the change fails: doing it again starts a
+ * new account, knowingly.
+ */
+async function write<T>(method: string, path: string, body?: unknown): Promise<T> {
 	const sent = await token();
 	try {
 		return await raw<T>(method, path, sent, body);
 	} catch (error) {
-		// The server no longer knows this token (e.g. its database was reset): start over once.
-		// A newer token, such as one a restore stored meanwhile, stays.
-		if (error instanceof ApiError && error.status === 401) {
-			if (localStorage.getItem(TOKEN_KEY) === sent) localStorage.removeItem(TOKEN_KEY);
-			return raw<T>(method, path, await token(), body);
-		}
-		throw error;
+		if (!unauthorized(error)) throw error;
+		signedOut(sent);
+		const newer = localStorage.getItem(TOKEN_KEY);
+		if (newer) return raw<T>(method, path, newer, body);
+		throw new ApiError(401, 'This device was signed out. Sign in again, or repeat this to start afresh here.', 'unauthorized');
+	}
+}
+
+/** Like `write`, for a change that only matters to an account that exists: nothing happens without one. */
+async function writeMine(method: string, path: string, body?: unknown): Promise<void> {
+	const sent = localStorage.getItem(TOKEN_KEY);
+	if (!sent) return;
+	try {
+		await raw<void>(method, path, sent, body);
+	} catch (error) {
+		if (!unauthorized(error)) throw error;
+		signedOut(sent);
 	}
 }
 
@@ -84,81 +150,75 @@ export const health = () => raw<Health>('GET', '/api/health', null);
 
 export const catalog = () => raw<Catalog>('GET', '/api/countries', null);
 
-export const discover = (areaId: string) => authed<Discover>('GET', `/api/discover?${area(areaId)}&${tz()}`);
+export const discover = (areaId: string) => read<Discover>(`/api/discover?${area(areaId)}&${tz()}`);
 
 /** Distances are measured from `from` when given, otherwise from the area's centre. */
 export const places = (areaId: string, country: string, from: { lat: number; lng: number } | null) =>
-	authed<Place[]>(
-		'GET',
-		`/api/places?${area(areaId)}&country=${country}${from ? `&lat=${from.lat}&lng=${from.lng}` : ''}`
+	read<Place[]>(`/api/places?${area(areaId)}&country=${country}${from ? `&lat=${from.lat}&lng=${from.lng}` : ''}`
 	);
 
 /** A random unvisited place to try, open now unless `open` is false. */
 export const suggestion = (areaId: string, from: { lat: number; lng: number } | null, exclude: string[], open: boolean) =>
-	authed<Suggestion>(
-		'GET',
-		`/api/suggestion?${area(areaId)}&open=${open}&exclude=${exclude.map(encodeURIComponent).join(',')}${from ? `&lat=${from.lat}&lng=${from.lng}` : ''}`
+	read<Suggestion>(`/api/suggestion?${area(areaId)}&open=${open}&exclude=${exclude.map(encodeURIComponent).join(',')}${from ? `&lat=${from.lat}&lng=${from.lng}` : ''}`
 	);
 
 /** One place with all of the user's visits; the distance is measured from `from` when given. */
 export const place = (placeId: string, from: { lat: number; lng: number } | null) =>
-	authed<Place>(
-		'GET',
-		`/api/places/${encodeURIComponent(placeId)}${from ? `?lat=${from.lat}&lng=${from.lng}` : ''}`
+	read<Place>(`/api/places/${encodeURIComponent(placeId)}${from ? `?lat=${from.lat}&lng=${from.lng}` : ''}`
 	);
 
 /** Checks in, and answers with the progress in the area afterwards and what the check-in unlocked. */
 export const checkIn = (placeId: string, areaId: string, here: { lat: number; lng: number } | null) =>
-	authed<VisitResult>('POST', `/api/places/${encodeURIComponent(placeId)}/visits?${area(areaId)}&${tz()}`, {
+	write<VisitResult>('POST', `/api/places/${encodeURIComponent(placeId)}/visits?${area(areaId)}&${tz()}`, {
 		position: here
 	});
 
-export const removeVisit = (visitId: number) => authed<void>('DELETE', `/api/visits/${visitId}`);
+export const removeVisit = (visitId: number) => write<void>('DELETE', `/api/visits/${visitId}`);
 
 /** Makes (or moves to this area) the public page of the user's progress. */
-export const shareProgress = (areaId: string) => authed<ShareLink>('POST', `/api/share?${area(areaId)}`);
+export const shareProgress = (areaId: string) => write<ShareLink>('POST', `/api/share?${area(areaId)}`);
 
 /** Turns the public page off. */
-export const unshareProgress = () => authed<void>('DELETE', '/api/share');
+export const unshareProgress = () => writeMine('DELETE', '/api/share');
 
 /** A public page for one check-in. */
-export const shareVisit = (visitId: number) => authed<ShareLink>('POST', `/api/visits/${visitId}/share`);
+export const shareVisit = (visitId: number) => write<ShareLink>('POST', `/api/visits/${visitId}/share`);
 
 /** "This place has closed": hides it for this user, and for everyone after a second report. */
 export const reportClosed = (placeId: string) =>
-	authed<void>('PUT', `/api/places/${encodeURIComponent(placeId)}/closed`);
+	write<void>('PUT', `/api/places/${encodeURIComponent(placeId)}/closed`);
 
 /** Adds a restaurant OpenStreetMap lacks. Only this user sees it until OSM has it. */
-export const addPlace = (place: AddPlace) => authed<AddedPlace>('POST', '/api/places', place);
+export const addPlace = (place: AddPlace) => write<AddedPlace>('POST', '/api/places', place);
 
 /** Restaurants in the area OpenStreetMap gives no cuisine, nearest to `from` first. */
 export const unknownPlaces = (areaId: string, from: { lat: number; lng: number } | null) =>
-	authed<UnknownPlace[]>('GET', `/api/unknown-places?${area(areaId)}${from ? `&lat=${from.lat}&lng=${from.lng}` : ''}`);
+	read<UnknownPlace[]>(`/api/unknown-places?${area(areaId)}${from ? `&lat=${from.lat}&lng=${from.lng}` : ''}`);
 
 /** "It serves food from …": like adding a place, only this user sees it until OSM has the cuisine. */
 export const suggestCuisine = (placeId: string, country: string) =>
-	authed<AddedPlace>('POST', `/api/unknown-places/${encodeURIComponent(placeId)}/cuisine`, { country });
+	write<AddedPlace>('POST', `/api/unknown-places/${encodeURIComponent(placeId)}/cuisine`, { country });
 
 /** "It serves no particular country's food": hides it for this user, and for everyone after two. */
 export const noCuisine = (placeId: string) =>
-	authed<void>('PUT', `/api/unknown-places/${encodeURIComponent(placeId)}/no-cuisine`);
+	write<void>('PUT', `/api/unknown-places/${encodeURIComponent(placeId)}/no-cuisine`);
 
 /** Reads a place again from OpenStreetMap, for an edit made there since the daily import. */
 export const refreshPlace = (placeId: string, from: { lat: number; lng: number } | null) =>
-	authed<RefreshResult>(
+	write<RefreshResult>(
 		'POST',
 		`/api/places/${encodeURIComponent(placeId)}/refresh${from ? `?lat=${from.lat}&lng=${from.lng}` : ''}`
 	);
 
 /** Asks OpenStreetMap for restaurants within 150 m of `at`, for one just mapped there. */
 export const refreshNearby = (at: { lat: number; lng: number }) =>
-	authed<NearbyResult>('POST', `/api/places/nearby/refresh?lat=${at.lat}&lng=${at.lng}`);
+	write<NearbyResult>('POST', `/api/places/nearby/refresh?lat=${at.lat}&lng=${at.lng}`);
 
 /** The restaurants this user added, newest first, with their rewards. */
-export const additions = () => authed<Addition[]>('GET', '/api/additions');
+export const additions = () => mine<Addition[]>('/api/additions', []);
 
 /** The user was told about these confirmed additions, by `id` (at most 100). */
-export const markAdditionsSeen = (ids: string[]) => authed<void>('PUT', '/api/additions/seen', { ids });
+export const markAdditionsSeen = (ids: string[]) => writeMine('PUT', '/api/additions/seen', { ids });
 
 /** Cities and postal codes matching what someone typed. */
 export const searchAreas = (query: string) => raw<Area[]>('GET', `/api/areas?q=${encodeURIComponent(query)}`, null);
@@ -191,22 +251,28 @@ export interface PushTarget {
 }
 
 export const savePushSubscription = (subscription: PushSubscriptionJSON, target: PushTarget) =>
-	authed<void>('PUT', '/api/push/subscription', { ...subscription, ...target });
+	write<void>('PUT', '/api/push/subscription', { ...subscription, ...target });
 
 export const deletePushSubscription = (endpoint: string) =>
-	authed<void>('POST', '/api/push/subscription/delete', { endpoint });
+	writeMine('POST', '/api/push/subscription/delete', { endpoint });
 
-/** Whether this device has an account yet; it gets one on first use. */
+/** Whether this device has an account yet; it gets one with its first check-in or other change. */
 export const hasAccount = () => localStorage.getItem(TOKEN_KEY) !== null;
 
-/** The account's recovery code status and the devices signed in to it. */
-export const account = () => authed<Account>('GET', '/api/account');
+/** What a device without an account shows: nothing is on the server until its first change. */
+const NO_ACCOUNT: Account = { created_at: 0, recovery_code_created_at: null, devices: [], public_profile: null, identities: [] };
+
+/**
+ * The account's recovery code status and the devices signed in to it. A device without an
+ * account has an empty one, with no devices.
+ */
+export const account = () => mine<Account>('/api/account', NO_ACCOUNT);
 
 /** A new recovery code, shown once. The previous one stops working. */
-export const newRecoveryCode = () => authed<{ code: string }>('POST', '/api/account/recovery-code');
+export const newRecoveryCode = () => write<{ code: string }>('POST', '/api/account/recovery-code');
 
 /** A code that signs another device in to this account, once, within 10 minutes. */
-export const newLinkCode = () => authed<{ code: string; expires_at: number }>('POST', '/api/account/link-code');
+export const newLinkCode = () => write<{ code: string; expires_at: number }>('POST', '/api/account/link-code');
 
 /**
  * Signs this device in to the account of a recovery or link code. What this device did
@@ -226,7 +292,7 @@ export const signInWithEmail = (email: string, code: string) => switchAccount('/
 /** Signs in with an ID token from Google's or Apple's sign-in. */
 export const signInWith = (provider: 'google' | 'apple', idToken: string) => switchAccount(`/api/auth/${provider}`, { id_token: idToken });
 
-/** Signs this device out of its account; it starts afresh with a new, empty one. */
+/** Signs this device out of its account; it starts afresh, without one. */
 export async function signOut(): Promise<void> {
 	const me = (await account()).devices.find((d) => d.current);
 	if (me) await removeDevice(me.id);
@@ -252,10 +318,10 @@ async function switchAccount(path: string, fields: Record<string, string>): Prom
 }
 
 /** Signs another device out of this account. */
-export const removeDevice = (id: string) => authed<void>('DELETE', `/api/account/devices/${encodeURIComponent(id)}`);
+export const removeDevice = (id: string) => writeMine('DELETE', `/api/account/devices/${encodeURIComponent(id)}`);
 
-/** Deletes the account and everything in it. This device starts over with a new one. */
+/** Deletes the account and everything in it. This device starts over without one. */
 export async function deleteAccount(): Promise<void> {
-	await authed<void>('DELETE', '/api/account');
+	await writeMine('DELETE', '/api/account');
 	localStorage.removeItem(TOKEN_KEY);
 }

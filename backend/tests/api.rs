@@ -42,9 +42,20 @@ async fn app_with_notes(
     osm_notes_token: Option<String>,
     start: i64,
 ) -> (Router, Arc<AtomicI64>) {
+    let (state, now) = state_with_notes(db, osm_notes_url, osm_notes_token, start);
+    (api::router(state), now)
+}
+
+/// The state of such an app, for a test that needs a hand in it.
+fn state_with_notes(
+    db: sqlx::SqlitePool,
+    osm_notes_url: Option<String>,
+    osm_notes_token: Option<String>,
+    start: i64,
+) -> (AppState, Arc<AtomicI64>) {
     let now = Arc::new(AtomicI64::new(start));
     let clock = now.clone();
-    let router = api::router(AppState {
+    let state = AppState {
         loads: Default::default(),
         limits: Default::default(),
         db,
@@ -56,8 +67,8 @@ async fn app_with_notes(
         osm_notes_url,
         osm_notes_token,
         auth: Default::default(),
-    });
-    (router, now)
+    };
+    (state, now)
 }
 
 async fn call(
@@ -236,13 +247,14 @@ async fn visiting_every_place_completes_a_country() {
     assert!(places.windows(2).all(|w| key(&w[0]) <= key(&w[1])));
     assert!(places.iter().all(|p| p["visits"] == Value::Array(vec![])));
 
-    // First check-in, made on the spot: 10 XP for the visit, 15 for being there, 50 for the country.
+    // First check-in, made on the spot: 10 XP for the visit, 15 for being there, 50 for the
+    // country, and 100 for the "taste a new country" quest it finishes.
     let first = &places[0];
     let here = at(first);
     let (status, visit) = call(&app, "POST", &visits_uri(first), Some(&token), Some(&here)).await;
     assert_eq!(status, StatusCode::OK);
     assert_eq!(visit["visit"]["verified"], true);
-    assert_eq!(visit["profile"]["xp"], 75);
+    assert_eq!(visit["profile"]["xp"], 175);
 
     for place in &places[1..] {
         let uri = visits_uri(place);
@@ -334,7 +346,8 @@ async fn visits_are_a_history_with_one_visit_per_day() {
     assert_eq!(status, StatusCode::OK);
     assert_eq!(first["visit"]["at"], START);
     assert_eq!(first["visit"]["verified"], true);
-    assert_eq!(first["profile"]["xp"], 75);
+    // With the 100 XP of the "taste a new country" quest.
+    assert_eq!(first["profile"]["xp"], 175);
     let (_, same_day) = call(&app, "POST", &uri, Some(&token), None).await;
     assert_eq!(same_day["visit"], first["visit"]);
 
@@ -985,8 +998,10 @@ async fn visits_between_counts_distinct_places_inside_the_window() {
     )
     .await
     .unwrap();
-    let token = store::create_user(&db).await.unwrap();
-    let user = store::user_for_token(&db, &token).await.unwrap().unwrap();
+    use mangiamundo::account;
+    let token = account::create_user(&db, None, START).await.unwrap();
+    let session = account::session_for_token(&db, &token, START).await;
+    let user = session.unwrap().unwrap().user;
 
     let day = |s: &str| s.parse::<chrono::NaiveDate>().unwrap();
     let (first, last) = (day("2026-12-01"), day("2026-12-31"));
@@ -1602,6 +1617,86 @@ async fn writes_contract_fixtures() {
         "link-code",
         &serde_json::json!({ "code": "ABCD-EFGH", "expires_at": START + 600 }),
     );
+
+    // The server's version is real; the commit is only set in a Docker build.
+    let mut health = get("/api/health".into()).await;
+    health["commit"] = "0123abc".into();
+    write("health", &health);
+
+    // Tokens, recovery codes and the slugs of shared pages are random.
+    let (status, mut new) = call(&app, "POST", "/api/session", None, None).await;
+    assert_eq!(status, StatusCode::OK);
+    assert!(new["token"].is_string());
+    new["token"] = "0123456789abcdef0123456789abcdef".into();
+    write("session", &new);
+    let uri = "/api/account/recovery-code";
+    let (status, mut recovery) = call(&app, "POST", uri, Some(&token), None).await;
+    assert_eq!(status, StatusCode::OK);
+    assert!(recovery["code"].is_string());
+    recovery["code"] = "ABCD-EFGH-JKLM-NPQR-STUV".into();
+    write("recovery-code", &recovery);
+    let (status, mut link) = post_shared(&app, &format!("/api/share?{HERE}"), &token).await;
+    assert_eq!(status, StatusCode::OK);
+    let page = "https://mangiamundo.test/p/";
+    assert!(link["url"].as_str().unwrap().starts_with(page));
+    link["url"] = format!("{page}abcd2345ef").into();
+    link["image_url"] = format!("{page}abcd2345ef/card.png").into();
+    write("share-link", &link);
+
+    // A suggestion is drawn at random: with every other place excluded, one is left.
+    let everywhere = get(format!("/api/places?{HERE}")).await;
+    let everywhere = everywhere.as_array().unwrap();
+    let id = |p: &Value| p["id"].as_str().unwrap().to_string();
+    let only = everywhere
+        .iter()
+        .find(|p| {
+            p["visits"].as_array().unwrap().is_empty()
+                && p["countries"].as_array().unwrap().len() == 1
+                && p["hours"]["status"]["open"] == true
+                && !id(p).starts_with("user-")
+        })
+        .map(id)
+        .unwrap();
+    let others: Vec<String> = everywhere.iter().map(id).filter(|i| *i != only).collect();
+    let suggestion = get(format!("/api/suggestion?{HERE}&exclude={}", others.join(","))).await;
+    assert_eq!(suggestion["place"]["id"], only.as_str());
+    write("suggestion", &suggestion);
+
+    // An area that is loading: the fetch is begun by hand, and so slow it stays where it began.
+    let db = store::connect("sqlite::memory:").await.unwrap();
+    let (state, _) = state_with_notes(db, None, None, START);
+    let loads = state.loads.clone();
+    let _loading = loads.begin("demo-leuven");
+    loads.step("demo-leuven", 15.0, 95.0, "Looking for restaurants", 1e9);
+    let loading = api::router(state);
+    let (status, progress) =
+        call(&loading, "GET", "/api/areas/demo-leuven/progress", None, None).await;
+    assert_eq!(status, StatusCode::OK);
+    write("area-progress", &progress);
+
+    // Reading again from OpenStreetMap: a place that got hours there, and one mapped since
+    // that the user had added.
+    let (osm, _, fake, _) = app_with_osm().await;
+    let token = session(&osm).await;
+    let mut edited = osm_place(42, "Lalibela", "ethiopian", 50.8798, 4.7005);
+    edited.opening_hours = Some("Mo-Su 12:00-22:00".into());
+    let found = mangiamundo::providers::Lookup::Found(edited);
+    fake.places.lock().unwrap().insert("osm-node-42".into(), found);
+    let uri = "/api/places/osm-node-42/refresh?lat=50.88&lng=4.7";
+    let (status, refreshed) = call(&osm, "POST", uri, Some(&token), None).await;
+    assert_eq!(status, StatusCode::OK);
+    write("refresh", &refreshed);
+    let new = r#"{"name":"Inti","country":"PE","lat":50.8801,"lng":4.7009,"note":false}"#;
+    let (status, _) = call(&osm, "POST", "/api/places", Some(&token), Some(new)).await;
+    assert_eq!(status, StatusCode::OK);
+    *fake.nearby.lock().unwrap() = vec![
+        osm_place(42, "Lalibela", "ethiopian", 50.8798, 4.7005),
+        osm_place(43, "Restaurant Inti", "peruvian", 50.8801, 4.7009),
+    ];
+    let uri = "/api/places/nearby/refresh?lat=50.88&lng=4.7";
+    let (status, nearby) = call(&osm, "POST", uri, Some(&token), None).await;
+    assert_eq!(status, StatusCode::OK);
+    write("nearby", &nearby);
 
     // What a newer server might send: enum values this app version doesn't know.
     let mut newer = discover.clone();
@@ -2521,6 +2616,99 @@ async fn link_codes_are_limited_per_hour() {
     assert_error(&error, "too_many_requests");
 }
 
+/// `POST /api/session` as Fly's proxy passes it on from `address`.
+async fn session_from(app: &Router, address: &str) -> StatusCode {
+    let request = Request::builder()
+        .method("POST")
+        .uri("/api/session")
+        .header("fly-client-ip", address)
+        .body(Body::empty())
+        .unwrap();
+    app.clone().oneshot(request).await.unwrap().status()
+}
+
+#[tokio::test]
+async fn new_accounts_are_limited_per_address_and_hour() {
+    let (app, now) = app_with_clock().await;
+    for _ in 0..20 {
+        assert_eq!(session_from(&app, "203.0.113.7").await, StatusCode::OK);
+    }
+    assert_eq!(session_from(&app, "203.0.113.7").await, StatusCode::TOO_MANY_REQUESTS);
+    let (status, error) = call(&app, "GET", "/api/health", None, None).await;
+    assert_eq!((status, &error["ok"]), (StatusCode::OK, &Value::Bool(true)));
+    // Someone else is not held up, and one connection's IPv6 addresses count as one.
+    assert_eq!(session_from(&app, "203.0.113.8").await, StatusCode::OK);
+    for _ in 0..20 {
+        assert_eq!(session_from(&app, "2001:db8:1:2::1").await, StatusCode::OK);
+    }
+    assert_eq!(session_from(&app, "2001:db8:1:2:a:b:c:d").await, StatusCode::TOO_MANY_REQUESTS);
+    assert_eq!(session_from(&app, "2001:db8:1:3::1").await, StatusCode::OK);
+    // The accounts that were made keep working, and an hour later there is room again.
+    now.fetch_add(3600, Ordering::Relaxed);
+    assert_eq!(session_from(&app, "203.0.113.7").await, StatusCode::OK);
+}
+
+/// Without the proxy's header (tests, development) only the limit for everyone applies.
+#[tokio::test]
+async fn new_accounts_are_limited_for_everyone_together() {
+    let app = app().await;
+    for _ in 0..1000 {
+        let (status, _) = call(&app, "POST", "/api/session", None, None).await;
+        assert_eq!(status, StatusCode::OK);
+    }
+    let (status, error) = call(&app, "POST", "/api/session", None, None).await;
+    assert_eq!(status, StatusCode::TOO_MANY_REQUESTS);
+    assert_error(&error, "too_many_requests");
+}
+
+/// What a client shows before the first check-in needs no account, and makes none.
+#[tokio::test]
+async fn everything_a_client_reads_at_first_works_without_an_account() {
+    let db = store::connect("sqlite::memory:").await.unwrap();
+    let (app, _) = app_with(db.clone(), None, START).await;
+    let (status, discover) = call(&app, "GET", &format!("/api/discover?{HERE}"), None, None).await;
+    assert_eq!(status, StatusCode::OK);
+    let country = discover["countries"][0]["code"].as_str().unwrap();
+    let (status, places) = call(&app, "GET", &format!("/api/places?{HERE}&country={country}"), None, None).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(places[0]["visits"], serde_json::json!([]));
+    let place = places[0]["id"].as_str().unwrap();
+    let reads = [
+        format!("/api/places/{place}"),
+        format!("/api/suggestion?{HERE}&open=false"),
+        format!("/api/unknown-places?{HERE}"),
+        format!("/api/reminders?{HERE}"),
+        format!("/api/celebrations?{HERE}"),
+        "/api/countries".to_string(),
+        "/api/auth/providers".to_string(),
+    ];
+    for uri in &reads {
+        let (status, body) = call(&app, "GET", uri, None, None).await;
+        assert_eq!(status, StatusCode::OK, "{uri}: {body}");
+    }
+    let users: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM users")
+        .fetch_one(&db)
+        .await
+        .unwrap();
+    assert_eq!(users, 0);
+
+    // A token the server doesn't know is not anonymous: the device was signed out, and
+    // its app says so.
+    let token = session(&app).await;
+    let (_, account) = call(&app, "GET", "/api/account", Some(&token), None).await;
+    let device = account["devices"][0]["id"].as_str().unwrap();
+    let (status, _) = call(&app, "DELETE", &format!("/api/account/devices/{device}"), Some(&token), None).await;
+    assert_eq!(status, StatusCode::NO_CONTENT);
+    for uri in &reads[..4] {
+        let (status, body) = call(&app, "GET", uri, Some(&token), None).await;
+        assert_eq!(status, StatusCode::UNAUTHORIZED, "{uri}");
+        assert_error(&body, "unauthorized");
+    }
+    // A write needs an account.
+    let (status, _) = call(&app, "POST", &format!("/api/places/{place}/visits?{HERE}"), None, Some("{}")).await;
+    assert_eq!(status, StatusCode::UNAUTHORIZED);
+}
+
 /// A restore that read its session before another restore moved that session to a new
 /// account merges that new account, not the stale one.
 #[tokio::test]
@@ -2717,16 +2905,27 @@ async fn monthly_quests_pay_once_and_the_streak_shows() {
         None,
     )
     .await;
-    for place in &places.as_array().unwrap()[..2] {
-        call(&app, "POST", &visits_uri(place), Some(&token), None).await;
-    }
+    let places = places.as_array().unwrap();
+    let uri = format!("{}?{HERE}", visits_uri(&places[0]));
+    let (_, first) = call(&app, "POST", &uri, Some(&token), None).await;
+    // Looking doesn't pay anything, however often.
+    let between = discover(app.clone(), token.clone()).await;
+    assert_eq!(check_ins(&between)["done"], false);
+    assert_eq!(between["profile"]["xp"], first["profile"]["xp"]);
+    // The check-in that finishes a quest answers with its XP, with or without an area.
+    let (_, second) = call(&app, "POST", &visits_uri(&places[1]), Some(&token), None).await;
+    let xp = second["profile"]["xp"].as_u64().unwrap();
+    assert!(xp >= first["profile"]["xp"].as_u64().unwrap() + 10 + 50);
     let after = discover(app.clone(), token.clone()).await;
     assert_eq!(check_ins(&after)["done"], true);
     assert_eq!(after["profile"]["streak"], 1);
-    let xp = after["profile"]["xp"].as_u64().unwrap();
-    // Asking again doesn't pay the quest twice.
-    let again = discover(app, token).await;
+    assert_eq!(after["profile"]["xp"].as_u64().unwrap(), xp);
+    // Asking again doesn't pay the quest twice, and neither does checking in again.
+    let again = discover(app.clone(), token.clone()).await;
     assert_eq!(again["profile"]["xp"].as_u64().unwrap(), xp);
+    let (_, repeat) = call(&app, "POST", &uri, Some(&token), None).await;
+    assert_eq!(repeat["profile"]["xp"].as_u64().unwrap(), xp);
+    assert_eq!(repeat["progress"]["profile"]["xp"].as_u64().unwrap(), xp);
     let quest_xp: u64 = after["quests"]["quests"]
         .as_array()
         .unwrap()
@@ -2738,6 +2937,74 @@ async fn monthly_quests_pay_once_and_the_streak_shows() {
 }
 
 #[tokio::test]
+async fn quests_are_paid_per_area_at_check_in_and_taken_back_with_it() {
+    let db = store::connect("sqlite::memory:").await.unwrap();
+    let (app, _) = app_with(db.clone(), None, START).await;
+    let token = session(&app).await;
+    // Who was paid for "two check-ins", per area.
+    let paid = || async {
+        sqlx::query_scalar::<_, String>(
+            "SELECT area_id FROM quest_rewards WHERE quest = 'check-ins' ORDER BY area_id",
+        )
+        .fetch_all(&db)
+        .await
+        .unwrap()
+    };
+    let done = |app: Router, token: String, area: &'static str| async move {
+        let uri = format!("/api/discover?area={area}");
+        let (_, d) = call(&app, "GET", &uri, Some(&token), None).await;
+        let quests = d["quests"]["quests"].as_array().unwrap().clone();
+        let q = quests.into_iter().find(|q| q["id"] == "check-ins").unwrap();
+        (q["progress"].as_u64().unwrap(), q["done"] == true)
+    };
+    // A postal code of Leuven, the city around it, and another city: all three cached.
+    let (_, west) = call(&app, "GET", "/api/places?area=demo-leuven-3000", None, None).await;
+    let (_, tokyo) = call(&app, "GET", "/api/places?area=demo-tokyo", None, None).await;
+    call(&app, "GET", &format!("/api/discover?{HERE}"), None, None).await;
+    let (west, tokyo) = (west.as_array().unwrap(), tokyo.as_array().unwrap());
+
+    // Two check-ins in the postal code, made while looking at the city, finish the quest
+    // in both: the places are in both.
+    let mut visits = Vec::new();
+    for place in &west[..2] {
+        let uri = format!("{}?{HERE}", visits_uri(place));
+        let (status, body) = call(&app, "POST", &uri, Some(&token), None).await;
+        assert_eq!(status, StatusCode::OK);
+        visits.push(body);
+    }
+    assert_eq!(paid().await, ["demo-leuven", "demo-leuven-3000"]);
+    let xp = visits[1]["profile"]["xp"].as_u64().unwrap();
+    assert!(xp >= 2 * 10 + 2 * 50);
+    assert_eq!(visits[1]["progress"]["profile"]["xp"].as_u64().unwrap(), xp);
+    for area in ["demo-leuven", "demo-leuven-3000"] {
+        assert_eq!(done(app.clone(), token.clone(), area).await, (2, true));
+    }
+
+    // They don't count in Tokyo, which has the quest too: one check-in there is one of two.
+    assert_eq!(done(app.clone(), token.clone(), "demo-tokyo").await, (0, false));
+    let uri = format!("{}?area=demo-tokyo", visits_uri(&tokyo[0]));
+    call(&app, "POST", &uri, Some(&token), None).await;
+    assert_eq!(done(app.clone(), token.clone(), "demo-tokyo").await, (1, false));
+    assert_eq!(paid().await, ["demo-leuven", "demo-leuven-3000"]);
+    let uri = format!("{}?area=demo-tokyo", visits_uri(&tokyo[1]));
+    call(&app, "POST", &uri, Some(&token), None).await;
+    assert_eq!(paid().await, ["demo-leuven", "demo-leuven-3000", "demo-tokyo"]);
+
+    // Taking a check-in back takes back the quests it finished, where it finished them.
+    let uri = format!("/api/visits/{}", visits[0]["visit"]["id"]);
+    let (status, _) = call(&app, "DELETE", &uri, Some(&token), None).await;
+    assert_eq!(status, StatusCode::NO_CONTENT);
+    assert_eq!(paid().await, ["demo-tokyo"]);
+    assert_eq!(done(app.clone(), token.clone(), "demo-leuven").await, (1, false));
+    // And checking in again pays them again, once.
+    let uri = visits_uri(&west[0]);
+    let (_, back) = call(&app, "POST", &uri, Some(&token), None).await;
+    assert_eq!(paid().await, ["demo-leuven", "demo-leuven-3000", "demo-tokyo"]);
+    let (_, d) = call(&app, "GET", "/api/discover?area=demo-tokyo", Some(&token), None).await;
+    assert_eq!(d["profile"]["xp"], back["profile"]["xp"]);
+}
+
+#[tokio::test]
 async fn planning_reminders_books_no_quest_rewards() {
     // 1 December 2026, 12:00 UTC: the day the quests reminder is due.
     let first = START + 15 * DAY;
@@ -2745,11 +3012,6 @@ async fn planning_reminders_books_no_quest_rewards() {
     let (app, _) = app_with(db.clone(), None, first).await;
     let token = session(&app).await;
     let (_, places) = call(&app, "GET", &format!("/api/places?{HERE}"), None, None).await;
-    // Two check-ins finish a quest. Without an area, checking in doesn't look at quests.
-    for place in &places.as_array().unwrap()[..2] {
-        let (status, _) = call(&app, "POST", &visits_uri(place), Some(&token), None).await;
-        assert_eq!(status, StatusCode::OK);
-    }
     let booked = || async {
         sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM quest_rewards")
             .fetch_one(&db)
@@ -2757,6 +3019,13 @@ async fn planning_reminders_books_no_quest_rewards() {
             .unwrap()
     };
     assert_eq!(booked().await, 0);
+    // Two check-ins finish quests, which are booked right then, also without an area.
+    for place in &places.as_array().unwrap()[..2] {
+        let (status, _) = call(&app, "POST", &visits_uri(place), Some(&token), None).await;
+        assert_eq!(status, StatusCode::OK);
+    }
+    let finished = booked().await;
+    assert!(finished > 0);
 
     let uri = format!("/api/reminders?{HERE}&days=366");
     let (status, plan) = call(&app, "GET", &uri, Some(&token), None).await;
@@ -2777,7 +3046,7 @@ async fn planning_reminders_books_no_quest_rewards() {
         .map(|r| r["local_date"].as_str().unwrap())
         .collect();
     assert!(dates.is_sorted());
-    assert_eq!(booked().await, 0);
+    assert_eq!(booked().await, finished);
 
     // The plan is the same for nobody in particular, and `days` is how far it looks.
     let (status, anonymous) = call(&app, "GET", &uri, None, None).await;
@@ -2790,12 +3059,12 @@ async fn planning_reminders_books_no_quest_rewards() {
         .unwrap()
         .iter()
         .all(|r| r["local_date"] == "2026-12-01"));
-    assert_eq!(booked().await, 0);
+    assert_eq!(booked().await, finished);
 
-    // Looking at the quests themselves is what books the finished one.
+    // Neither does looking at the quests themselves.
     let uri = format!("/api/discover?{HERE}");
     call(&app, "GET", &uri, Some(&token), None).await;
-    assert!(booked().await > 0);
+    assert_eq!(booked().await, finished);
 }
 
 #[tokio::test]
@@ -2907,4 +3176,143 @@ async fn restaurants_with_unknown_food_can_be_given_a_country_or_none() {
         "{}",
         notes[0]
     );
+}
+
+/// The demo directory, counting how often it is asked.
+#[derive(Default)]
+struct CountedAreas(std::sync::atomic::AtomicUsize);
+
+#[async_trait::async_trait]
+impl mangiamundo::providers::AreaDirectory for CountedAreas {
+    async fn search(&self, query: &str) -> anyhow::Result<Vec<mangiamundo::providers::AreaInfo>> {
+        self.0.fetch_add(1, Ordering::SeqCst);
+        Demo.search(query).await
+    }
+
+    async fn locate(&self, lat: f64, lng: f64) -> anyhow::Result<mangiamundo::providers::Located> {
+        self.0.fetch_add(1, Ordering::SeqCst);
+        Demo.locate(lat, lng).await
+    }
+
+    async fn boundary(&self, id: &str) -> anyhow::Result<Option<mangiamundo::providers::Boundary>> {
+        self.0.fetch_add(1, Ordering::SeqCst);
+        Demo.boundary(id).await
+    }
+}
+
+/// An app whose area directory is cached and limited as the OpenStreetMap one is.
+async fn app_with_cached_areas() -> (Router, Arc<CountedAreas>) {
+    let db = store::connect("sqlite::memory:").await.unwrap();
+    let limits = api::Limits::default();
+    let counted = Arc::new(CountedAreas::default());
+    let areas = mangiamundo::providers::cached::CachedDirectory::new(
+        db.clone(),
+        counted.clone(),
+        limits.clone(),
+    );
+    let router = api::router(AppState {
+        loads: Default::default(),
+        limits,
+        db,
+        places: Arc::new(Demo),
+        areas: Arc::new(areas),
+        cache_ttl_secs: 3600,
+        clock: Arc::new(|| START),
+        push_key: None,
+        osm_notes_url: None,
+        osm_notes_token: None,
+        auth: Default::default(),
+    });
+    (router, counted)
+}
+
+/// A GET as Fly's proxy passes it on from the client at `ip`.
+async fn get_from(app: &Router, ip: &str, uri: &str) -> (StatusCode, Value) {
+    let request = Request::get(uri)
+        .header("fly-client-ip", ip)
+        .body(Body::empty())
+        .unwrap();
+    let response = app.clone().oneshot(request).await.unwrap();
+    let status = response.status();
+    let bytes = response.into_body().collect().await.unwrap().to_bytes();
+    (
+        status,
+        serde_json::from_slice(&bytes).unwrap_or(Value::Null),
+    )
+}
+
+#[tokio::test]
+async fn a_repeated_area_search_asks_the_directory_once() {
+    let (app, counted) = app_with_cached_areas().await;
+    for query in ["leuv", "Leuv", "%20leuv%20", "leuv"] {
+        let uri = format!("/api/areas?q={query}");
+        let (status, found) = get_from(&app, "203.0.113.7", &uri).await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(found[0]["id"], "demo-leuven");
+    }
+    let (_, found) = get_from(&app, "198.51.100.1", "/api/areas?q=leuv").await;
+    assert_eq!(found[0]["id"], "demo-leuven");
+    assert_eq!(counted.0.load(Ordering::SeqCst), 1);
+}
+
+#[tokio::test]
+async fn a_client_looping_on_area_lookups_is_limited_and_others_are_served() {
+    let (app, counted) = app_with_cached_areas().await;
+    let looping = "203.0.113.7";
+
+    // Searching: ten new searches in a minute, and as many repeated ones as it likes.
+    for i in 0..10 {
+        let (status, _) = get_from(&app, looping, &format!("/api/areas?q=town{i}")).await;
+        assert_eq!(status, StatusCode::OK);
+        let (status, _) = get_from(&app, looping, &format!("/api/areas?q=town{i}")).await;
+        assert_eq!(status, StatusCode::OK);
+    }
+    let (status, body) = get_from(&app, looping, "/api/areas?q=leuv").await;
+    assert_eq!(status, StatusCode::TOO_MANY_REQUESTS);
+    assert_eq!(body["code"], "too_many_requests");
+    assert_eq!(counted.0.load(Ordering::SeqCst), 10, "not asked");
+    let (status, _) = get_from(&app, looping, "/api/areas?q=town3").await;
+    assert_eq!(status, StatusCode::OK, "a remembered search is free");
+
+    let (status, found) = get_from(&app, "198.51.100.1", "/api/areas?q=leuv").await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(found[0]["id"], "demo-leuven");
+    // Someone on the same IPv6 network is the same client; the next network is not.
+    let (status, _) = get_from(&app, "2001:db8:0:1::1", "/api/areas?q=gent").await;
+    assert_eq!(status, StatusCode::OK);
+    for i in 0..9 {
+        get_from(&app, "2001:db8:0:1::2", &format!("/api/areas?q=city{i}")).await;
+    }
+    let (status, _) = get_from(&app, "2001:db8:0:1::3", "/api/areas?q=brugge").await;
+    assert_eq!(status, StatusCode::TOO_MANY_REQUESTS);
+    let (status, _) = get_from(&app, "2001:db8:0:2::3", "/api/areas?q=brugge").await;
+    assert_eq!(status, StatusCode::OK);
+
+    // Locating: five new cells in a minute.
+    for i in 0..5 {
+        let uri = format!("/api/areas/locate?lat=1{i}&lng=4.7");
+        assert_eq!(get_from(&app, looping, &uri).await.0, StatusCode::OK);
+    }
+    let (status, body) = get_from(&app, looping, "/api/areas/locate?lat=50.8798&lng=4.71").await;
+    assert_eq!(status, StatusCode::TOO_MANY_REQUESTS);
+    assert_eq!(body["code"], "too_many_requests");
+    let (status, _) = get_from(&app, looping, "/api/areas/locate?lat=12&lng=4.7").await;
+    assert_eq!(status, StatusCode::OK, "a remembered cell is free");
+    let (status, here) =
+        get_from(&app, "198.51.100.1", "/api/areas/locate?lat=50.8798&lng=4.71").await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(here["city"]["id"], "demo-leuven");
+
+    // Outlines of areas nobody opened before: twenty in a minute.
+    for i in 0..20 {
+        let uri = format!("/api/discover?area=demo-nowhere-{i}");
+        assert_eq!(get_from(&app, looping, &uri).await.0, StatusCode::NOT_FOUND);
+    }
+    let (status, body) = get_from(&app, looping, "/api/discover?area=demo-leuven").await;
+    assert_eq!(status, StatusCode::TOO_MANY_REQUESTS);
+    assert_eq!(body["code"], "too_many_requests");
+    let (status, _) = get_from(&app, "198.51.100.1", "/api/discover?area=demo-leuven").await;
+    assert_eq!(status, StatusCode::OK);
+    let (status, _) = get_from(&app, looping, "/api/discover?area=demo-leuven").await;
+    assert_eq!(status, StatusCode::OK, "an area that is cached is free");
 }

@@ -149,7 +149,7 @@ pub struct Loads(Arc<Mutex<HashMap<String, Load>>>);
 
 impl Loads {
     /// Counts a fetch of the area until the returned guard drops, also on an error.
-    fn begin<'a>(&'a self, id: &'a str) -> LoadDone<'a> {
+    pub fn begin<'a>(&'a self, id: &'a str) -> LoadDone<'a> {
         self.0
             .lock()
             .unwrap()
@@ -159,7 +159,7 @@ impl Loads {
         LoadDone(self, id)
     }
 
-    fn step(&self, id: &str, from: f64, to: f64, text: &'static str, expected_secs: f64) {
+    pub fn step(&self, id: &str, from: f64, to: f64, text: &'static str, expected_secs: f64) {
         if let Some(load) = self.0.lock().unwrap().get_mut(id) {
             load.step = Some(LoadStep {
                 from,
@@ -193,7 +193,7 @@ impl Loads {
 }
 
 /// Ends one fetch of an area; the progress goes when the last concurrent fetch ends.
-struct LoadDone<'a>(&'a Loads, &'a str);
+pub struct LoadDone<'a>(&'a Loads, &'a str);
 
 impl Drop for LoadDone<'_> {
     fn drop(&mut self) {

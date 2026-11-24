@@ -26,6 +26,9 @@ struct Account: Decodable {
     let publicProfile: String?
     /// The ways to sign in, oldest first; empty for an account that lives on its devices.
     let identities: [Identity]
+
+    /// What a device without an account shows: nothing is on the server until its first change.
+    static let none = Account(createdAt: 0, recoveryCodeCreatedAt: nil, devices: [], publicProfile: nil, identities: [])
 }
 
 /// A way to sign in: Sign in with Apple, Google or an email address.
@@ -51,6 +54,16 @@ struct Device: Decodable, Identifiable {
     let lastUsedAt: Int
     /// The device this app runs on.
     let current: Bool
+}
+
+/// From `POST /api/session` and the sign-in endpoints: what the device sends from then on.
+struct Session: Decodable {
+    let token: String
+}
+
+/// From `POST /api/account/recovery-code`. Shown once.
+struct RecoveryCode: Decodable {
+    let code: String
 }
 
 /// A code that signs another device in to the account, once, until `expiresAt` (Unix seconds).
@@ -201,10 +214,17 @@ struct NearbyCountry: Decodable {
     let places: Int
 }
 
-/// Notification text, written by the server so every app says the same thing.
-struct Reminder: Decodable {
+/// A reminder the server plans, for the app to show as a local notification from `hour`
+/// o'clock on `localDate` (YYYY-MM-DD) in the device's time zone.
+struct Reminder: Decodable, Equatable {
+    /// Stable for this reminder: scheduling it again under the same key replaces it.
+    let key: String
+    let localDate: String
+    let hour: Int
     let title: String
     let body: String
+    /// Where a tap leads, relative to the web app: `/?country=JP` or `/?tab=badges`.
+    let url: String
 }
 
 struct Celebration: Decodable, Identifiable {
@@ -217,7 +237,6 @@ struct Celebration: Decodable, Identifiable {
     let approximate: Bool
     /// The celebration's countries that have places in the area.
     let nearby: [NearbyCountry]
-    let reminder: Reminder
 }
 
 struct Discover: Decodable {

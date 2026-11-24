@@ -499,8 +499,10 @@ const QUESTS_PER_MONTH: usize = 2;
 
 /// This month's quests in the area. Which ones run depends on the area and the month, and
 /// on what the area has and what the user had done before the month began, so they don't
-/// change during the month and can always be done. `tasted` is all of the user's history,
-/// any area; `celebrating` the countries with a celebration on some day this month.
+/// change during the month and can always be done. They are done in the area: only this
+/// month's check-ins at its places count. `tasted` is all of the user's history, any area,
+/// which is what makes a country new; `celebrating` the countries with a celebration on
+/// some day this month.
 pub fn monthly_quests(
     area_id: &str,
     today: NaiveDate,
@@ -510,7 +512,11 @@ pub fn monthly_quests(
 ) -> MonthlyQuests {
     let first = month_start(today);
     let before: Vec<&Tasted> = tasted.iter().filter(|t| t.first < first).collect();
-    let this_month: Vec<&Tasted> = tasted.iter().filter(|t| t.last >= first).collect();
+    let here: HashSet<&str> = rows.iter().map(|r| r.place_id.as_str()).collect();
+    let this_month: Vec<&Tasted> = tasted
+        .iter()
+        .filter(|t| t.last >= first && here.contains(t.place_id.as_str()))
+        .collect();
     let tried: HashSet<&str> = before.iter().map(|t| t.country.as_str()).collect();
     let continent = |code: &str| catalog::country(code).map(|c| c.continent.as_str());
 
@@ -886,6 +892,22 @@ mod tests {
         assert_eq!(q("level-up").countries, ["IT"]);
         assert!(q("level-up").done);
         assert_eq!((q("check-ins").progress, q("check-ins").done), (2, true));
+    }
+
+    #[test]
+    fn check_ins_elsewhere_do_not_count_for_an_area() {
+        let rows = [row("a", "IT", false), row("c", "JP", false)];
+        // Two places in another area this month, on two continents, one of them new.
+        let history = [
+            tasted("x", "IT", "2026-11-24", "2026-11-24"),
+            tasted("y", "MX", "2026-11-25", "2026-11-25"),
+        ];
+        for area in (0..40).map(|i| format!("area-{i}")) {
+            let w = monthly_quests(&area, day("2026-11-26"), &rows, &history, &[]);
+            for q in w.quests {
+                assert_eq!((q.progress, q.done), (0, false), "{}", q.id);
+            }
+        }
     }
 
     #[test]

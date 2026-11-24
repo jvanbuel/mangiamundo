@@ -22,7 +22,6 @@ import app.mangiamundo.core.Country
 import app.mangiamundo.core.EventProgress
 import app.mangiamundo.core.EventStatus
 import app.mangiamundo.core.NearbyCountry
-import app.mangiamundo.core.Reminder
 import java.time.LocalDate
 import app.mangiamundo.core.CountryProgress
 import app.mangiamundo.core.Status
@@ -40,11 +39,20 @@ import com.android.resources.NightMode
 import org.junit.Rule
 import org.junit.Test
 import java.io.File
+import java.util.Locale
+import java.util.TimeZone
 
 /** Renders the main screens with sample data, in light and dark mode. */
 class ScreensTest {
     @get:Rule
     val paparazzi = Paparazzi(deviceConfig = DeviceConfig.PIXEL_6, maxPercentDifference = 0.1)
+
+    // Dates are written, and "visited today" is decided, in the machine's language and time
+    // zone. Pinned, so the images are the same wherever the tests run.
+    init {
+        Locale.setDefault(Locale.US)
+        TimeZone.setDefault(TimeZone.getTimeZone("UTC"))
+    }
 
     private val world = World.parse(File("../../../shared/world.json").readText())
     private val leuven = SavedLocation(Area("demo-leuven", "Leuven", lat = 50.8798, lng = 4.7005), 50.8798, 4.7005, fromGps = true)
@@ -161,9 +169,9 @@ class ScreensTest {
     private fun day(offset: Long) = today.plusDays(offset).toString()
 
     private val celebrations = listOf(
-        Celebration("thanksgiving", "Thanksgiving", "", listOf("US"), day(10), day(10), false, listOf(NearbyCountry("MX", 3)), Reminder("", "")),
-        Celebration("lny", "Lunar New Year", "", listOf("CN", "JP"), day(40), day(42), false, listOf(NearbyCountry("CN", 7), NearbyCountry("JP", 5)), Reminder("", "")),
-        Celebration("eid", "Eid al-Fitr", "", listOf("MA"), day(70), day(72), true, listOf(NearbyCountry("MA", 2)), Reminder("", "")),
+        Celebration("thanksgiving", "Thanksgiving", "", listOf("US"), day(10), day(10), false, listOf(NearbyCountry("MX", 3))),
+        Celebration("lny", "Lunar New Year", "", listOf("CN", "JP"), day(40), day(42), false, listOf(NearbyCountry("CN", 7), NearbyCountry("JP", 5))),
+        Celebration("eid", "Eid al-Fitr", "", listOf("MA"), day(70), day(72), true, listOf(NearbyCountry("MA", 2))),
     )
     private val events = listOf(
         EventProgress("levant", "Levant month", "Eat at 2 Lebanese, Syrian or Jordanian places in November.", listOf("LB"), day(-15), day(14), 2, 1, false, EventStatus.ACTIVE, 3),

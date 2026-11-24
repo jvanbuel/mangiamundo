@@ -11,13 +11,31 @@ and the API together on port 8080 (the backend serves `STATIC_DIR`, default
 The app runs on Fly.io as `mangiamundo`, in Frankfurt (`fly.toml`). The
 `Dockerfile` builds the web app and the backend into one image.
 
-Every push to `main` is deployed by Fly's GitHub app. It is set up in the Fly
-dashboard, so there is no deploy workflow in `.github/workflows`. Each deploy shows up
-as a `Fly.io` check on the commit and under the repository's deployments.
+The `deploy` job in `.github/workflows/test.yml` deploys every push to `main`, after
+the `backend`, `web` and `android` jobs of that push have passed. A commit that fails
+them is not deployed. The iOS tests (`ios.yml`) are not waited for: they run on slower
+macOS runners, only when the iOS app changes, and Fly does not deploy that app.
 
-The deploy starts at the push, at the same time as the tests in
-`.github/workflows/test.yml`. It does not wait for them, and `main` has no required
-checks, so a commit that fails its tests is deployed all the same.
+Deploys run one at a time. A run that finds `main` has moved on while it waited
+deploys nothing, and leaves it to the run of the newer commit.
+
+The job needs a `FLY_API_TOKEN` repository secret. Without it the job passes and
+deploys nothing.
+
+### Setting it up, once
+
+Until this is done, Fly's GitHub app deploys every push to `main` as it did before:
+at the push, without waiting for the tests, and without the commit label.
+
+1. Make a deploy token for the app: `fly tokens create deploy -a mangiamundo`.
+2. Add it on GitHub as a repository secret named `FLY_API_TOKEN` (Settings, Secrets
+   and variables, Actions), with the whole output, `FlyV1 ` included.
+3. Disconnect the repository from the app in the Fly dashboard, so that Fly stops
+   deploying by itself. With both in place every push is deployed twice, one of
+   them without waiting for the tests.
+4. Optional: in a branch protection rule or ruleset for `main`, require the
+   `backend`, `web` and `android` checks, so a pull request that fails them cannot be
+   merged.
 
 A deploy by hand still works:
 
@@ -29,12 +47,25 @@ fly deploy --build-arg GIT_COMMIT=$(git describe --always --dirty)
 
 The commit shows at the bottom of the web and mobile apps, next to the server's, to
 tell old builds apart. `.git` isn't copied into the image, so the build takes it from
-the `GIT_COMMIT` build argument.
+the `GIT_COMMIT` build argument: the web build reads it in `vite.config.ts`, the
+backend at compile time for `/api/health`.
 
-Nothing in the repository passes `GIT_COMMIT` to the deploys from GitHub: `fly.toml`
-can only hold fixed build arguments, not the commit being built. Without it
-`/api/health` answers `"commit": null` and the web app shows its build time instead
-of a commit. A deploy by hand, as above, sets it.
+The `deploy` job passes the short commit hash, and so does a deploy by hand, as
+above. `fly.toml` can only hold fixed build arguments, not the commit being built, so
+a deploy by Fly's GitHub app has none: `/api/health` answers `"commit": null` and the
+web app shows its build time instead of a commit.
+
+## Upgrading
+
+Migrations run when the server starts. Migration 0018 keeps session tokens as hashes:
+the server hashes the ones already there at its first start after it (devices keep their
+tokens), and a server from before it can no longer read the `sessions` table. To go back
+to an older build, restore a snapshot from before the upgrade.
+
+New accounts are limited per address, which the server reads from the `Fly-Client-IP`
+header that Fly's proxy sets. Behind another proxy that header is absent (only the limit
+for everyone together applies) unless the proxy sets it; it must then also overwrite one a
+client sends.
 
 ## Backups
 

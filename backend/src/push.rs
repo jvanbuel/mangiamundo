@@ -171,8 +171,22 @@ fn places(n: u32) -> String {
     }
 }
 
+/// "There is 1 place", "There are 3 places".
+fn there_are(n: u32) -> String {
+    let verb = if n == 1 { "is" } else { "are" };
+    format!("There {verb} {}", places(n))
+}
+
+/// "the one place", "one of 3 places".
+fn one_of(n: u32) -> String {
+    if n == 1 {
+        "the one place".into()
+    } else {
+        format!("one of {}", places(n))
+    }
+}
+
 /// The reminder for a celebration, or None when none of its countries has places nearby.
-/// The apps use the same text for the notifications they schedule themselves.
 pub fn celebration_notification(
     celebration: &calendar::Celebration,
     counts: &HashMap<&str, u32>,
@@ -193,9 +207,9 @@ pub fn celebration_notification(
     Some(Notification {
         title: format!("{} {when}", celebration.title),
         body: format!(
-            "{} Celebrate at one of {} serving {} food near you.",
+            "{} Celebrate at {} serving {} food near you.",
             celebration.description,
-            places(total),
+            one_of(total),
             cuisine_names(&nearby, "or")
         ),
         url: format!("/?country={first}"),
@@ -225,6 +239,16 @@ pub fn new_food_notification(
         url: format!("/?country={first}"),
         tag: "new-food".into(),
     })
+}
+
+/// The reminder on an event's first day, when `nearby` places serve its countries' food.
+fn event_start_notification(event: &calendar::Event, nearby: u32) -> Notification {
+    Notification {
+        title: format!("{} starts today", event.title),
+        body: format!("{} {} nearby.", event.description, there_are(nearby)),
+        url: "/?tab=badges".into(),
+        tag: format!("event-{}", event.id),
+    }
 }
 
 /// Sends one notification. None when it failed and the next pass should try again.
@@ -292,12 +316,7 @@ async fn due(
         if event.starts == day {
             out.push((
                 format!("event-start:{}", event.id),
-                Notification {
-                    title: format!("{} starts today", event.title),
-                    body: format!("{} There are {} nearby.", event.description, places(nearby)),
-                    url: "/?tab=badges".into(),
-                    tag: format!("event-{}", event.id),
-                },
+                event_start_notification(event, nearby),
             ));
         } else if event.ends - Duration::days(LAST_CHANCE_DAYS - 1) == day {
             let done = match user {
@@ -404,12 +423,6 @@ async fn remind(
     let counts = progress::places_per_country(&rows);
 
     let day = local.date_naive();
-    if day.day() == 1 {
-        // The quests reminder goes out today; quests already finished get their XP now.
-        // ponytail: booked on every pass of the 1st; harmless, they pay once.
-        progress::monthly_quests(state, Some(user), area_id, day, &rows).await?;
-    }
-
     let mut sent = 0;
     let mut gone = false;
     for (dedupe, notification) in due(state, Some(user), day, area_id, &rows, &counts).await? {
@@ -491,6 +504,53 @@ mod tests {
         assert_eq!(
             cuisine_names(&["CN", "KR", "VN"], "or"),
             "Chinese, Korean or Vietnamese"
+        );
+    }
+
+    #[test]
+    fn one_place_is_singular() {
+        let day = NaiveDate::from_ymd_opt(2026, 12, 1).unwrap();
+        let event = calendar::Event {
+            id: "japan".into(),
+            title: "Japan month".into(),
+            description: "Eat at 3 Japanese places.".into(),
+            countries: vec!["JP".into()],
+            starts: day,
+            ends: day + Duration::days(30),
+            target: 3,
+        };
+        let body = |nearby| event_start_notification(&event, nearby).body;
+        assert_eq!(
+            body(1),
+            "Eat at 3 Japanese places. There is 1 place nearby."
+        );
+        assert_eq!(
+            body(4),
+            "Eat at 3 Japanese places. There are 4 places nearby."
+        );
+
+        let celebration = calendar::Celebration {
+            id: "culture-day".into(),
+            title: "Culture Day".into(),
+            description: "A day for the arts.".into(),
+            countries: vec!["JP".into()],
+            starts: day,
+            ends: day,
+            approximate: false,
+        };
+        let body = |places| {
+            let counts = HashMap::from([("JP", places)]);
+            celebration_notification(&celebration, &counts)
+                .unwrap()
+                .body
+        };
+        assert_eq!(
+            body(1),
+            "A day for the arts. Celebrate at the one place serving Japanese food near you."
+        );
+        assert_eq!(
+            body(2),
+            "A day for the arts. Celebrate at one of 2 places serving Japanese food near you."
         );
     }
 

@@ -1,7 +1,7 @@
 # The Rust backend serves the built web app, so one image holds both.
-# Fly's GitHub app builds and deploys this on every push to main (docs/deploy.md).
+# The deploy job in .github/workflows/test.yml builds and deploys this (docs/deploy.md).
 # .git is not copied in, so the commit shown in the apps comes from the GIT_COMMIT
-# build argument. The deploys from GitHub don't pass it; a deploy by hand can:
+# build argument. That job passes it; a deploy by hand can too:
 #   fly deploy --build-arg GIT_COMMIT=$(git describe --always --dirty)
 
 FROM node:24-slim AS web
