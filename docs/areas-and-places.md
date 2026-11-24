@@ -32,3 +32,8 @@ Results are cached per area (with its outline) and refreshed after `CACHE_TTL_DA
 Belgium and its border towns come from a local copy instead, refreshed from Overpass
 once a day with one query for the whole box; each refresh marks the cached areas there
 stale, so changes in OpenStreetMap show up within about a day.
+
+Finding the city and postal code around a GPS position is answered from the cached
+outlines when both are among them, and otherwise by Nominatim, whose answer is kept
+in memory for a day per cell of about 100 m. So people opening the app in a place
+someone has played before don't queue behind Nominatim's one request per second.

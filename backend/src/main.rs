@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use mangiamundo::config::{Config, ProviderKind};
-use mangiamundo::providers::{self, osm};
+use mangiamundo::providers::{self, cached::CachedDirectory, osm};
 use mangiamundo::{api, auth, calendar, push, store, AppState};
 
 #[tokio::main]
@@ -9,7 +9,7 @@ async fn main() -> anyhow::Result<()> {
     tracing_subscriber::fmt::init();
 
     let config = Config::from_env()?;
-    let (mut places, areas) = providers::build(&config)?;
+    let (mut places, mut areas) = providers::build(&config)?;
     let db = store::connect(&config.database_url).await?;
     if config.provider == ProviderKind::Osm {
         // Belgium comes from a daily import, so searches there skip the slow live query.
@@ -21,6 +21,8 @@ async fn main() -> anyhow::Result<()> {
             osm::Overpass::new(http, config.overpass_urls.clone()),
         ));
         places = Arc::new(osm::WithImport::new(db.clone(), places));
+        // Nominatim answers one request per second for everyone, so ask it as little as possible.
+        areas = Arc::new(CachedDirectory::new(db.clone(), areas));
     }
     let pusher = push::Pusher::load(
         &db,
