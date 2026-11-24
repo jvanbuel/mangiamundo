@@ -626,7 +626,12 @@ export async function toggleVisit(place: Place) {
 			if (result.progress && stillHere()) app.discover = { ...result.progress, area: before.area };
 			celebrate(result.unlocked);
 		} else {
-			const result = await api.removeVisit(place.visits[0].id, location.area.id);
+			const result = await api.removeVisit(place.visits[0].id, location.area.id).catch(async (error) => {
+				if (!(error instanceof api.ApiError && error.code === 'not_found')) throw error;
+				// Gone already, from another device or by a retry whose answer was lost: ask what is left.
+				const [rest, progress] = await Promise.all([api.place(place.id, null), api.discover(location.area.id)]);
+				return { visits: rest.visits, profile: progress.profile, progress };
+			});
 			if (!sameAccount()) return;
 			// The server's list of the visits left: the card only knew the latest.
 			setVisits(place.id, () => result.visits);

@@ -535,7 +535,16 @@ final class AppModel {
                 // Checking in twice on one day returns that day's visit.
                 update = { old in [visit] + old.filter { $0.id != visit.id } }
             } else if let latest = place.visits.first {
-                let result = try await api.removeVisit(id: latest.id, areaID: here.area.id)
+                let result: VisitRemoved
+                do {
+                    result = try await api.removeVisit(id: latest.id, areaID: here.area.id)
+                } catch let error as APIError where error.code == "not_found" {
+                    // Gone already, from another device or by a retry whose answer was lost: ask what is left.
+                    async let rest = api.place(id: place.id, from: nil)
+                    async let now = api.discover(areaID: here.area.id)
+                    let (left, after) = try await (rest, now)
+                    result = VisitRemoved(visits: left.visits, profile: after.profile, progress: after)
+                }
                 progress = result.progress
                 // The server's list of the visits left: the card only knew the latest.
                 update = { _ in result.visits }

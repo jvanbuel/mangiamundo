@@ -27,6 +27,7 @@ import app.mangiamundo.core.pendingText
 import app.mangiamundo.core.ProjectionKind
 import app.mangiamundo.core.ReminderSchedule
 import app.mangiamundo.core.Visit
+import app.mangiamundo.core.VisitRemoved
 import app.mangiamundo.core.VisitResult
 import app.mangiamundo.core.World
 import app.mangiamundo.core.withRecent
@@ -510,7 +511,14 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
                     // Checking in twice on one day returns that day's visit.
                     { old -> listOf(visit) + old.filter { it.id != visit.id } }
                 } else {
-                    val result = api.removeVisit(place.visits.first().id, here.area.id)
+                    val result = try {
+                        api.removeVisit(place.visits.first().id, here.area.id)
+                    } catch (e: ApiException) {
+                        if (e.code != "not_found") throw e
+                        // Gone already, from another device or by a retry whose answer was lost: ask what is left.
+                        val after = api.discover(here.area.id)
+                        VisitRemoved(api.place(place.id, null).visits, after.profile, after)
+                    }
                     progress = result.progress
                     // The server's list of the visits left: the card only knew the latest.
                     { _ -> result.visits }
