@@ -1,4 +1,5 @@
-import type { Geometry } from 'geojson';
+import type { Feature, FeatureCollection, Geometry } from 'geojson';
+import type { Country } from '../types';
 
 /** Zoom at which the globe's diameter fills most of the map's shorter side. */
 export function fittingZoom(el: HTMLElement, lat: number, fill = 0.95): number {
@@ -67,4 +68,18 @@ export function centre(geometry: Geometry): [number, number] {
 		}
 	}
 	return best;
+}
+
+/** The atlas's countries, without Antarctica, with unwrapped rings and the API's codes. */
+export function countryFeatures(countries: Country[], topojson: typeof import('topojson-client'), atlas: unknown): Feature[] {
+	// The atlas identifies countries by ISO numeric code; the API speaks alpha-2.
+	const byNumeric = new Map(countries.filter((c) => c.numeric).map((c) => [c.numeric, c]));
+	const topology = (atlas as any).default ?? atlas;
+	const world = topojson.feature(topology, topology.objects.countries) as unknown as FeatureCollection<Geometry, { name: string; code?: string }>;
+	return world.features
+		.filter((f) => f.id !== '010') // Antarctica
+		.map((f) => {
+			const known = byNumeric.get(String(f.id));
+			return { ...f, geometry: unwrap(f.geometry), properties: { code: known?.code ?? `x-${f.properties.name}`, name: known?.name ?? f.properties.name } };
+		});
 }

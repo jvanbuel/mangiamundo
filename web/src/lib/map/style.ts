@@ -13,13 +13,6 @@ export const SPARKLES: [string, number, [number, number]][] = [
 	['sparkle-c', 0.8, [-30, 24]]
 ];
 
-/** A sparkle's brightness, 0 to 1, at a time in seconds: a quick flash every 2.4s,
-    each sparkle a third of a beat after the last. */
-export function twinkle(seconds: number, index: number): number {
-	const wave = Math.max(0, Math.sin(seconds * 2.6 + index * 2.1));
-	return wave * wave;
-}
-
 export const featureState = (key: string, fallback: unknown) => ['coalesce', ['feature-state', key], fallback];
 export const flag = (key: string) => ['boolean', featureState(key, false), false];
 

@@ -2,12 +2,13 @@
 	import { onMount } from 'svelte';
 	import { prefersReducedMotion } from 'svelte/motion';
 	import type { Map as MapLibreMap, MapGeoJSONFeature } from 'maplibre-gl';
-	import type { Feature, FeatureCollection, Geometry } from 'geojson';
+	import type { Feature } from 'geojson';
 	import { type Country, type CountryProgress, type Location } from './types';
-	import { SPIN_MS } from './state.svelte';
-	import { bbox, centre, fittingZoom, unwrap } from './map/geometry';
+	import { bbox, centre, countryFeatures, fittingZoom } from './map/geometry';
 	import { facetImage, sparkleImage } from './map/images';
-	import { SOURCE, SPARKLES, fillOpacity, mapStyle, paint, twinkle } from './map/style';
+	import { SOURCE, fillOpacity, mapStyle, paint } from './map/style';
+	import { spinGlobe, twinkleSparkles } from './map/motion';
+	import MapTip from './MapTip.svelte';
 
 	interface Props {
 		countries: Country[];
@@ -56,16 +57,7 @@
 			if (disposed) return;
 			setWorkerUrl(worker.default);
 
-			// The atlas identifies countries by ISO numeric code; the API speaks alpha-2.
-			const byNumeric = new Map(countries.filter((c) => c.numeric).map((c) => [c.numeric, c]));
-			const topology = (atlas as any).default ?? atlas;
-			const world = topojson.feature(topology, topology.objects.countries) as unknown as FeatureCollection<Geometry, { name: string; code?: string }>;
-			const features: Feature[] = world.features
-				.filter((f) => f.id !== '010') // Antarctica
-				.map((f) => {
-					const known = byNumeric.get(String(f.id));
-					return { ...f, geometry: unwrap(f.geometry), properties: { code: known?.code ?? `x-${f.properties.name}`, name: known?.name ?? f.properties.name } };
-				});
+			const features = countryFeatures(countries, topojson, atlas);
 
 			for (const f of features) {
 				bounds.set(String(f.properties!.code), bbox(f.geometry));
@@ -181,22 +173,7 @@
 	// effect above flies to the chosen country.
 	$effect(() => {
 		if (!map || !spinning || still) return;
-		const m = map;
-		m.stop();
-		const from = m.getCenter();
-		const fromZoom = m.getZoom();
-		const globe = fittingZoom(m.getContainer(), from.lat);
-		const start = performance.now();
-		let frame = 0;
-		const tick = (now: number) => {
-			const elapsed = now - start;
-			const out = Math.min(1, elapsed / 500);
-			// One turn per SPIN_MS, zooming out over the first half second.
-			m.jumpTo({ center: [from.lng + (360 * elapsed) / SPIN_MS, from.lat], zoom: fromZoom + (globe - fromZoom) * out });
-			frame = requestAnimationFrame(tick);
-		};
-		frame = requestAnimationFrame(tick);
-		return () => cancelAnimationFrame(frame);
+		return spinGlobe(map);
 	});
 
 	// Completed countries get the diamond: facets over their fill, and sparkles.
@@ -209,22 +186,7 @@
 			features: done.map((f) => ({ type: 'Feature', properties: {}, geometry: { type: 'Point', coordinates: centre(f.geometry) } }))
 		});
 		if (still || !done.length) return;
-		// Twinkle: each sparkle flashes on its own beat, growing and brightening quickly and
-		// then shrinking back. About 20 updates a second, nothing while the tab is hidden.
-		const m = map;
-		let frame = 0, last = 0;
-		const tick = (now: number) => {
-			frame = requestAnimationFrame(tick);
-			if (now - last < 50 || document.hidden) return;
-			last = now;
-			SPARKLES.forEach(([id, size], i) => {
-				const flash = twinkle(now / 1000, i);
-				m.setPaintProperty(id, 'icon-opacity', 0.25 + 0.75 * flash);
-				m.setLayoutProperty(id, 'icon-size', size * (0.55 + 0.45 * flash));
-			});
-		};
-		frame = requestAnimationFrame(tick);
-		return () => cancelAnimationFrame(frame);
+		return twinkleSparkles(map);
 	});
 
 	$effect(() => {
@@ -258,14 +220,7 @@
 <div class="map" bind:this={container}></div>
 
 {#if hover && hoverInfo}
-	<div class="tip" style:left="{hover.x}px" style:top="{hover.y}px">
-		<strong>{hoverInfo.country?.flag ?? ''} {hover.name}</strong>
-		{#if hoverInfo.progress}
-			<span>{hoverInfo.progress.visited} of {hoverInfo.progress.places} {hoverInfo.progress.places === 1 ? 'place' : 'places'} visited</span>
-		{:else}
-			<span>Not found in this area</span>
-		{/if}
-	</div>
+	<MapTip {hover} info={hoverInfo} />
 {/if}
 
 <style>
@@ -273,25 +228,6 @@
 		position: absolute;
 		inset: 0;
 		background: radial-gradient(circle at 50% 40%, var(--space) 0%, var(--bg) 70%);
-	}
-
-	.tip {
-		position: absolute;
-		z-index: 2;
-		transform: translate(14px, 14px);
-		pointer-events: none;
-		display: grid;
-		padding: 8px 10px;
-		border-radius: 10px;
-		background: var(--panel-raised);
-		border: 1px solid var(--line);
-		box-shadow: 0 8px 24px var(--shadow);
-		font-size: var(--text-sm);
-		white-space: nowrap;
-	}
-
-	.tip span {
-		color: var(--muted);
 	}
 
 	.map :global(.maplibregl-ctrl-attrib) {
