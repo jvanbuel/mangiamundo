@@ -34,7 +34,6 @@ import app.mangiamundo.core.withRecent
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.NonCancellable
-import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.receiveAsFlow
@@ -44,13 +43,12 @@ import kotlinx.coroutines.withContext
 import kotlin.math.abs
 
 private const val NOT_REACHED = "not reached"
-/** How long the globe turns at least before a spin lands, and how long one turn takes. */
-private const val SPIN_MS = 1600L
 
 class AppViewModel(application: Application) : AndroidViewModel(application) {
-    private val settings = Settings(application)
+    internal val settings = Settings(application)
     internal val api = ApiClient(BuildConfig.API_BASE, settings, android.os.Build.MODEL) { accounts.signedOut() }
     private val accounts = AccountModel(this)
+    private val spins = SpinModel(this)
 
     var world by mutableStateOf<World?>(null); private set
     var catalog by mutableStateOf<Catalog?>(null); private set
@@ -79,11 +77,9 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     private var detailJob: Job? = null
 
     /** A spin is running: the globe turns and the Spin buttons wait. */
-    var spinning by mutableStateOf(false); private set
+    val spinning: Boolean get() = spins.spinning
     /** The place the last spin landed on, whose details offer to spin again. */
-    var spun by mutableStateOf<String?>(null); private set
-    /** Places suggested since the area was picked, so spinning again finds another. */
-    private var spunIds = mutableListOf<String>()
+    val spun: String? get() = spins.spun
 
     var locating by mutableStateOf(false); private set
     var locateError by mutableStateOf<String?>(null); private set
@@ -170,7 +166,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     /** Where the user is, when known recently: distances are measured from it. */
-    private fun userPosition(): Pair<Double, Double>? {
+    internal fun userPosition(): Pair<Double, Double>? {
         gpsFix?.takeIf { System.currentTimeMillis() - it.third < 10 * 60_000 }?.let { return it.first to it.second }
         return location?.takeIf { it.fromGps }?.let { it.lat to it.lng }
     }
@@ -180,7 +176,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         recentAreas = withRecent(location?.let { withRecent(recentAreas, it.area) } ?: recentAreas, target.area)
         settings.recentAreas = recentAreas
         location = target
-        spunIds.clear()
+        spins.forgetSpun()
         // The old area's countries must not show while the new area loads.
         discover = null
         celebrations = emptyList()
@@ -393,94 +389,10 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     /** Spins the globe: it lands on a country and opens an unvisited place there, open now if any is. */
-    fun spin() {
-        val here = location ?: return
-        if (spinning) return
-        spinning = true
-        closePlace()
-        viewModelScope.launch {
-            val still = animationsOff()
-            val turning = if (still) null else launch { turn() }
-            val started = System.currentTimeMillis()
-            val exclude = spunIds + settings.notToday.keys
-            try {
-                val found = try {
-                    api.suggestion(here.area.id, userPosition(), exclude, open = true)
-                } catch (e: ApiException) {
-                    if (e.code != "nothing_open") throw e
-                    messageChannel.trySend("Nothing open right now. Here is one for another time.")
-                    api.suggestion(here.area.id, userPosition(), exclude, open = false)
-                }
-                if (!still) delay(SPIN_MS - (System.currentTimeMillis() - started))
-                turning?.cancelAndJoin()
-                if (location != here) return@launch
-                spunIds += found.place.id
-                spun = found.place.id
-                select(found.country)
-                world?.countries?.firstOrNull { it.code == found.country }?.let { glide(it.landing(), still) }
-                openPlace(found.place)
-            } catch (e: kotlinx.coroutines.CancellationException) {
-                throw e
-            } catch (e: Exception) {
-                if (e is ApiException && e.code == "nothing_left") {
-                    if (spunIds.isNotEmpty()) {
-                        spunIds.clear()
-                        messageChannel.trySend("That was every place. Spin again to start over.")
-                    } else {
-                        messageChannel.trySend("You have been to every place in ${here.area.name}.")
-                    }
-                } else {
-                    messageChannel.trySend("Could not spin: ${e.message}")
-                }
-            } finally {
-                turning?.cancel()
-                spinning = false
-            }
-        }
-    }
+    fun spin() = spins.spin()
 
     /** "Not today": keeps the place out of spins for 20 hours, and spins again. */
-    fun notToday(placeId: String) {
-        settings.notToday = settings.notToday + (placeId to System.currentTimeMillis() + 20 * 3_600_000L)
-        spin()
-    }
-
-    /** Turns the globe one turn per SPIN_MS, zoomed out to all of it, until cancelled. */
-    private suspend fun turn() {
-        val from = camera
-        val started = System.nanoTime()
-        while (true) {
-            val ms = (System.nanoTime() - started) / 1e6
-            val out = minOf(1.0, ms / 500)
-            camera = from.copy(lng = from.lng + 360 * ms / SPIN_MS, zoom = from.zoom + (1.0 - from.zoom) * out).normalized()
-            delay(16)
-        }
-    }
-
-    /** Moves the camera to `to`, slowing down at the end; the short way around the globe. */
-    private suspend fun glide(to: Camera, still: Boolean) {
-        val from = camera
-        if (still) {
-            camera = to
-            return
-        }
-        val delta = ((to.lng - from.lng + 540) % 360) - 180
-        val started = System.nanoTime()
-        while (true) {
-            val t = minOf(1.0, (System.nanoTime() - started) / 1e6 / 900)
-            val e = 1 - (1 - t) * (1 - t) * (1 - t)
-            camera = Camera(from.lng + delta * e, from.lat + (to.lat - from.lat) * e, from.zoom + (to.zoom - from.zoom) * e).normalized()
-            if (t >= 1) return
-            delay(16)
-        }
-    }
-
-    /** Animations turned off in the system settings: spins land straight away. */
-    private fun animationsOff() = android.provider.Settings.Global.getFloat(
-        getApplication<Application>().contentResolver,
-        android.provider.Settings.Global.ANIMATOR_DURATION_SCALE,
-        1f,
-    ) == 0f
+    fun notToday(placeId: String) = spins.notToday(placeId)
 
     /** A tap on the map: open the country if it is available here, otherwise say so. */
     fun tapCountry(code: String, name: String) {
