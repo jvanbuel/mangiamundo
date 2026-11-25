@@ -2,6 +2,8 @@
 	import { onMount } from 'svelte';
 	import * as api from './api';
 	import { accountChanged, app, toast } from './state.svelte.ts';
+	import AccountSections from './AccountSections.svelte';
+	import DeviceList from './DeviceList.svelte';
 	import SignIn from './SignIn.svelte';
 	import type { Account } from './types';
 
@@ -125,7 +127,7 @@
 	};
 </script>
 
-<section class="account">
+<AccountSections>
 	<div class="group"><SignIn {account} onchange={load} /></div>
 
 	<div class="group">
@@ -182,22 +184,7 @@
 	{#if error}
 		<div class="group"><p class="note">{error}</p></div>
 	{:else if account && account.devices.length > 1}
-		<div class="group">
-			<h3>Signed-in devices</h3>
-			<ul>
-				{#each account.devices as device (device.id)}
-					<li>
-						<span>
-							<strong>{device.name ?? 'Unnamed device'}</strong>
-							<span class="note">{device.current ? 'This device' : `Used ${ago(device.last_used_at)}`}</span>
-						</span>
-						{#if !device.current}
-							<button class="secondary" disabled={busy} onclick={() => signOut(device.id)}>Sign out</button>
-						{/if}
-					</li>
-				{/each}
-			</ul>
-		</div>
+		<DeviceList devices={account.devices} {busy} {ago} onsignout={signOut} />
 	{/if}
 
 	{#if account?.public_profile}
@@ -217,100 +204,9 @@
 			<button class="danger" disabled={busy} onclick={deleteEverything}>Delete my account</button>
 		</div>
 	{/if}
-</section>
+</AccountSections>
 
 <style>
-	/* One look for every section of the settings, SignIn's included. */
-	.account {
-		margin-top: 4px;
-	}
-
-	.account :global(.group) {
-		display: grid;
-		gap: 8px;
-		justify-items: start;
-		padding: 14px 0;
-		border-top: 1px solid var(--line);
-	}
-
-	.account :global(.group > *) {
-		max-width: 100%;
-	}
-
-	.account :global(h3) {
-		margin: 0;
-		font-size: var(--text-sm);
-		font-weight: 800;
-	}
-
-	.account :global(.note) {
-		margin: 0;
-		font-size: var(--text-xs);
-		line-height: 1.45;
-		color: var(--muted);
-	}
-
-	.account :global(.action),
-	.account :global(.secondary) {
-		padding: 8px 14px;
-		border-radius: 10px;
-		font-weight: 700;
-		font-size: var(--text-sm);
-		white-space: nowrap;
-	}
-
-	/* The one main action of a form. */
-	.account :global(.action) {
-		background: var(--accent);
-		color: var(--on-accent);
-	}
-
-	.account :global(.secondary) {
-		background: var(--panel);
-		color: var(--text);
-		border: 1px solid var(--line);
-	}
-
-	.account :global(.action:disabled),
-	.account :global(.secondary:disabled) {
-		opacity: 0.5;
-	}
-
-	.account :global(form) {
-		display: grid;
-		gap: 6px;
-		width: 100%;
-	}
-
-	.account :global(label) {
-		font-size: var(--text-xs);
-		font-weight: 700;
-		color: var(--muted);
-	}
-
-	.account :global(.row) {
-		display: flex;
-		gap: 8px;
-	}
-
-	.account :global(input) {
-		flex: 1;
-		min-width: 0;
-		padding: 8px 10px;
-		border-radius: 10px;
-		border: 1px solid var(--line);
-		background: var(--panel);
-		color: var(--text);
-		font: inherit;
-		font-size: var(--text-sm);
-	}
-
-	/* Codes are typed in capitals; addresses aren't. */
-	.account :global(.code-input) {
-		text-transform: uppercase;
-		letter-spacing: 0.04em;
-	}
-
 	.code {
 		display: flex;
 		align-items: center;
@@ -323,26 +219,6 @@
 		letter-spacing: 0.06em;
 		user-select: all;
 		overflow-wrap: anywhere;
-	}
-
-	ul {
-		list-style: none;
-		margin: 0;
-		padding: 0;
-		width: 100%;
-	}
-
-	li {
-		display: flex;
-		align-items: center;
-		justify-content: space-between;
-		gap: 8px;
-		padding: 6px 0;
-	}
-
-	li > span {
-		display: flex;
-		flex-direction: column;
 	}
 
 	.danger {
