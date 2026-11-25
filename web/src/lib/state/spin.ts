@@ -1,8 +1,8 @@
 import { prefersReducedMotion } from 'svelte/motion';
 import * as api from '../api';
-import { loadPlaces } from '../state.svelte';
 import { app, message, toast } from './app.svelte';
 import { loadPlace, openPlace } from './details';
+import { loadPlaces } from './discover';
 import { here } from './location';
 
 const NOT_TODAY_KEY = 'mangiamundo.notToday';

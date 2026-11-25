@@ -1,5 +1,4 @@
 import * as api from './api';
-import * as push from './push';
 import { hideSplash } from './splash';
 import {
 	type AddPlace,
@@ -18,6 +17,8 @@ import { PROJECTION_KEY, THEME_KEY } from './state/preferences';
 import { checkReminders, pushTarget } from './state/reminders';
 import { LOCATION_KEY, RECENTS_KEY, here, locate, locationAllowed, position, recentFix, rememberFix } from './state/location';
 import { closePlace, followHistory, loadPlace, openPlace } from './state/details';
+import { loadServer, openCountryLater, refresh, select } from './state/discover';
+import { currentGeneration, loadAccount, signedOut } from './state/account';
 
 export { app, country, toast, type Theme, type Toast, type ToastIcon } from './state/app.svelte';
 export { setProjection, setTheme } from './state/preferences';
@@ -25,32 +26,8 @@ export { toggleReminders } from './state/reminders';
 export { chooseArea, forgetRecent, locate, setLocation, startingPoint, switchArea } from './state/location';
 export { closePlace, openPlace } from './state/details';
 export { SPIN_MS, notTodaySpin, spin } from './state/spin';
-
-let requestId = 0;
-/** A ?country= link that arrived before there was anything to discover: opened on the first load. */
-let pendingCountry: string | null = null;
-
-/** Asks for the server's version until it answers once. */
-function loadServer() {
-	if (app.server && app.server !== 'not reached') return;
-	api
-		.health()
-		.then((h) => (app.server = [h.version ?? 'unknown', h.commit].filter(Boolean).join(' ')))
-		.catch(() => (app.server = 'not reached'));
-}
-
-/**
- * The server no longer knows this device: it was signed out from another device, or its
- * account is gone. Says so, and shows everything again as for someone without an account,
- * so that nothing of the old account stays on screen as if it were still here. A new
- * account only starts with the next check-in or other change.
- */
-function signedOut() {
-	toast(null, 'You were signed out', 'This device no longer has your progress. Sign in or use a recovery code to get it back.');
-	// Whatever shows the account reads it again.
-	app.publicLink++;
-	void accountChanged();
-}
+export { refresh, select } from './state/discover';
+export { accountChanged, loadAccount } from './state/account';
 
 export async function init() {
 	api.onSignedOut(signedOut);
@@ -100,116 +77,11 @@ async function followLink() {
 	if (!params.size) return;
 	if (params.get('tab') === 'badges') app.tab = 'badges';
 	const code = params.get('country')?.toUpperCase();
-	if (code && !app.discover) pendingCountry = code;
+	if (code && !app.discover) openCountryLater(code);
 	else if (code && app.discover?.countries.some((c) => c.code === code)) await select(code);
 	const id = params.get('place');
 	history.replaceState(null, '', id ? `?place=${encodeURIComponent(id)}` : location.pathname);
 	if (id) await loadPlace(id);
-}
-
-export async function refresh() {
-	loadServer();
-	const location = app.location;
-	if (!location) return;
-	if (app.reminders === 'on') void push.updateReminders(pushTarget()).catch(() => undefined);
-	void api
-		.celebrations(location.area.id)
-		.then((list) => {
-			if (app.location === location) app.celebrations = list;
-		})
-		.catch(() => (app.celebrations = []));
-	const id = ++requestId;
-	app.loading = true;
-	app.error = null;
-	// A wheel from the previous area must not linger while this one starts.
-	app.areaProgress = null;
-	const stopProgress = watchProgress(location.area.id, id);
-	try {
-		const result = await api.discover(location.area.id);
-		if (id === requestId) {
-			app.discover = result;
-			const code = pendingCountry;
-			pendingCountry = null;
-			if (code && result.countries.some((c) => c.code === code)) void select(code);
-		}
-		void announceConfirmedAdditions();
-	} catch (error) {
-		if (id === requestId) {
-			app.error = message(error);
-			app.discover = null;
-		}
-	} finally {
-		stopProgress();
-		if (id === requestId) app.loading = false;
-	}
-}
-
-/** Polls an area's load progress while discover waits on it, one request at a time. Shown
- * only after 300 ms, so areas that answer quickly don't flash it, and only for the latest
- * refresh (`id`). Returns a function that stops and hides it. */
-function watchProgress(areaId: string, id: number): () => void {
-	const started = Date.now();
-	let stopped = false;
-	void (async () => {
-		while (!stopped) {
-			await new Promise((resolve) => setTimeout(resolve, 400));
-			if (stopped) return;
-			const progress = await api.areaProgress(areaId).catch(() => null);
-			// null between steps or before the server starts: keep what is shown.
-			if (stopped || id !== requestId || !progress || Date.now() - started < 300) continue;
-			app.areaProgress = progress;
-			// At startup the splash waits for the data: let the wheel show instead.
-			void hideSplash();
-		}
-	})();
-	return () => {
-		stopped = true;
-		if (id === requestId) app.areaProgress = null;
-	};
-}
-
-export async function select(code: string | null) {
-	// Picking a country on the map while a place is open shows that country's list.
-	if (app.placeId && code) closePlace();
-	await loadPlaces(code);
-}
-
-/** Goes up with every change of account, so an answer for the previous one can be told apart. */
-let accountGeneration = 0;
-
-/** After this device changes account: the open list and details show the new account's visits. */
-export async function accountChanged() {
-	accountGeneration++;
-	await Promise.all([refresh(), loadPlaces(app.selected), app.placeId && loadPlace(app.placeId), loadAccount()]);
-}
-
-/** Loads the account; a failure only means the header can't say whether it's signed in. */
-export async function loadAccount() {
-	try {
-		app.account = await api.account();
-	} catch {
-		app.account = null;
-	}
-}
-
-/** Counts list loads, so only the latest one shows its result. */
-let lists = 0;
-
-export async function loadPlaces(code: string | null) {
-	const list = ++lists;
-	app.selected = code;
-	app.places = [];
-	const location = app.location;
-	if (!code || !location) return;
-	app.placesLoading = true;
-	try {
-		const result = await api.places(location.area.id, code, here());
-		if (list === lists) app.places = result;
-	} catch (error) {
-		if (list === lists) toast(null, 'Could not load places', message(error));
-	} finally {
-		if (list === lists) app.placesLoading = false;
-	}
 }
 
 /** Announces what the server says a check-in unlocked. */
@@ -232,9 +104,9 @@ export async function toggleVisit(place: Place) {
 	// Visited today: undo that visit. Otherwise check in, also when there are older visits.
 	const undoing = visitedToday(place);
 	app.busyPlace = place.id;
-	const generation = accountGeneration;
+	const generation = currentGeneration();
 	// Nothing of the answer is shown once the device is in another account.
-	const sameAccount = () => accountGeneration === generation;
+	const sameAccount = () => currentGeneration() === generation;
 	// Progress is only shown when it is also still about this area.
 	const stillHere = () => app.location?.area.id === location.area.id && sameAccount();
 	try {
@@ -273,9 +145,9 @@ export async function reportClosed(place: Place) {
 	app.busyPlace = place.id;
 	try {
 		const location = app.location;
-		const generation = accountGeneration;
+		const generation = currentGeneration();
 		const result = await api.reportClosed(place.id, location?.area.id ?? null);
-		if (accountGeneration !== generation) return;
+		if (currentGeneration() !== generation) return;
 		app.places = app.places.filter((p) => p.id !== place.id);
 		if (app.placeId === place.id) closePlace();
 		toast(null, 'Thanks for letting us know', `${place.name} is hidden for you now.`);
@@ -396,7 +268,7 @@ function bonusText(bonus: Bonus, code: string, area: string | null, tense: 'is' 
 /** "Lalibela is on the map. +130 XP, and Ethiopia is new in Leuven!" for each addition
  * OpenStreetMap now has that the user wasn't told about. Runs once at a time. */
 let announcing = false;
-async function announceConfirmedAdditions() {
+export async function announceConfirmedAdditions() {
 	if (announcing) return;
 	announcing = true;
 	try {
