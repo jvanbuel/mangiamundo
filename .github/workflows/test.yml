@@ -47,6 +47,8 @@ jobs:
           npm run api-types
           test -z "$(git status --porcelain -- src/lib/api-types.ts)" || { echo "Run npm run api-types in web/ and commit src/lib/api-types.ts."; exit 1; }
       - run: npm run check
+      # The state modules and the API client, on jsdom, with the server's answers faked.
+      - run: npm test
       - run: npm run build
 
   android:

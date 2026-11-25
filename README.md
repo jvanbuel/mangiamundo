@@ -43,7 +43,7 @@ npm run dev
 Search for Brussels, Antwerp, Amsterdam or Berlin in demo mode. Drop
 `PLACES_PROVIDER=demo` for real OpenStreetMap data.
 
-Tests: `cargo test` in `backend/`, `npm run check` in `web/`. Mobile apps: see
+Tests: `cargo test` in `backend/`, `npm run check` and `npm test` in `web/`. Mobile apps: see
 [`mobile/README.md`](mobile/README.md).
 
 CI also runs `cargo fmt --check` and `cargo clippy --all-targets -- -D warnings` on the

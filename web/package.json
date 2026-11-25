@@ -13,6 +13,8 @@
 		"preview": "vite preview",
 		"prepare": "svelte-kit sync || echo ''",
 		"check": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json",
+		"test": "vitest run",
+		"test:watch": "vitest",
 		"check:watch": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json --watch",
 		"api-types": "npx --yes openapi-typescript@7.13.0 ../contract/openapi.json -o src/lib/api-types.ts"
 	},
@@ -23,10 +25,12 @@
 		"@types/geojson": "^7946.0.16",
 		"@types/node": "^24.19.2",
 		"@types/topojson-client": "^3.1.5",
+		"jsdom": "^31.0.0",
 		"svelte": "^5.57.2",
 		"svelte-check": "^4.6.0",
 		"typescript": "^6.0.3",
-		"vite": "^8.3.0"
+		"vite": "^8.3.0",
+		"vitest": "^5.1.0"
 	},
 	"dependencies": {
 		"@fontsource-variable/nunito": "^5.3.0",
