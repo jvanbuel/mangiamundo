@@ -14,6 +14,7 @@
 	import SettingsCard from '#lib/SettingsCard.svelte';
 	import Toasts from '#lib/Toasts.svelte';
 	import UnknownFood from '#lib/UnknownFood.svelte';
+	import Welcome from '#lib/Welcome.svelte';
 	import { app, init, refresh, select, toast } from '#lib/state.svelte.ts';
 	let pickerOpen = $state(false);
 	let settingsOpen = $state(false);
@@ -62,18 +63,7 @@
 		{/if}
 
 		{#if !app.location}
-			<div class="card welcome">
-				<h2>Which of the world's kitchens are near you?</h2>
-				<p class="muted">
-					Tell us where you are and we will light up every country whose kitchen you can visit nearby.
-				</p>
-				<LocationPicker />
-				<p class="muted about">
-					Check in at restaurants to taste each country's food and earn levels and badges. No account
-					needed: your progress stays on this device. Signing in with Google, Apple or email is optional
-					and only keeps your progress on all your devices. <a href="/privacy/">Privacy policy</a>
-				</p>
-			</div>
+			<Welcome />
 		{:else if app.error}
 			<div class="card">
 				<p>{app.error}</p>
@@ -146,11 +136,6 @@
 		gap: 14px;
 	}
 
-	.about {
-		margin: 12px 0 0;
-		font-size: var(--text-xs);
-	}
-
 	/* Always at the bottom of the panel, however short its content. */
 	.site-footer {
 		margin-top: auto;
@@ -182,11 +167,6 @@
 
 	.card p {
 		margin: 0 0 12px;
-	}
-
-	.welcome h2 {
-		font-size: var(--text-xl);
-		line-height: 1.25;
 	}
 
 	.pad {
