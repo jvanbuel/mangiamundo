@@ -1,8 +1,12 @@
 //! HTTP API. Everything lives under `/api` and speaks JSON, so the web app and the
 //! mobile apps share one contract.
 
+mod account;
 mod error;
 mod extract;
+mod meta;
+mod session;
+mod sign_in;
 
 use std::path::Path as FsPath;
 
@@ -28,6 +32,7 @@ use chrono_tz::Tz;
 pub use error::ApiError;
 use error::{provider_error, ErrorBody};
 use extract::{ApiResult, CurrentSession, JsonBody, MaybeSession, MaybeUser, Path, Query, User};
+use session::Session;
 
 use crate::calendar::{self, Celebration};
 use crate::game::{self, Summary};
@@ -35,7 +40,7 @@ use crate::progress::{self, Progress, VisitChange};
 use crate::providers::{osm, AreaInfo, Located, Lookup};
 use crate::push::{self, Reminder};
 use crate::store::{self, Area, HoursStatus, PlaceView, Visit};
-use crate::{account, areas, auth, catalog, geo, hours, limits, share, AppState};
+use crate::{areas, catalog, geo, hours, limits, share, AppState};
 
 /// A check-in counts as verified when made within this distance of the place.
 const VERIFY_DISTANCE_M: f64 = 250.0;
@@ -65,19 +70,19 @@ impl utoipa::Modify for BearerToken {
 /// registered with `routes!` can't exist without being in the document.
 fn api_router() -> (Router<AppState>, utoipa::openapi::OpenApi) {
     OpenApiRouter::with_openapi(ApiDoc::openapi())
-        .routes(routes!(health))
-        .routes(routes!(create_session))
-        .routes(routes!(restore_session))
-        .routes(routes!(auth_providers))
-        .routes(routes!(sign_in_apple))
-        .routes(routes!(sign_in_google))
-        .routes(routes!(send_email_code))
-        .routes(routes!(sign_in_email))
-        .routes(routes!(get_account, delete_account))
-        .routes(routes!(new_recovery_code))
-        .routes(routes!(new_link_code))
-        .routes(routes!(remove_device))
-        .routes(routes!(countries))
+        .routes(routes!(meta::health))
+        .routes(routes!(session::create_session))
+        .routes(routes!(session::restore_session))
+        .routes(routes!(sign_in::auth_providers))
+        .routes(routes!(sign_in::sign_in_apple))
+        .routes(routes!(sign_in::sign_in_google))
+        .routes(routes!(sign_in::send_email_code))
+        .routes(routes!(sign_in::sign_in_email))
+        .routes(routes!(account::get_account, account::delete_account))
+        .routes(routes!(account::new_recovery_code))
+        .routes(routes!(account::new_link_code))
+        .routes(routes!(account::remove_device))
+        .routes(routes!(meta::countries))
         .routes(routes!(discover))
         .routes(routes!(places, add_place))
         .routes(routes!(unknown_places))
@@ -161,27 +166,6 @@ async fn with_client(request: Request, next: axum::middleware::Next) -> Response
     limits::as_client(client_of(request.headers()), next.run(request)).await
 }
 
-#[derive(Serialize, ToSchema)]
-struct Health {
-    ok: bool,
-    /// The server's Cargo version.
-    version: &'static str,
-    /// The git commit it was built from: `GIT_COMMIT` at compile time (set by the
-    /// Dockerfile), `null` in builds without it.
-    #[schema(required = true)]
-    commit: Option<&'static str>,
-}
-
-/// Liveness check, also telling clients which build of the server they talk to.
-#[utoipa::path(get, path = "/api/health", tag = "meta", responses((status = 200, body = Health)))]
-async fn health() -> Json<Health> {
-    Json(Health {
-        ok: true,
-        version: env!("CARGO_PKG_VERSION"),
-        commit: option_env!("GIT_COMMIT"),
-    })
-}
-
 /// Serves the web app from `dir` next to the API. It is a single-page app, so unknown
 /// paths outside `/api` fall back to index.html.
 pub fn with_web_app(app: Router, dir: &FsPath) -> Router {
@@ -190,394 +174,6 @@ pub fn with_web_app(app: Router, dir: &FsPath) -> Router {
 
 async fn not_found() -> ApiError {
     ApiError::NotFound("API endpoint")
-}
-
-#[derive(Serialize, ToSchema)]
-struct Session {
-    /// Send it as `Authorization: Bearer <token>`.
-    token: String,
-}
-
-#[derive(Deserialize, ToSchema)]
-struct NewSession {
-    /// What the app calls this device in the account's device list, such as "iPhone",
-    /// "Android" or "Web". At most 60 characters are kept.
-    #[serde(default)]
-    device: Option<String>,
-}
-
-/// The address a session is being made from, for [`create_session`]'s limit. `None`
-/// without the proxy (development, tests), where addresses can't be told apart.
-fn session_client(headers: &header::HeaderMap) -> Option<String> {
-    Some(client_of(headers)).filter(|client| client != "local")
-}
-
-/// Creates an anonymous account and returns the token of its first device.
-///
-/// A device asks for one before its first write, not before: what it shows until then it
-/// can read without a token. It keeps the token. At most 20 accounts an hour are made from
-/// one address.
-#[utoipa::path(
-    post, path = "/api/session", tag = "account",
-    request_body(content = Option<NewSession>, description = "Optional."),
-    responses(
-        (status = 200, body = Session),
-        (status = 429, description = "`too_many_requests`: too many accounts were made from this address in the last hour", body = ErrorBody),
-        (status = "default", description = "An error", body = ErrorBody),
-    ),
-)]
-async fn create_session(
-    State(state): State<AppState>,
-    headers: header::HeaderMap,
-    body: Option<JsonBody<NewSession>>,
-) -> ApiResult<Session> {
-    let now = state.now();
-    // Per address where the proxy tells it, and for everyone together, so that addresses
-    // that can't be told apart (or a great many of them) don't fill the database either.
-    let client = session_client(&headers);
-    if client.is_some_and(|client| !state.limits.allow(&client, "session", 20, 3600, now))
-        || !state.limits.allow("*", "session", 1000, 3600, now)
-    {
-        return Err(ApiError::TooManyRequests(
-            "too many new accounts from here; try again in an hour",
-        ));
-    }
-    let device = body.and_then(|JsonBody(b)| b.device);
-    let token = account::create_user(&state.db, device.as_deref(), now).await?;
-    Ok(Json(Session { token }))
-}
-
-#[derive(Deserialize, ToSchema)]
-struct Restore {
-    /// A recovery code (`XXXX-XXXX-XXXX-XXXX-XXXX`) or a link code (`XXXX-XXXX`). Case,
-    /// spaces and dashes don't matter.
-    code: String,
-    /// As in `POST /api/session`.
-    #[serde(default)]
-    device: Option<String>,
-}
-
-/// Signs this device in to the account a recovery code or link code belongs to.
-///
-/// Sent with the device's current token, that session ends, and when it belonged to
-/// another account, that account's check-ins, added places and the rest move into the
-/// restored account, which then replaces it. A link code works once.
-#[utoipa::path(
-    post, path = "/api/session/restore", tag = "account", request_body = Restore,
-    security((), ("token" = [])),
-    responses(
-        (status = 200, body = Session),
-        (status = 404, description = "`not_found`: an unknown, used or expired code", body = ErrorBody),
-        (status = "default", description = "An error", body = ErrorBody),
-    ),
-)]
-async fn restore_session(
-    State(state): State<AppState>,
-    MaybeSession(current): MaybeSession,
-    JsonBody(body): JsonBody<Restore>,
-) -> ApiResult<Session> {
-    let token = account::redeem(
-        &state.db,
-        &body.code,
-        current.as_ref(),
-        body.device.as_deref(),
-        state.now(),
-    )
-    .await?
-    .ok_or(ApiError::NotFound("code"))?;
-    Ok(Json(Session { token }))
-}
-
-/// The sign-in methods this server offers, with the public ids the web app needs.
-#[derive(Serialize, ToSchema)]
-struct AuthProviders {
-    /// The Services ID for Sign in with Apple on the web; `null` when it isn't set up
-    /// (the iOS app signs in with Apple regardless).
-    #[schema(required = true)]
-    apple: Option<String>,
-    /// The web client id for Google's sign-in button; `null` when Google isn't set up.
-    #[schema(required = true)]
-    google: Option<String>,
-    /// Codes by email; always offered.
-    email: bool,
-}
-
-#[utoipa::path(get, path = "/api/auth/providers", tag = "account", responses((status = 200, body = AuthProviders)))]
-async fn auth_providers(State(state): State<AppState>) -> Json<AuthProviders> {
-    Json(AuthProviders {
-        apple: state.auth.config.apple_web_client_id.clone(),
-        google: state.auth.config.google_web_client_id.clone(),
-        email: true,
-    })
-}
-
-#[derive(Deserialize, ToSchema)]
-struct IdTokenSignIn {
-    /// The ID token (a JWT) from Sign in with Apple or Google.
-    id_token: String,
-    /// As in `POST /api/session`.
-    #[serde(default)]
-    device: Option<String>,
-}
-
-async fn sign_in_provider(
-    state: &AppState,
-    provider: auth::Provider,
-    current: Option<account::Session>,
-    body: IdTokenSignIn,
-) -> ApiResult<Session> {
-    let who = state
-        .auth
-        .verify(provider, &body.id_token, state.now())
-        .await?;
-    let token = account::sign_in_with(
-        &state.db,
-        provider.name(),
-        &who.subject,
-        &account::Profile {
-            email: who.email.as_deref(),
-            name: who.name.as_deref(),
-            picture: who.picture.as_deref(),
-        },
-        current.as_ref(),
-        body.device.as_deref(),
-        state.now(),
-    )
-    .await?;
-    Ok(Json(Session { token }))
-}
-
-/// Signs in with Apple. Sent with the device's current token, an Apple ID new to the server
-/// joins that account; one that already has an account brings this device there, and
-/// what the device's account held moves along, as with a recovery code.
-#[utoipa::path(
-    post, path = "/api/auth/apple", tag = "account", request_body = IdTokenSignIn,
-    security((), ("token" = [])),
-    responses((status = 200, body = Session), (status = "default", description = "`bad_request` for a token that isn't valid", body = ErrorBody)),
-)]
-async fn sign_in_apple(
-    State(state): State<AppState>,
-    MaybeSession(current): MaybeSession,
-    JsonBody(body): JsonBody<IdTokenSignIn>,
-) -> ApiResult<Session> {
-    sign_in_provider(&state, auth::Provider::Apple, current, body).await
-}
-
-/// Signs in with Google, as `POST /api/auth/apple` does with Apple.
-#[utoipa::path(
-    post, path = "/api/auth/google", tag = "account", request_body = IdTokenSignIn,
-    security((), ("token" = [])),
-    responses((status = 200, body = Session), (status = "default", description = "`bad_request` for a token that isn't valid", body = ErrorBody)),
-)]
-async fn sign_in_google(
-    State(state): State<AppState>,
-    MaybeSession(current): MaybeSession,
-    JsonBody(body): JsonBody<IdTokenSignIn>,
-) -> ApiResult<Session> {
-    sign_in_provider(&state, auth::Provider::Google, current, body).await
-}
-
-#[derive(Deserialize, ToSchema)]
-struct EmailCodeRequest {
-    email: String,
-}
-
-/// Emails a 6-digit sign-in code, valid for 10 minutes. A new one replaces the last.
-#[utoipa::path(
-    post, path = "/api/auth/email/code", tag = "account", request_body = EmailCodeRequest,
-    responses(
-        (status = 204, description = "Sent"),
-        (status = 429, description = "`too_many_requests`: wait a few minutes", body = ErrorBody),
-        (status = "default", description = "An error", body = ErrorBody),
-    ),
-)]
-async fn send_email_code(
-    State(state): State<AppState>,
-    JsonBody(body): JsonBody<EmailCodeRequest>,
-) -> Result<StatusCode, ApiError> {
-    let email = auth::normalized_email(&body.email)
-        .ok_or_else(|| ApiError::BadRequest("that isn't an email address".into()))?;
-    let now = state.now();
-    // Each mail costs, and nobody should flood an inbox: a few per address, and a cap for all.
-    if !state.limits.allow(&email, "email_code", 3, 600, now)
-        || !state.limits.allow("*", "email_code", 300, 3600, now)
-    {
-        return Err(ApiError::TooManyRequests(
-            "too many codes asked for; try again in a few minutes",
-        ));
-    }
-    let code = auth::new_code(&state.db, &email, now).await?;
-    state
-        .auth
-        .send_code(&email, &code)
-        .await
-        .map_err(ApiError::Upstream)?;
-    Ok(StatusCode::NO_CONTENT)
-}
-
-#[derive(Deserialize, ToSchema)]
-struct EmailSignIn {
-    email: String,
-    /// The 6 digits from the email.
-    code: String,
-    /// As in `POST /api/session`.
-    #[serde(default)]
-    device: Option<String>,
-}
-
-/// Signs in with an emailed code, as `POST /api/auth/apple` does with Apple. A code works
-/// once, for 10 minutes, and stops working after 5 wrong tries.
-#[utoipa::path(
-    post, path = "/api/auth/email", tag = "account", request_body = EmailSignIn,
-    security((), ("token" = [])),
-    responses(
-        (status = 200, body = Session),
-        (status = 404, description = "`not_found`: a wrong, used or expired code", body = ErrorBody),
-        (status = "default", description = "An error", body = ErrorBody),
-    ),
-)]
-async fn sign_in_email(
-    State(state): State<AppState>,
-    MaybeSession(current): MaybeSession,
-    JsonBody(body): JsonBody<EmailSignIn>,
-) -> ApiResult<Session> {
-    let email = auth::normalized_email(&body.email)
-        .ok_or_else(|| ApiError::BadRequest("that isn't an email address".into()))?;
-    if !auth::take_code(&state.db, &email, &body.code, state.now()).await? {
-        return Err(ApiError::NotFound("code"));
-    }
-    let profile = account::Profile {
-        email: Some(&email),
-        ..Default::default()
-    };
-    let token = account::sign_in_with(
-        &state.db,
-        "email",
-        &email,
-        &profile,
-        current.as_ref(),
-        body.device.as_deref(),
-        state.now(),
-    )
-    .await?;
-    Ok(Json(Session { token }))
-}
-
-/// The account: whether it has a recovery code, and the devices signed in to it.
-#[utoipa::path(
-    get, path = "/api/account", tag = "account", security(("token" = [])),
-    responses((status = 200, body = account::Account), (status = "default", description = "An error", body = ErrorBody)),
-)]
-async fn get_account(
-    State(state): State<AppState>,
-    CurrentSession(session): CurrentSession,
-) -> ApiResult<account::Account> {
-    Ok(Json(account::account(&state.db, &session).await?))
-}
-
-/// Deletes the account and everything in it: check-ins, added places, closed reports,
-/// reminders, and the sessions of every device. It can't be undone.
-#[utoipa::path(
-    delete, path = "/api/account", tag = "account", security(("token" = [])),
-    responses((status = 204, description = "Deleted"), (status = "default", description = "An error", body = ErrorBody)),
-)]
-async fn delete_account(
-    State(state): State<AppState>,
-    User(user): User,
-) -> Result<StatusCode, ApiError> {
-    account::delete(&state.db, &user).await?;
-    Ok(StatusCode::NO_CONTENT)
-}
-
-#[derive(Serialize, ToSchema)]
-struct RecoveryCode {
-    /// `XXXX-XXXX-XXXX-XXXX-XXXX`. Shown this once: the server keeps only a hash.
-    code: String,
-}
-
-/// Makes a new recovery code, which restores the account on any device through
-/// `POST /api/session/restore`. The previous code stops working.
-#[utoipa::path(
-    post, path = "/api/account/recovery-code", tag = "account", security(("token" = [])),
-    responses((status = 200, body = RecoveryCode), (status = "default", description = "An error", body = ErrorBody)),
-)]
-async fn new_recovery_code(
-    State(state): State<AppState>,
-    User(user): User,
-) -> ApiResult<RecoveryCode> {
-    Ok(Json(RecoveryCode {
-        code: account::new_recovery_code(&state.db, &user, state.now()).await?,
-    }))
-}
-
-#[derive(Serialize, ToSchema)]
-struct LinkCode {
-    /// `XXXX-XXXX`, to enter on the other device. It works once.
-    code: String,
-    expires_at: i64,
-}
-
-/// Makes a code that signs another device in to this account, through
-/// `POST /api/session/restore`, within 10 minutes.
-#[utoipa::path(
-    post, path = "/api/account/link-code", tag = "account", security(("token" = [])),
-    responses(
-        (status = 200, body = LinkCode),
-        (status = 429, description = "`too_many_requests`: more than 10 codes in an hour", body = ErrorBody),
-        (status = "default", description = "An error", body = ErrorBody),
-    ),
-)]
-async fn new_link_code(State(state): State<AppState>, User(user): User) -> ApiResult<LinkCode> {
-    let now = state.now();
-    if !state.limits.allow(&user, "link_code", 10, 3600, now) {
-        return Err(ApiError::TooManyRequests(
-            "too many link codes, try again later",
-        ));
-    }
-    let (code, expires_at) = account::new_link_code(&state.db, &user, now).await?;
-    Ok(Json(LinkCode { code, expires_at }))
-}
-
-/// Signs a device out of the account. Signing out the current device ends this session.
-#[utoipa::path(
-    delete, path = "/api/account/devices/{device_id}", tag = "account",
-    params(("device_id" = String, Path, description = "A device id from `GET /api/account`.")),
-    security(("token" = [])),
-    responses((status = 204, description = "Signed out"), (status = "default", description = "An error", body = ErrorBody)),
-)]
-async fn remove_device(
-    State(state): State<AppState>,
-    User(user): User,
-    Path(device_id): Path<String>,
-) -> Result<StatusCode, ApiError> {
-    if !account::remove_device(&state.db, &user, &device_id).await? {
-        return Err(ApiError::NotFound("device"));
-    }
-    Ok(StatusCode::NO_CONTENT)
-}
-
-#[derive(Serialize, ToSchema)]
-struct Catalog {
-    countries: &'static [catalog::Country],
-    continents: Vec<Continent>,
-}
-
-#[derive(Serialize, ToSchema)]
-struct Continent {
-    code: &'static str,
-    name: &'static str,
-}
-
-/// Every country and continent the game knows.
-#[utoipa::path(get, path = "/api/countries", tag = "meta", responses((status = 200, body = Catalog)))]
-async fn countries() -> Json<Catalog> {
-    Json(Catalog {
-        countries: catalog::countries(),
-        continents: catalog::CONTINENTS
-            .iter()
-            .map(|&(code, name)| Continent { code, name })
-            .collect(),
-    })
 }
 
 #[derive(Deserialize, IntoParams)]
