@@ -2,6 +2,8 @@ mod additions;
 mod imported;
 mod matching;
 
+use chrono::NaiveDate;
+
 use super::*;
 
 /// A new anonymous user's id.
