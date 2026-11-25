@@ -49,7 +49,8 @@ private const val SPIN_MS = 1600L
 
 class AppViewModel(application: Application) : AndroidViewModel(application) {
     private val settings = Settings(application)
-    private val api = ApiClient(BuildConfig.API_BASE, settings, android.os.Build.MODEL) { signedOut() }
+    internal val api = ApiClient(BuildConfig.API_BASE, settings, android.os.Build.MODEL) { accounts.signedOut() }
+    private val accounts = AccountModel(this)
 
     var world by mutableStateOf<World?>(null); private set
     var catalog by mutableStateOf<Catalog?>(null); private set
@@ -95,17 +96,21 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     var server by mutableStateOf<String?>(null); private set
 
     /** The account's recovery code status and devices, loaded when settings open. */
-    var account by mutableStateOf<Account?>(null); private set
-    var accountError by mutableStateOf<String?>(null); private set
-    var accountBusy by mutableStateOf(false); private set
+    val account: Account? get() = accounts.account
+    val accountError: String? get() = accounts.accountError
+    val accountBusy: Boolean get() = accounts.accountBusy
     /** Shown once, right after it is made. */
-    var recoveryCode by mutableStateOf<String?>(null); private set
-    var linkCode by mutableStateOf<LinkCode?>(null); private set
+    val recoveryCode: String? get() = accounts.recoveryCode
+    val linkCode: LinkCode? get() = accounts.linkCode
+    /** The address a sign-in code went to, while the code is awaited. */
+    val codeSentTo: String? get() = accounts.codeSentTo
+    /** The public page as a full link; null when it's off. */
+    val publicProfileUrl: String? get() = accounts.publicProfileUrl
 
     var projection by mutableStateOf(settings.projection); private set
     var camera by mutableStateOf(Camera())
 
-    private val messageChannel = Channel<String>(Channel.BUFFERED)
+    internal val messageChannel = Channel<String>(Channel.BUFFERED)
     /** Short announcements (badges, discoveries, errors) for the snackbar. */
     val messages = messageChannel.receiveAsFlow()
 
@@ -773,41 +778,6 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         detail = detail?.let { if (it.id == id) it.copy(visits = update(it.visits)) else it }
     }
 
-    fun loadAccount() {
-        viewModelScope.launch {
-            try {
-                account = api.account()
-                accountError = null
-            } catch (e: Exception) {
-                accountError = e.message
-            }
-        }
-    }
-
-    /** Runs one account action at a time, reporting failures in the snackbar. */
-    private fun accountAction(work: suspend () -> Unit) {
-        if (accountBusy) return
-        accountBusy = true
-        viewModelScope.launch {
-            try {
-                work()
-            } catch (e: CancellationException) {
-                throw e
-            } catch (e: Exception) {
-                messageChannel.trySend("That did not work: ${e.message}")
-            } finally {
-                accountBusy = false
-            }
-        }
-    }
-
-    fun makeRecoveryCode() = accountAction {
-        recoveryCode = api.newRecoveryCode()
-        account = api.account()
-    }
-
-    fun makeLinkCode() = accountAction { linkCode = api.newLinkCode() }
-
     /** Whether a share sheet is being prepared. */
     var sharing by mutableStateOf(false); private set
 
@@ -834,128 +804,32 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    /** The public page as a full link; null when it's off. */
-    val publicProfileUrl: String? get() = account?.publicProfile?.let { BuildConfig.API_BASE.trimEnd('/') + it }
-
-    fun unshareProgress() = accountAction {
-        api.unshareProgress()
-        account = api.account()
-    }
-
-    fun clearLinkCode() {
-        linkCode = null
-    }
-
+    fun loadAccount() = accounts.loadAccount()
+    fun makeRecoveryCode() = accounts.makeRecoveryCode()
+    fun makeLinkCode() = accounts.makeLinkCode()
+    fun unshareProgress() = accounts.unshareProgress()
+    fun clearLinkCode() = accounts.clearLinkCode()
     /** Signs in to the account of a recovery or link code; what this device did moves into it. */
-    fun restore(code: String, onRestored: () -> Unit) = accountAction {
-        try {
-            api.restore(code)
-        } catch (e: ApiException) {
-            if (e.status != 404) throw e
-            messageChannel.trySend("Code not recognised. A link code works once, for 10 minutes.")
-            return@accountAction
-        }
-        recoveryCode = null
-        linkCode = null
-        onRestored()
-        messageChannel.trySend("Welcome back. Your progress is on this device now.")
-        accountChanged()
-    }
-
-    fun signOut(deviceId: String) = accountAction {
-        api.removeDevice(deviceId)
-        account = api.account()
-    }
-
-    /** The address a sign-in code went to, while the code is awaited. */
-    var codeSentTo by mutableStateOf<String?>(null); private set
-
-    fun sendEmailCode(email: String) = accountAction {
-        val address = email.trim()
-        api.sendEmailCode(address)
-        codeSentTo = address
-    }
-
-    fun forgetEmailCode() {
-        codeSentTo = null
-    }
-
-    fun signIn(code: String) {
-        val email = codeSentTo ?: return
-        accountAction {
-            try {
-                api.signIn(email, code)
-            } catch (e: ApiException) {
-                if (e.status != 404) throw e
-                messageChannel.trySend("Wrong code. Check it, or ask for a new one.")
-                return@accountAction
-            }
-            codeSentTo = null
-            recoveryCode = null
-            linkCode = null
-            messageChannel.trySend("Signed in. Your progress now follows you to every device you sign in on.")
-            accountChanged()
-        }
-    }
-
-    /**
-     * Signs in with the ID token `getToken` gets from Google's account picker (null when the
-     * user closes it). The picker counts as part of the account action, so no other one can
-     * start meanwhile, and it runs in this model's scope, so leaving the screen doesn't cut it off.
-     */
-    fun signInWithGoogle(getToken: suspend () -> String?) = accountAction {
-        val idToken = getToken() ?: return@accountAction
-        api.signInWithGoogle(idToken)
-        codeSentTo = null
-        recoveryCode = null
-        linkCode = null
-        messageChannel.trySend("Signed in. Your progress now follows you to every device you sign in on.")
-        accountChanged()
-    }
-
-    fun signOut() = accountAction {
-        api.signOut()
-        recoveryCode = null
-        linkCode = null
-        messageChannel.trySend("Signed out. Sign in again to get your progress back here.")
-        accountChanged()
-    }
-
-    fun deleteAccount() = accountAction {
-        api.deleteAccount()
-        recoveryCode = null
-        linkCode = null
-        messageChannel.trySend("Account deleted. You start fresh on this device.")
-        accountChanged()
-    }
-
-    /**
-     * The server no longer knows this device: it was signed out from another device, or its
-     * account is gone. Says so, and shows everything again as for someone without an account,
-     * so nothing of the old account stays on screen as if it were still here. A new account
-     * only starts with the next check-in or other change.
-     */
-    private fun signedOut() {
-        // On its own: the request that found out is often part of what this starts again.
-        viewModelScope.launch {
-            messageChannel.trySend("You were signed out. Sign in or use a recovery code to get your progress back.")
-            recoveryCode = null
-            linkCode = null
-            accountChanged()
-        }
-    }
+    fun restore(code: String, onRestored: () -> Unit) = accounts.restore(code, onRestored)
+    fun signOut(deviceId: String) = accounts.signOut(deviceId)
+    fun sendEmailCode(email: String) = accounts.sendEmailCode(email)
+    fun forgetEmailCode() = accounts.forgetEmailCode()
+    fun signIn(code: String) = accounts.signIn(code)
+    /** Signs in with the ID token `getToken` gets from Google's account picker. */
+    fun signInWithGoogle(getToken: suspend () -> String?) = accounts.signInWithGoogle(getToken)
+    fun signOut() = accounts.signOut()
+    fun deleteAccount() = accounts.deleteAccount()
 
     /** Goes up with every change of account, so an answer for the previous one can be told apart. */
     private var accountGeneration = 0
 
     /** This device is in another account now: drop what was loaded for the previous one. */
-    private fun accountChanged() {
+    internal fun accountChanged() {
         accountGeneration++
         closePlace()
         select(selected)
         refresh()
-        account = null
-        loadAccount()
+        accounts.reload()
     }
 }
 
