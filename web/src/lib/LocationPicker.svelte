@@ -1,6 +1,7 @@
 <script lang="ts">
 	import Navigation from '@lucide/svelte/icons/navigation';
 	import X from '@lucide/svelte/icons/x';
+	import AreaOptions from './AreaOptions.svelte';
 	import * as api from './api';
 	import { app, chooseArea, forgetRecent, locate, switchArea } from './state.svelte';
 	import type { Area } from './types';
@@ -70,19 +71,7 @@
 </script>
 
 <div class="picker">
-	{#if app.location && app.location.options.length > 1}
-		<div class="options" role="group" aria-label="Area around you">
-			{#each app.location.options as option (option.id)}
-				<button
-					class:on={app.location.area.id === option.id}
-					aria-pressed={app.location.area.id === option.id}
-					onclick={() => pick(option)}
-				>
-					<span>{option.kind === 'city' ? `All of ${option.name}` : `Only ${option.name}`}</span>
-				</button>
-			{/each}
-		</div>
-	{/if}
+	<AreaOptions onpick={pick} />
 
 	<button class="gps" onclick={useGps} disabled={app.locating}>
 		<Navigation size={16} strokeWidth={2.5} aria-hidden="true" />
@@ -246,28 +235,5 @@
 
 	li button.forget:hover {
 		color: var(--text);
-	}
-
-	.options {
-		display: flex;
-		border: 1px solid var(--line);
-		border-radius: 10px;
-		overflow: hidden;
-	}
-
-	.options button {
-		flex: 1;
-		padding: 8px 10px;
-		font-size: var(--text-sm);
-	}
-
-	.options button + button {
-		border-left: 1px solid var(--line);
-	}
-
-	.options button.on {
-		background: var(--panel);
-		color: var(--accent);
-		font-weight: 700;
 	}
 </style>
