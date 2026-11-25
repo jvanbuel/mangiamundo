@@ -19,7 +19,7 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: backend
-      # The same checks as .githooks/pre-commit.
+      # The same checks as the prek hooks in .pre-commit-config.yaml.
       - run: cargo fmt --check
       - run: cargo clippy --all-targets --locked -- -D warnings
       - run: cargo test --locked
