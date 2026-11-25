@@ -554,10 +554,7 @@ fn covered(b: Bbox) -> bool {
 }
 
 /// The places in an area from the local copy, or `None` when the copy doesn't cover it.
-async fn from_import(
-    db: &SqlitePool,
-    area: &Boundary,
-) -> anyhow::Result<Option<Vec<FoundPlace>>> {
+async fn from_import(db: &SqlitePool, area: &Boundary) -> anyhow::Result<Option<Vec<FoundPlace>>> {
     let bbox = area.shape.bbox();
     if !covered(bbox) || store::setting(db, IMPORTED_AT).await?.is_none() {
         return Ok(None);

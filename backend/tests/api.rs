@@ -1116,13 +1116,31 @@ async fn closed_reports_hide_a_place_from_the_reporter_then_from_everyone() {
     assert_eq!(status, StatusCode::OK);
     assert_eq!(reported["progress"], Value::Null, "no area, no progress");
     // Reporting twice counts once. With the area, the answer has the progress without it.
-    let (status, reported) = call(&app, "PUT", &format!("{report}?{HERE}"), Some(&alice), None).await;
+    let (status, reported) =
+        call(&app, "PUT", &format!("{report}?{HERE}"), Some(&alice), None).await;
     assert_eq!(status, StatusCode::OK);
-    let (_, mut discover) = call(&app, "GET", &format!("/api/discover?{HERE}"), Some(&alice), None).await;
+    let (_, mut discover) = call(
+        &app,
+        "GET",
+        &format!("/api/discover?{HERE}"),
+        Some(&alice),
+        None,
+    )
+    .await;
     discover.as_object_mut().unwrap().remove("area");
     assert_eq!(reported["progress"], discover);
-    let (_, theirs) = call(&app, "GET", &format!("/api/discover?{HERE}"), Some(&bob), None).await;
-    assert_eq!(discover["places"].as_u64().unwrap() + 1, theirs["places"].as_u64().unwrap());
+    let (_, theirs) = call(
+        &app,
+        "GET",
+        &format!("/api/discover?{HERE}"),
+        Some(&bob),
+        None,
+    )
+    .await;
+    assert_eq!(
+        discover["places"].as_u64().unwrap() + 1,
+        theirs["places"].as_u64().unwrap()
+    );
     assert!(!list(Some(alice.clone())).await.contains(&place));
     assert!(list(Some(bob.clone())).await.contains(&place));
     assert!(list(None).await.contains(&place));
@@ -1486,7 +1504,14 @@ async fn a_check_in_says_what_it_unlocked_in_the_area() {
     assert_eq!(earned["text"], first_bite["description"]);
     // The progress is what discover says next, so clients need not ask.
     let after = discover(token.clone()).await;
-    for part in ["countries", "badges", "profile", "events", "quests", "world"] {
+    for part in [
+        "countries",
+        "badges",
+        "profile",
+        "events",
+        "quests",
+        "world",
+    ] {
         assert_eq!(result["progress"][part], after[part], "{part}");
     }
     assert_eq!(result["profile"], after["profile"]);
@@ -1612,7 +1637,14 @@ async fn writes_contract_fixtures() {
     write("additions", &additions);
 
     // Taking back the unverified check-in, after everything that shows it is written.
-    let (_, places) = call(&app, "GET", &format!("/api/places/{}", second["id"].as_str().unwrap()), Some(&token), None).await;
+    let (_, places) = call(
+        &app,
+        "GET",
+        &format!("/api/places/{}", second["id"].as_str().unwrap()),
+        Some(&token),
+        None,
+    )
+    .await;
     let uri = format!("/api/visits/{}?{HERE}", places["visits"][0]["id"]);
     let (status, removed) = call(&app, "DELETE", &uri, Some(&token), None).await;
     assert_eq!(status, StatusCode::OK);
@@ -1697,7 +1729,11 @@ async fn writes_contract_fixtures() {
         .map(id)
         .unwrap();
     let others: Vec<String> = everywhere.iter().map(id).filter(|i| *i != only).collect();
-    let suggestion = get(format!("/api/suggestion?{HERE}&exclude={}", others.join(","))).await;
+    let suggestion = get(format!(
+        "/api/suggestion?{HERE}&exclude={}",
+        others.join(",")
+    ))
+    .await;
     assert_eq!(suggestion["place"]["id"], only.as_str());
     write("suggestion", &suggestion);
 
@@ -1708,8 +1744,14 @@ async fn writes_contract_fixtures() {
     let _loading = loads.begin("demo-leuven");
     loads.step("demo-leuven", 15.0, 95.0, "Looking for restaurants", 1e9);
     let loading = api::router(state);
-    let (status, progress) =
-        call(&loading, "GET", "/api/areas/demo-leuven/progress", None, None).await;
+    let (status, progress) = call(
+        &loading,
+        "GET",
+        "/api/areas/demo-leuven/progress",
+        None,
+        None,
+    )
+    .await;
     assert_eq!(status, StatusCode::OK);
     write("area-progress", &progress);
 
@@ -1720,7 +1762,10 @@ async fn writes_contract_fixtures() {
     let mut edited = osm_place(42, "Lalibela", "ethiopian", 50.8798, 4.7005);
     edited.opening_hours = Some("Mo-Su 12:00-22:00".into());
     let found = mangiamundo::providers::Lookup::Found(edited);
-    fake.places.lock().unwrap().insert("osm-node-42".into(), found);
+    fake.places
+        .lock()
+        .unwrap()
+        .insert("osm-node-42".into(), found);
     let uri = "/api/places/osm-node-42/refresh?lat=50.88&lng=4.7";
     let (status, refreshed) = call(&osm, "POST", uri, Some(&token), None).await;
     assert_eq!(status, StatusCode::OK);
@@ -2672,7 +2717,10 @@ async fn new_accounts_are_limited_per_address_and_hour() {
     for _ in 0..20 {
         assert_eq!(session_from(&app, "203.0.113.7").await, StatusCode::OK);
     }
-    assert_eq!(session_from(&app, "203.0.113.7").await, StatusCode::TOO_MANY_REQUESTS);
+    assert_eq!(
+        session_from(&app, "203.0.113.7").await,
+        StatusCode::TOO_MANY_REQUESTS
+    );
     let (status, error) = call(&app, "GET", "/api/health", None, None).await;
     assert_eq!((status, &error["ok"]), (StatusCode::OK, &Value::Bool(true)));
     // Someone else is not held up, and one connection's IPv6 addresses count as one.
@@ -2680,7 +2728,10 @@ async fn new_accounts_are_limited_per_address_and_hour() {
     for _ in 0..20 {
         assert_eq!(session_from(&app, "2001:db8:1:2::1").await, StatusCode::OK);
     }
-    assert_eq!(session_from(&app, "2001:db8:1:2:a:b:c:d").await, StatusCode::TOO_MANY_REQUESTS);
+    assert_eq!(
+        session_from(&app, "2001:db8:1:2:a:b:c:d").await,
+        StatusCode::TOO_MANY_REQUESTS
+    );
     assert_eq!(session_from(&app, "2001:db8:1:3::1").await, StatusCode::OK);
     // The accounts that were made keep working, and an hour later there is room again.
     now.fetch_add(3600, Ordering::Relaxed);
@@ -2708,7 +2759,14 @@ async fn everything_a_client_reads_at_first_works_without_an_account() {
     let (status, discover) = call(&app, "GET", &format!("/api/discover?{HERE}"), None, None).await;
     assert_eq!(status, StatusCode::OK);
     let country = discover["countries"][0]["code"].as_str().unwrap();
-    let (status, places) = call(&app, "GET", &format!("/api/places?{HERE}&country={country}"), None, None).await;
+    let (status, places) = call(
+        &app,
+        "GET",
+        &format!("/api/places?{HERE}&country={country}"),
+        None,
+        None,
+    )
+    .await;
     assert_eq!(status, StatusCode::OK);
     assert_eq!(places[0]["visits"], serde_json::json!([]));
     let place = places[0]["id"].as_str().unwrap();
@@ -2736,7 +2794,14 @@ async fn everything_a_client_reads_at_first_works_without_an_account() {
     let token = session(&app).await;
     let (_, account) = call(&app, "GET", "/api/account", Some(&token), None).await;
     let device = account["devices"][0]["id"].as_str().unwrap();
-    let (status, _) = call(&app, "DELETE", &format!("/api/account/devices/{device}"), Some(&token), None).await;
+    let (status, _) = call(
+        &app,
+        "DELETE",
+        &format!("/api/account/devices/{device}"),
+        Some(&token),
+        None,
+    )
+    .await;
     assert_eq!(status, StatusCode::NO_CONTENT);
     for uri in &reads[..4] {
         let (status, body) = call(&app, "GET", uri, Some(&token), None).await;
@@ -2744,7 +2809,14 @@ async fn everything_a_client_reads_at_first_works_without_an_account() {
         assert_error(&body, "unauthorized");
     }
     // A write needs an account.
-    let (status, _) = call(&app, "POST", &format!("/api/places/{place}/visits?{HERE}"), None, Some("{}")).await;
+    let (status, _) = call(
+        &app,
+        "POST",
+        &format!("/api/places/{place}/visits?{HERE}"),
+        None,
+        Some("{}"),
+    )
+    .await;
     assert_eq!(status, StatusCode::UNAUTHORIZED);
 }
 
@@ -2797,7 +2869,11 @@ async fn a_restore_merges_the_account_its_session_belongs_to_now() {
 
 /// A GET of a public page or image: its status, content type and bytes.
 async fn fetch(app: &Router, uri: &str) -> (StatusCode, String, Vec<u8>) {
-    let request = Request::builder().uri(uri).header("host", "mangiamundo.test").body(Body::empty()).unwrap();
+    let request = Request::builder()
+        .uri(uri)
+        .header("host", "mangiamundo.test")
+        .body(Body::empty())
+        .unwrap();
     let response = app.clone().oneshot(request).await.unwrap();
     let status = response.status();
     let kind = response
@@ -2805,7 +2881,13 @@ async fn fetch(app: &Router, uri: &str) -> (StatusCode, String, Vec<u8>) {
         .get("content-type")
         .map(|v| v.to_str().unwrap().to_string())
         .unwrap_or_default();
-    let bytes = response.into_body().collect().await.unwrap().to_bytes().to_vec();
+    let bytes = response
+        .into_body()
+        .collect()
+        .await
+        .unwrap()
+        .to_bytes()
+        .to_vec();
     (status, kind, bytes)
 }
 
@@ -2813,7 +2895,8 @@ async fn fetch(app: &Router, uri: &str) -> (StatusCode, String, Vec<u8>) {
 fn path_of(url: &Value) -> String {
     let url = url.as_str().unwrap();
     assert!(url.starts_with("https://mangiamundo.test/"), "{url}");
-    url.trim_start_matches("https://mangiamundo.test").to_string()
+    url.trim_start_matches("https://mangiamundo.test")
+        .to_string()
 }
 
 async fn post_shared(app: &Router, uri: &str, token: &str) -> (StatusCode, Value) {
@@ -2827,22 +2910,45 @@ async fn post_shared(app: &Router, uri: &str, token: &str) -> (StatusCode, Value
     let response = app.clone().oneshot(request).await.unwrap();
     let status = response.status();
     let bytes = response.into_body().collect().await.unwrap().to_bytes();
-    (status, serde_json::from_slice(&bytes).unwrap_or(Value::Null))
+    (
+        status,
+        serde_json::from_slice(&bytes).unwrap_or(Value::Null),
+    )
 }
 
 #[tokio::test]
 async fn sharing_progress_makes_a_public_page_that_can_be_turned_off() {
     let app = app().await;
     let token = session(&app).await;
-    let (_, discover) = call(&app, "GET", &format!("/api/discover?{HERE}"), Some(&token), None).await;
-    let country = discover["countries"][0]["code"].as_str().unwrap().to_string();
-    let (_, places) = call(&app, "GET", &format!("/api/places?{HERE}&country={country}"), Some(&token), None).await;
+    let (_, discover) = call(
+        &app,
+        "GET",
+        &format!("/api/discover?{HERE}"),
+        Some(&token),
+        None,
+    )
+    .await;
+    let country = discover["countries"][0]["code"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    let (_, places) = call(
+        &app,
+        "GET",
+        &format!("/api/places?{HERE}&country={country}"),
+        Some(&token),
+        None,
+    )
+    .await;
     let (status, _) = call(&app, "POST", &visits_uri(&places[0]), Some(&token), None).await;
     assert_eq!(status, StatusCode::OK);
 
     let (status, link) = post_shared(&app, &format!("/api/share?{HERE}"), &token).await;
     assert_eq!(status, StatusCode::OK);
-    assert!(link["text"].as_str().unwrap().contains("I've tasted food from 1 of the"));
+    assert!(link["text"]
+        .as_str()
+        .unwrap()
+        .contains("I've tasted food from 1 of the"));
     let page = path_of(&link["url"]);
     assert_eq!(path_of(&link["image_url"]), format!("{page}/card.png"));
 
@@ -2859,7 +2965,10 @@ async fn sharing_progress_makes_a_public_page_that_can_be_turned_off() {
     let html = String::from_utf8(html).unwrap();
     assert!(html.contains(r#"<meta property="og:image" content="https://mangiamundo.test/p/"#));
     assert!(html.contains("1 of "));
-    assert!(!html.contains(places[0]["name"].as_str().unwrap()), "no place names on the public page");
+    assert!(
+        !html.contains(places[0]["name"].as_str().unwrap()),
+        "no place names on the public page"
+    );
     let (status, kind, png) = fetch(&app, &format!("{page}/card.png")).await;
     assert_eq!(status, StatusCode::OK);
     assert_eq!(kind, "image/png");
@@ -2878,9 +2987,26 @@ async fn a_shared_check_in_has_its_own_page_until_it_is_removed() {
     let app = app().await;
     let token = session(&app).await;
     let other = session(&app).await;
-    let (_, discover) = call(&app, "GET", &format!("/api/discover?{HERE}"), Some(&token), None).await;
-    let country = discover["countries"][0]["code"].as_str().unwrap().to_string();
-    let (_, places) = call(&app, "GET", &format!("/api/places?{HERE}&country={country}"), Some(&token), None).await;
+    let (_, discover) = call(
+        &app,
+        "GET",
+        &format!("/api/discover?{HERE}"),
+        Some(&token),
+        None,
+    )
+    .await;
+    let country = discover["countries"][0]["code"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    let (_, places) = call(
+        &app,
+        "GET",
+        &format!("/api/places?{HERE}&country={country}"),
+        Some(&token),
+        None,
+    )
+    .await;
     let (_, result) = call(&app, "POST", &visits_uri(&places[0]), Some(&token), None).await;
     let visit = result["visit"]["id"].as_i64().unwrap();
 
@@ -2902,7 +3028,14 @@ async fn a_shared_check_in_has_its_own_page_until_it_is_removed() {
     let (status, kind, _) = fetch(&app, &format!("{page}/card.png")).await;
     assert_eq!((status, kind.as_str()), (StatusCode::OK, "image/png"));
 
-    let (status, _) = call(&app, "DELETE", &format!("/api/visits/{visit}"), Some(&token), None).await;
+    let (status, _) = call(
+        &app,
+        "DELETE",
+        &format!("/api/visits/{visit}"),
+        Some(&token),
+        None,
+    )
+    .await;
     assert_eq!(status, StatusCode::OK);
     assert_eq!(fetch(&app, &page).await.0, StatusCode::NOT_FOUND);
 }
@@ -3020,26 +3153,48 @@ async fn quests_are_paid_per_area_at_check_in_and_taken_back_with_it() {
     }
 
     // They don't count in Tokyo, which has the quest too: one check-in there is one of two.
-    assert_eq!(done(app.clone(), token.clone(), "demo-tokyo").await, (0, false));
+    assert_eq!(
+        done(app.clone(), token.clone(), "demo-tokyo").await,
+        (0, false)
+    );
     let uri = format!("{}?area=demo-tokyo", visits_uri(&tokyo[0]));
     call(&app, "POST", &uri, Some(&token), None).await;
-    assert_eq!(done(app.clone(), token.clone(), "demo-tokyo").await, (1, false));
+    assert_eq!(
+        done(app.clone(), token.clone(), "demo-tokyo").await,
+        (1, false)
+    );
     assert_eq!(paid().await, ["demo-leuven", "demo-leuven-3000"]);
     let uri = format!("{}?area=demo-tokyo", visits_uri(&tokyo[1]));
     call(&app, "POST", &uri, Some(&token), None).await;
-    assert_eq!(paid().await, ["demo-leuven", "demo-leuven-3000", "demo-tokyo"]);
+    assert_eq!(
+        paid().await,
+        ["demo-leuven", "demo-leuven-3000", "demo-tokyo"]
+    );
 
     // Taking a check-in back takes back the quests it finished, where it finished them.
     let uri = format!("/api/visits/{}", visits[0]["visit"]["id"]);
     let (status, _) = call(&app, "DELETE", &uri, Some(&token), None).await;
     assert_eq!(status, StatusCode::OK);
     assert_eq!(paid().await, ["demo-tokyo"]);
-    assert_eq!(done(app.clone(), token.clone(), "demo-leuven").await, (1, false));
+    assert_eq!(
+        done(app.clone(), token.clone(), "demo-leuven").await,
+        (1, false)
+    );
     // And checking in again pays them again, once.
     let uri = visits_uri(&west[0]);
     let (_, back) = call(&app, "POST", &uri, Some(&token), None).await;
-    assert_eq!(paid().await, ["demo-leuven", "demo-leuven-3000", "demo-tokyo"]);
-    let (_, d) = call(&app, "GET", "/api/discover?area=demo-tokyo", Some(&token), None).await;
+    assert_eq!(
+        paid().await,
+        ["demo-leuven", "demo-leuven-3000", "demo-tokyo"]
+    );
+    let (_, d) = call(
+        &app,
+        "GET",
+        "/api/discover?area=demo-tokyo",
+        Some(&token),
+        None,
+    )
+    .await;
     assert_eq!(d["profile"]["xp"], back["profile"]["xp"]);
 }
 
@@ -3337,8 +3492,12 @@ async fn a_client_looping_on_area_lookups_is_limited_and_others_are_served() {
     assert_eq!(body["code"], "too_many_requests");
     let (status, _) = get_from(&app, looping, "/api/areas/locate?lat=12&lng=4.7").await;
     assert_eq!(status, StatusCode::OK, "a remembered cell is free");
-    let (status, here) =
-        get_from(&app, "198.51.100.1", "/api/areas/locate?lat=50.8798&lng=4.71").await;
+    let (status, here) = get_from(
+        &app,
+        "198.51.100.1",
+        "/api/areas/locate?lat=50.8798&lng=4.71",
+    )
+    .await;
     assert_eq!(status, StatusCode::OK);
     assert_eq!(here["city"]["id"], "demo-leuven");
 

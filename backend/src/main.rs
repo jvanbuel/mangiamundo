@@ -47,7 +47,12 @@ async fn main() -> anyhow::Result<()> {
                 .chain(config.apple_services_id.clone())
                 .collect(),
             apple_web_client_id: config.apple_services_id.clone(),
-            google_client_ids: config.google_web_client_id.iter().chain(&config.google_ios_client_id).cloned().collect(),
+            google_client_ids: config
+                .google_web_client_id
+                .iter()
+                .chain(&config.google_ios_client_id)
+                .cloned()
+                .collect(),
             google_web_client_id: config.google_web_client_id.clone(),
             resend_key: config.resend_api_key.clone(),
             mail_from: config.mail_from.clone(),

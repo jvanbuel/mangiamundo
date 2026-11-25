@@ -450,8 +450,7 @@ async fn remind(
             .filter(|c| !visited.contains(c))
             .map(String::as_str)
             .collect();
-        if let Some(notification) =
-            new_food_notification(&untried, &rows, &area.boundary.info.name)
+        if let Some(notification) = new_food_notification(&untried, &rows, &area.boundary.info.name)
         {
             match deliver(pusher, sub, &notification).await {
                 Some(Delivery::Sent) => sent += 1,

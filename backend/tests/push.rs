@@ -469,8 +469,14 @@ async fn a_subscriber_whose_reminders_fail_does_not_stop_the_others() {
             "keys": { "p256dh": p256dh, "auth": auth },
             "area": "demo-leuven", "timezone": "UTC",
         });
-        let (status, _) =
-            call(&app, "PUT", "/api/push/subscription", Some(&token), Some(body)).await;
+        let (status, _) = call(
+            &app,
+            "PUT",
+            "/api/push/subscription",
+            Some(&token),
+            Some(body),
+        )
+        .await;
         assert_eq!(status, StatusCode::NO_CONTENT);
     }
     let reminded = || {
@@ -552,7 +558,14 @@ async fn the_plan_holds_what_is_sent_on_the_day() {
         "keys": { "p256dh": p256dh, "auth": auth },
         "area": "demo-leuven", "timezone": "UTC",
     });
-    let (status, _) = call(&app, "PUT", "/api/push/subscription", Some(&token), Some(body)).await;
+    let (status, _) = call(
+        &app,
+        "PUT",
+        "/api/push/subscription",
+        Some(&token),
+        Some(body),
+    )
+    .await;
     assert_eq!(status, StatusCode::NO_CONTENT);
     let day: chrono::NaiveDate = date.parse().unwrap();
     now.store(

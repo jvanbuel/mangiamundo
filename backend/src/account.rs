@@ -216,10 +216,11 @@ pub async fn session_for_token(
     token: &str,
     now: i64,
 ) -> sqlx::Result<Option<Session>> {
-    let Some(row) = sqlx::query("SELECT id, user_id, last_used_at FROM sessions WHERE token_hash = ?")
-        .bind(hash(token))
-        .fetch_optional(db)
-        .await?
+    let Some(row) =
+        sqlx::query("SELECT id, user_id, last_used_at FROM sessions WHERE token_hash = ?")
+            .bind(hash(token))
+            .fetch_optional(db)
+            .await?
     else {
         return Ok(None);
     };
@@ -409,10 +410,12 @@ pub async fn sign_in_with(
         }
         None => {
             let existing: Option<String> = match current {
-                Some(session) => sqlx::query_scalar("SELECT user_id FROM sessions WHERE id = ?")
-                    .bind(&session.id)
-                    .fetch_optional(&mut *tx)
-                    .await?,
+                Some(session) => {
+                    sqlx::query_scalar("SELECT user_id FROM sessions WHERE id = ?")
+                        .bind(&session.id)
+                        .fetch_optional(&mut *tx)
+                        .await?
+                }
                 None => None,
             };
             let user = match existing {
@@ -638,8 +641,14 @@ mod tests {
         let session = session_for_token(&db, "old-token", 0).await.unwrap();
         assert_eq!(session.unwrap().user, "u");
         // What is stored signs nobody in.
-        assert!(session_for_token(&db, &stored[0], 0).await.unwrap().is_none());
-        assert!(session_for_token(&db, "plain:old-token", 0).await.unwrap().is_none());
+        assert!(session_for_token(&db, &stored[0], 0)
+            .await
+            .unwrap()
+            .is_none());
+        assert!(session_for_token(&db, "plain:old-token", 0)
+            .await
+            .unwrap()
+            .is_none());
     }
 
     #[tokio::test]
@@ -668,7 +677,11 @@ mod tests {
         const DAY: i64 = 86_400;
         let db = crate::store::connect("sqlite::memory:").await.unwrap();
         let token = create_user(&db, None, 0).await.unwrap();
-        let user = session_for_token(&db, &token, 0).await.unwrap().unwrap().user;
+        let user = session_for_token(&db, &token, 0)
+            .await
+            .unwrap()
+            .unwrap()
+            .user;
 
         // Too young, whatever it holds.
         let at = ABANDONED_AFTER_SECS;
@@ -676,7 +689,13 @@ mod tests {
         // Old, but a device used it lately.
         session_for_token(&db, &token, at + 30 * DAY).await.unwrap();
         assert_eq!(clean_up(&db, at + 31 * DAY).await.unwrap().users, 0);
-        assert_eq!(clean_up(&db, at + 30 * DAY + ABANDONED_AFTER_SECS).await.unwrap().users, 0);
+        assert_eq!(
+            clean_up(&db, at + 30 * DAY + ABANDONED_AFTER_SECS)
+                .await
+                .unwrap()
+                .users,
+            0
+        );
         assert_eq!(users(&db).await, [user.clone()]);
         // A recovery code is a way back in.
         new_recovery_code(&db, &user, 0).await.unwrap();
@@ -691,10 +710,16 @@ mod tests {
 
         assert_eq!(clean_up(&db, later).await.unwrap().users, 1);
         assert!(users(&db).await.is_empty());
-        assert!(session_for_token(&db, &token, later).await.unwrap().is_none());
+        assert!(session_for_token(&db, &token, later)
+            .await
+            .unwrap()
+            .is_none());
         // Without any session left it is just as gone.
         let token = create_user(&db, None, 0).await.unwrap();
-        sqlx::query("DELETE FROM sessions").execute(&db).await.unwrap();
+        sqlx::query("DELETE FROM sessions")
+            .execute(&db)
+            .await
+            .unwrap();
         assert!(session_for_token(&db, &token, 0).await.unwrap().is_none());
         assert_eq!(clean_up(&db, later).await.unwrap().users, 1);
     }
@@ -769,7 +794,11 @@ mod tests {
     async fn expired_codes_and_old_reminder_records_are_deleted() {
         let db = crate::store::connect("sqlite::memory:").await.unwrap();
         let token = create_user(&db, None, 0).await.unwrap();
-        let user = session_for_token(&db, &token, 0).await.unwrap().unwrap().user;
+        let user = session_for_token(&db, &token, 0)
+            .await
+            .unwrap()
+            .unwrap()
+            .user;
         let now = 100 * 86_400;
         for (email, expires_at) in [("old@example.com", now), ("new@example.com", now + 1)] {
             sqlx::query("INSERT INTO email_codes (email, hash, expires_at) VALUES (?, 'h', ?)")
@@ -784,7 +813,10 @@ mod tests {
             .execute(&db)
             .await
             .unwrap();
-        for (key, sent_at) in [("old", now - PUSH_SENT_KEPT_SECS - 1), ("new", now - PUSH_SENT_KEPT_SECS)] {
+        for (key, sent_at) in [
+            ("old", now - PUSH_SENT_KEPT_SECS - 1),
+            ("new", now - PUSH_SENT_KEPT_SECS),
+        ] {
             sqlx::query("INSERT INTO push_sent (endpoint, key, sent_at) VALUES ('e', ?, ?)")
                 .bind(key)
                 .bind(sent_at)
@@ -794,7 +826,9 @@ mod tests {
         }
         // In this order: making a link code deletes the ones that expired before it.
         new_link_code(&db, &user, now).await.unwrap();
-        new_link_code(&db, &user, now - LINK_TTL_SECS).await.unwrap();
+        new_link_code(&db, &user, now - LINK_TTL_SECS)
+            .await
+            .unwrap();
 
         let cleaned = clean_up(&db, now).await.unwrap();
 
@@ -825,9 +859,17 @@ mod tests {
     async fn a_merge_moves_every_table_of_the_user() {
         let db = crate::store::connect("sqlite::memory:").await.unwrap();
         let from = create_user(&db, None, 0).await.unwrap();
-        let from = session_for_token(&db, &from, 0).await.unwrap().unwrap().user;
+        let from = session_for_token(&db, &from, 0)
+            .await
+            .unwrap()
+            .unwrap()
+            .user;
         let into = create_user(&db, None, 0).await.unwrap();
-        let into = session_for_token(&db, &into, 0).await.unwrap().unwrap().user;
+        let into = session_for_token(&db, &into, 0)
+            .await
+            .unwrap()
+            .unwrap()
+            .user;
         sqlx::query("INSERT INTO no_cuisine_reports (place_id, user_id, reported_at) VALUES ('osm-node-1', ?, 0)")
             .bind(&from)
             .execute(&db)
@@ -914,12 +956,17 @@ mod tests {
         merge(&mut conn, "from", "into").await.unwrap();
 
         for (table, column) in &named {
-            let owners: Vec<String> = sqlx::query_scalar(&format!(r#"SELECT "{column}" FROM "{table}""#))
-                .fetch_all(&mut *conn)
-                .await
-                .unwrap();
+            let owners: Vec<String> =
+                sqlx::query_scalar(&format!(r#"SELECT "{column}" FROM "{table}""#))
+                    .fetch_all(&mut *conn)
+                    .await
+                    .unwrap();
             // Named here again on purpose: leaving a table out of a merge is a decision.
-            let expected = if table == "link_codes" { "from" } else { "into" };
+            let expected = if table == "link_codes" {
+                "from"
+            } else {
+                "into"
+            };
             assert_eq!(owners, [expected], "{table}.{column}");
         }
     }
