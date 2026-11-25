@@ -52,23 +52,22 @@ pub async fn resolve(state: &AppState, id: &str) -> Result<Area, Error> {
     }
 
     let _done = state.loads.begin(id);
-    let boundary = match &cached {
-        // The outline rarely changes; keep it for refreshes.
-        Some(area) => area.boundary.clone(),
-        None => {
-            state.loads.step(id, 0.0, 15.0, "Finding the area", 2.0);
-            let boundary = state
-                .areas
-                .boundary(id)
-                .await
-                .map_err(Error::Upstream)?
-                .ok_or(Error::NotFound)?;
-            let b = boundary.shape.bbox();
-            if b.north - b.south > MAX_AREA_DEGREES || b.east - b.west > MAX_AREA_DEGREES {
-                return Err(Error::TooLarge(boundary.info.name));
-            }
-            boundary
+    // The outline rarely changes; keep it for refreshes.
+    let boundary = if let Some(area) = &cached {
+        area.boundary.clone()
+    } else {
+        state.loads.step(id, 0.0, 15.0, "Finding the area", 2.0);
+        let boundary = state
+            .areas
+            .boundary(id)
+            .await
+            .map_err(Error::Upstream)?
+            .ok_or(Error::NotFound)?;
+        let b = boundary.shape.bbox();
+        if b.north - b.south > MAX_AREA_DEGREES || b.east - b.west > MAX_AREA_DEGREES {
+            return Err(Error::TooLarge(boundary.info.name));
         }
+        boundary
     };
     let expected = state.places.expected_secs(&boundary);
     state
@@ -188,6 +187,11 @@ impl Loads {
             step.started.elapsed().as_secs_f64(),
             step.expected_secs,
         );
+        #[expect(
+            clippy::cast_possible_truncation,
+            clippy::cast_sign_loss,
+            reason = "steps run from 0 to 100"
+        )]
         Some((percent as u8, step.text))
     }
 }

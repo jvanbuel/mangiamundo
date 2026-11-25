@@ -47,8 +47,8 @@ async fn app() -> (Router, Arc<Mutex<Vec<Value>>>) {
     let (base, mails) = fakes().await;
     let db = store::connect("sqlite::memory:").await.unwrap();
     let router = api::router(AppState {
-        loads: Default::default(),
-        limits: Default::default(),
+        loads: mangiamundo::areas::Loads::default(),
+        limits: mangiamundo::limits::Limits::default(),
         db,
         places: Arc::new(Demo),
         areas: Arc::new(Demo),

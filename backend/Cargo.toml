@@ -34,3 +34,13 @@ jsonwebtoken = "9"
 [dev-dependencies]
 tower = { version = "0.5", features = ["util"] }
 http-body-util = "0.1"
+
+[lints.clippy]
+pedantic = { level = "warn", priority = -1 }
+# An application, not a published library: no callers outside this crate read these docs
+# or need #[must_use] hints.
+missing_errors_doc = "allow"
+missing_panics_doc = "allow"
+must_use_candidate = "allow"
+# Handlers and tests read top to bottom; splitting them for a line count hides the flow.
+too_many_lines = "allow"

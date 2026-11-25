@@ -3,6 +3,7 @@
 //! published keys, so no third-party auth service is involved.
 
 use std::collections::HashMap;
+use std::fmt::Write as _;
 use std::sync::Mutex;
 
 use jsonwebtoken::jwk::JwkSet;
@@ -249,7 +250,10 @@ pub fn normalized_email(input: &str) -> Option<String> {
 
 fn code_hash(email: &str, code: &str) -> String {
     let digest = Sha256::digest(format!("{email}:{code}").as_bytes());
-    digest.iter().map(|b| format!("{b:02x}")).collect()
+    digest.iter().fold(String::new(), |mut hex, b| {
+        let _ = write!(hex, "{b:02x}");
+        hex
+    })
 }
 
 /// Makes a new 6-digit code for the address, replacing any earlier one, and returns it.
@@ -271,7 +275,7 @@ pub async fn new_code(db: &SqlitePool, email: &str, now: i64) -> sqlx::Result<St
 
 /// Uses up the address's code when `code` matches. A wrong one counts as an attempt.
 pub async fn take_code(db: &SqlitePool, email: &str, code: &str, now: i64) -> sqlx::Result<bool> {
-    let code: String = code.chars().filter(|c| c.is_ascii_digit()).collect();
+    let code: String = code.chars().filter(char::is_ascii_digit).collect();
     let Some(row) =
         sqlx::query("SELECT hash, expires_at, attempts FROM email_codes WHERE email = ?")
             .bind(email)

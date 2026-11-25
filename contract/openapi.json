@@ -498,7 +498,7 @@
             "type": "string"
           },
           "cuisine": {
-            "description": "The OpenStreetMap `cuisine` value for its food, like \"sri_lankan\"; `null` when the\ncatalog has none. Only countries with one can be picked for a new place.",
+            "description": "The OpenStreetMap `cuisine` value for its food, like `sri_lankan`; `null` when the\ncatalog has none. Only countries with one can be picked for a new place.",
             "type": [
               "string",
               "null"
@@ -1610,7 +1610,7 @@
         "type": "string"
       },
       "SubscribeBody": {
-        "description": "A browser's PushSubscription (as from `subscription.toJSON()`), plus the user's area.",
+        "description": "A browser's `PushSubscription` (as from `subscription.toJSON()`), plus the user's area.",
         "properties": {
           "area": {
             "description": "The area to send reminders for.",

@@ -47,7 +47,8 @@ Tests: `cargo test` in `backend/`, `npm run check` in `web/`. Mobile apps: see
 [`mobile/README.md`](mobile/README.md).
 
 CI also runs `cargo fmt --check` and `cargo clippy --all-targets -- -D warnings` on the
-backend. To have them run before each commit that touches `backend/`, install
+backend, with clippy's pedantic lints on (see `[lints]` in `backend/Cargo.toml`) and the
+Rust version from `rust-toolchain.toml`. To have them run before each commit that touches `backend/`, install
 [prek](https://github.com/j178/prek) and then, in the repo:
 
 ```sh

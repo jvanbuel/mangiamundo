@@ -4,6 +4,7 @@
 use serde::Serialize;
 use sha2::{Digest, Sha256};
 use sqlx::{Row, SqlitePool};
+use std::fmt::Write as _;
 use utoipa::ToSchema;
 
 /// Crockford's base32: no I, L, O or U, so a code read aloud or off a screen is hard to
@@ -23,7 +24,7 @@ pub const ABANDONED_AFTER_SECS: i64 = 90 * 86_400;
 /// How long it is remembered that a reminder was sent. Each is only due on one day.
 const PUSH_SENT_KEPT_SECS: i64 = 60 * 86_400;
 /// How often [`run_cleanup`] looks.
-const CLEANUP_EVERY: std::time::Duration = std::time::Duration::from_secs(86_400);
+const CLEANUP_EVERY: std::time::Duration = std::time::Duration::from_hours(24);
 
 /// The session a request was made with.
 #[derive(Debug, Clone)]
@@ -112,7 +113,7 @@ fn grouped(code: &str) -> String {
 fn normalized(input: &str) -> String {
     input
         .chars()
-        .filter(|c| c.is_ascii_alphanumeric())
+        .filter(char::is_ascii_alphanumeric)
         .map(|c| match c.to_ascii_uppercase() {
             'O' => '0',
             'I' | 'L' => '1',
@@ -124,8 +125,10 @@ fn normalized(input: &str) -> String {
 fn hash(code: &str) -> String {
     Sha256::digest(code.as_bytes())
         .iter()
-        .map(|b| format!("{b:02x}"))
-        .collect()
+        .fold(String::new(), |mut hex, b| {
+            let _ = write!(hex, "{b:02x}");
+            hex
+        })
 }
 
 fn device_name(name: Option<&str>) -> Option<String> {
@@ -391,49 +394,46 @@ pub async fn sign_in_with(
             .bind(subject)
             .fetch_optional(&mut *tx)
             .await?;
-    let user = match owner {
-        Some(user) => {
-            // Apple sends the address only the first time; keep what we have when a value is
-            // missing, and take Google's latest name and photo.
-            sqlx::query(
-                "UPDATE identities SET email = COALESCE(?, email), name = COALESCE(?, name),
-                 picture = COALESCE(?, picture) WHERE provider = ? AND subject = ?",
-            )
+    let user = if let Some(user) = owner {
+        // Apple sends the address only the first time; keep what we have when a value is
+        // missing, and take Google's latest name and photo.
+        sqlx::query(
+            "UPDATE identities SET email = COALESCE(?, email), name = COALESCE(?, name),
+             picture = COALESCE(?, picture) WHERE provider = ? AND subject = ?",
+        )
+        .bind(profile.email)
+        .bind(profile.name)
+        .bind(profile.picture)
+        .bind(provider)
+        .bind(subject)
+        .execute(&mut *tx)
+        .await?;
+        user
+    } else {
+        let existing: Option<String> = match current {
+            Some(session) => {
+                sqlx::query_scalar("SELECT user_id FROM sessions WHERE id = ?")
+                    .bind(&session.id)
+                    .fetch_optional(&mut *tx)
+                    .await?
+            }
+            None => None,
+        };
+        let user = match existing {
+            Some(user) => user,
+            None => insert_user(&mut *tx, now).await?,
+        };
+        sqlx::query("INSERT INTO identities (provider, subject, user_id, email, name, picture, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)")
+            .bind(provider)
+            .bind(subject)
+            .bind(&user)
             .bind(profile.email)
             .bind(profile.name)
             .bind(profile.picture)
-            .bind(provider)
-            .bind(subject)
+            .bind(now)
             .execute(&mut *tx)
             .await?;
-            user
-        }
-        None => {
-            let existing: Option<String> = match current {
-                Some(session) => {
-                    sqlx::query_scalar("SELECT user_id FROM sessions WHERE id = ?")
-                        .bind(&session.id)
-                        .fetch_optional(&mut *tx)
-                        .await?
-                }
-                None => None,
-            };
-            let user = match existing {
-                Some(user) => user,
-                None => insert_user(&mut *tx, now).await?,
-            };
-            sqlx::query("INSERT INTO identities (provider, subject, user_id, email, name, picture, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)")
-                .bind(provider)
-                .bind(subject)
-                .bind(&user)
-                .bind(profile.email)
-                .bind(profile.name)
-                .bind(profile.picture)
-                .bind(now)
-                .execute(&mut *tx)
-                .await?;
-            user
-        }
+        user
     };
     let token = switch_to(&mut tx, &user, current, device, now).await?;
     tx.commit().await?;
@@ -531,9 +531,10 @@ pub async fn clean_up(db: &SqlitePool, now: i64) -> sqlx::Result<Cleaned> {
     );
     for (table, column) in owned(&mut *tx).await? {
         if !NOT_DATA.contains(&table.as_str()) {
-            abandoned.push_str(&format!(
+            let _ = write!(
+                abandoned,
                 r#" AND NOT EXISTS (SELECT 1 FROM "{table}" WHERE "{column}" = users.id)"#
-            ));
+            );
         }
     }
     let users = sqlx::query(&abandoned)
@@ -709,7 +710,7 @@ mod tests {
         new_link_code(&db, &user, later).await.unwrap();
 
         assert_eq!(clean_up(&db, later).await.unwrap().users, 1);
-        assert!(users(&db).await.is_empty());
+        assert_eq!(users(&db).await, [] as [String; 0]);
         assert!(session_for_token(&db, &token, later)
             .await
             .unwrap()
@@ -758,20 +759,22 @@ mod tests {
                     .fetch_all(&mut *conn)
                     .await
                     .unwrap();
-            let names: Vec<String> = columns.iter().map(|(n, _)| format!(r#""{n}""#)).collect();
+            let quoted: Vec<String> = columns.iter().map(|(n, _)| format!(r#""{n}""#)).collect();
             let values: Vec<String> = columns
                 .iter()
-                .map(|(name, kind)| match (name == user_column, kind.as_str()) {
-                    (true, _) => format!("'{table}'"),
-                    // Unique per row: some of these columns are keys.
-                    (false, "TEXT") => format!("'x-{table}'"),
-                    // Also the time a session was last used: long ago.
-                    (false, _) => "1".into(),
-                })
+                .map(
+                    |(column, kind)| match (column == user_column, kind.as_str()) {
+                        (true, _) => format!("'{table}'"),
+                        // Unique per row: some of these columns are keys.
+                        (false, "TEXT") => format!("'x-{table}'"),
+                        // Also the time a session was last used: long ago.
+                        (false, _) => "1".into(),
+                    },
+                )
                 .collect();
             let insert = format!(
                 r#"INSERT INTO "{table}" ({}) VALUES ({})"#,
-                names.join(", "),
+                quoted.join(", "),
                 values.join(", ")
             );
             sqlx::query(&insert).execute(&mut *conn).await.unwrap();
@@ -936,18 +939,20 @@ mod tests {
                     .fetch_all(&mut *conn)
                     .await
                     .unwrap();
-            let names: Vec<String> = columns.iter().map(|(n, _)| format!(r#""{n}""#)).collect();
+            let quoted: Vec<String> = columns.iter().map(|(n, _)| format!(r#""{n}""#)).collect();
             let values: Vec<&str> = columns
                 .iter()
-                .map(|(name, kind)| match (name == user_column, kind.as_str()) {
-                    (true, _) => "'from'",
-                    (false, "TEXT") => "'x'",
-                    (false, _) => "1",
-                })
+                .map(
+                    |(column, kind)| match (column == user_column, kind.as_str()) {
+                        (true, _) => "'from'",
+                        (false, "TEXT") => "'x'",
+                        (false, _) => "1",
+                    },
+                )
                 .collect();
             let insert = format!(
                 r#"INSERT INTO "{table}" ({}) VALUES ({})"#,
-                names.join(", "),
+                quoted.join(", "),
                 values.join(", ")
             );
             sqlx::query(&insert).execute(&mut *conn).await.unwrap();

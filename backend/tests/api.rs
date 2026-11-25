@@ -7,8 +7,10 @@ use axum::body::Body;
 use axum::http::{Request, StatusCode};
 use axum::Router;
 use http_body_util::BodyExt;
+use mangiamundo::geo::{Bbox, Shape};
 use mangiamundo::providers::demo::Demo;
-use mangiamundo::{api, limits, store, AppState};
+use mangiamundo::providers::{AreaInfo, AreaKind, Boundary};
+use mangiamundo::{account, api, limits, store, AppState};
 use serde_json::Value;
 use tower::ServiceExt;
 
@@ -25,18 +27,18 @@ async fn app() -> Router {
 /// An app with its own clock, starting at START, that the test can move.
 async fn app_with_clock() -> (Router, Arc<AtomicI64>) {
     let db = store::connect("sqlite::memory:").await.unwrap();
-    app_with(db, None, START).await
+    app_with(db, None, START)
 }
 
-async fn app_with(
+fn app_with(
     db: sqlx::SqlitePool,
     osm_notes_url: Option<String>,
     start: i64,
 ) -> (Router, Arc<AtomicI64>) {
-    app_with_notes(db, osm_notes_url, None, start).await
+    app_with_notes(db, osm_notes_url, None, start)
 }
 
-async fn app_with_notes(
+fn app_with_notes(
     db: sqlx::SqlitePool,
     osm_notes_url: Option<String>,
     osm_notes_token: Option<String>,
@@ -56,8 +58,8 @@ fn state_with_notes(
     let now = Arc::new(AtomicI64::new(start));
     let clock = now.clone();
     let state = AppState {
-        loads: Default::default(),
-        limits: Default::default(),
+        loads: mangiamundo::areas::Loads::default(),
+        limits: mangiamundo::limits::Limits::default(),
         db,
         places: Arc::new(Demo),
         areas: Arc::new(Demo),
@@ -66,7 +68,7 @@ fn state_with_notes(
         push_key: None,
         osm_notes_url,
         osm_notes_token,
-        auth: Default::default(),
+        auth: Arc::default(),
     };
     (state, now)
 }
@@ -751,7 +753,7 @@ async fn celebrations_only_list_countries_found_nearby() {
     .await;
     assert_eq!(status, StatusCode::OK);
     let list = list.as_array().unwrap();
-    assert!(!list.is_empty());
+    assert_ne!(list.as_slice(), [] as [Value; 0]);
     let mut previous = String::new();
     for celebration in list {
         let starts = celebration["starts"].as_str().unwrap().to_string();
@@ -761,7 +763,10 @@ async fn celebrations_only_list_countries_found_nearby() {
             assert!(here.contains(&nearby["code"].as_str().unwrap()));
             assert!(nearby["places"].as_u64().unwrap() > 0);
         }
-        assert!(!celebration["nearby"].as_array().unwrap().is_empty());
+        assert_ne!(
+            celebration["nearby"].as_array().unwrap().as_slice(),
+            [] as [Value; 0]
+        );
         assert!(celebration["reminder"]["title"]
             .as_str()
             .unwrap()
@@ -828,7 +833,7 @@ async fn event_days_follow_the_users_time_zone() {
     // 30 November (23:00) in UTC.
     let morning_in_tokyo = 1_796_079_600;
     let db = store::connect("sqlite::memory:").await.unwrap();
-    let (app, clock) = app_with(db, None, morning_in_tokyo).await;
+    let (app, clock) = app_with(db, None, morning_in_tokyo);
     let token = session(&app).await;
     let (_, places) = call(
         &app,
@@ -951,7 +956,7 @@ async fn celebrations_start_on_the_users_local_day() {
         .unwrap()
         .timestamp();
     let db = store::connect("sqlite::memory:").await.unwrap();
-    let (app, _) = app_with(db, None, at).await;
+    let (app, _) = app_with(db, None, at);
     let ids = |list: &Value| {
         list.as_array()
             .unwrap()
@@ -1028,7 +1033,6 @@ async fn visits_between_counts_distinct_places_inside_the_window() {
     )
     .await
     .unwrap();
-    use mangiamundo::account;
     let token = account::create_user(&db, None, START).await.unwrap();
     let session = account::session_for_token(&db, &token, START).await;
     let user = session.unwrap().unwrap().user;
@@ -1191,8 +1195,6 @@ async fn the_second_closed_report_of_an_osm_place_posts_one_osm_note() {
         opening_hours: None,
         countries: vec!["ET"],
     };
-    use mangiamundo::geo::{Bbox, Shape};
-    use mangiamundo::providers::{AreaInfo, AreaKind, Boundary};
     let area = store::Area {
         boundary: Boundary {
             info: AreaInfo {
@@ -1214,7 +1216,7 @@ async fn the_second_closed_report_of_an_osm_place_posts_one_osm_note() {
         fetched_at: START,
     };
     store::save_area(&db, &area, &[place]).await.unwrap();
-    let (app, _) = app_with(db, Some(url), START).await;
+    let (app, _) = app_with(db, Some(url), START);
 
     let users = [
         session(&app).await,
@@ -1259,7 +1261,7 @@ async fn the_second_closed_report_of_an_osm_place_posts_one_osm_note() {
 async fn an_added_place_shows_up_for_whoever_added_it_and_is_sent_to_osm() {
     let (url, notes) = fake_osm_notes().await;
     let db = store::connect("sqlite::memory:").await.unwrap();
-    let (app, clock) = app_with_notes(db.clone(), Some(url), Some("secret".into()), START).await;
+    let (app, clock) = app_with_notes(db.clone(), Some(url), Some("secret".into()), START);
     let (alice, bob) = (session(&app).await, session(&app).await);
     let countries = |token: String| {
         let app = app.clone();
@@ -1554,7 +1556,7 @@ async fn writes_contract_fixtures() {
         distance_m: 0,
     };
     store::replace_unknown(&db, &[unknown]).await.unwrap();
-    let (app, _) = app_with(db, None, START).await;
+    let (app, _) = app_with(db, None, START);
     let token = session(&app).await;
     let get = |uri: String| {
         let (app, token) = (&app, &token);
@@ -1842,7 +1844,10 @@ async fn suggests_an_open_unvisited_place_and_says_why_when_there_is_none() {
         assert_eq!(status, StatusCode::OK);
         assert_ne!(s["place"]["id"], visited["id"]);
         assert!(is_open(&s["place"]), "{s}");
-        assert!(s["place"]["visits"].as_array().unwrap().is_empty());
+        assert_eq!(
+            s["place"]["visits"].as_array().unwrap().as_slice(),
+            [] as [Value; 0]
+        );
         assert_eq!(s["place"]["countries"][0], s["country"]);
     }
 
@@ -1889,7 +1894,7 @@ async fn serves_and_writes_the_openapi_document() {
 #[tokio::test]
 async fn an_added_place_earns_xp_once_the_import_confirms_it() {
     let db = store::connect("sqlite::memory:").await.unwrap();
-    let (app, clock) = app_with(db.clone(), None, START).await;
+    let (app, clock) = app_with(db.clone(), None, START);
     let (alice, bob, carol) = (
         session(&app).await,
         session(&app).await,
@@ -2185,8 +2190,6 @@ impl mangiamundo::providers::PlacesProvider for FakeOsm {
 
 /// An app on `osm`, with Leuven cached holding one OSM place, osm-node-42 (Lalibela, Ethiopian).
 async fn app_with_osm() -> (Router, Arc<AtomicI64>, Arc<FakeOsm>, sqlx::SqlitePool) {
-    use mangiamundo::geo::{Bbox, Shape};
-    use mangiamundo::providers::{AreaInfo, AreaKind, Boundary};
     let db = store::connect("sqlite::memory:").await.unwrap();
     let area = store::Area {
         boundary: Boundary {
@@ -2219,8 +2222,8 @@ async fn app_with_osm() -> (Router, Arc<AtomicI64>, Arc<FakeOsm>, sqlx::SqlitePo
     let now = Arc::new(AtomicI64::new(START));
     let clock = now.clone();
     let router = api::router(AppState {
-        loads: Default::default(),
-        limits: Default::default(),
+        loads: mangiamundo::areas::Loads::default(),
+        limits: mangiamundo::limits::Limits::default(),
         db: db.clone(),
         places: fake.clone(),
         areas: Arc::new(Demo),
@@ -2229,7 +2232,7 @@ async fn app_with_osm() -> (Router, Arc<AtomicI64>, Arc<FakeOsm>, sqlx::SqlitePo
         push_key: None,
         osm_notes_url: None,
         osm_notes_token: None,
-        auth: Default::default(),
+        auth: Arc::default(),
     });
     (router, now, fake, db)
 }
@@ -2755,7 +2758,7 @@ async fn new_accounts_are_limited_for_everyone_together() {
 #[tokio::test]
 async fn everything_a_client_reads_at_first_works_without_an_account() {
     let db = store::connect("sqlite::memory:").await.unwrap();
-    let (app, _) = app_with(db.clone(), None, START).await;
+    let (app, _) = app_with(db.clone(), None, START);
     let (status, discover) = call(&app, "GET", &format!("/api/discover?{HERE}"), None, None).await;
     assert_eq!(status, StatusCode::OK);
     let country = discover["countries"][0]["code"].as_str().unwrap();
@@ -2879,8 +2882,7 @@ async fn fetch(app: &Router, uri: &str) -> (StatusCode, String, Vec<u8>) {
     let kind = response
         .headers()
         .get("content-type")
-        .map(|v| v.to_str().unwrap().to_string())
-        .unwrap_or_default();
+        .map_or_default(|v| v.to_str().unwrap().to_string());
     let bytes = response
         .into_body()
         .collect()
@@ -3111,7 +3113,7 @@ async fn monthly_quests_pay_once_and_the_streak_shows() {
 #[tokio::test]
 async fn quests_are_paid_per_area_at_check_in_and_taken_back_with_it() {
     let db = store::connect("sqlite::memory:").await.unwrap();
-    let (app, _) = app_with(db.clone(), None, START).await;
+    let (app, _) = app_with(db.clone(), None, START);
     let token = session(&app).await;
     // Who was paid for "two check-ins", per area.
     let paid = || async {
@@ -3203,7 +3205,7 @@ async fn planning_reminders_books_no_quest_rewards() {
     // 1 December 2026, 12:00 UTC: the day the quests reminder is due.
     let first = START + 15 * DAY;
     let db = store::connect("sqlite::memory:").await.unwrap();
-    let (app, _) = app_with(db.clone(), None, first).await;
+    let (app, _) = app_with(db.clone(), None, first);
     let token = session(&app).await;
     let (_, places) = call(&app, "GET", &format!("/api/places?{HERE}"), None, None).await;
     let booked = || async {
@@ -3283,7 +3285,7 @@ async fn restaurants_with_unknown_food_can_be_given_a_country_or_none() {
     )
     .await
     .unwrap();
-    let (app, _) = app_with(db, Some(url), START).await;
+    let (app, _) = app_with(db, Some(url), START);
     let (alice, bob, carol) = (
         session(&app).await,
         session(&app).await,
@@ -3405,7 +3407,7 @@ async fn app_with_cached_areas() -> (Router, Arc<CountedAreas>) {
         limits.clone(),
     );
     let router = api::router(AppState {
-        loads: Default::default(),
+        loads: mangiamundo::areas::Loads::default(),
         limits,
         db,
         places: Arc::new(Demo),
@@ -3415,7 +3417,7 @@ async fn app_with_cached_areas() -> (Router, Arc<CountedAreas>) {
         push_key: None,
         osm_notes_url: None,
         osm_notes_token: None,
-        auth: Default::default(),
+        auth: Arc::default(),
     });
     (router, counted)
 }

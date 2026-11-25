@@ -1062,7 +1062,7 @@ async fn places(
 /// its OSM page.
 fn complete(place: &mut PlaceView, from_lat: f64, from_lng: f64, now: i64) {
     place.osm_url = osm::link(&place.id);
-    place.distance_m = geo::distance_m(from_lat, from_lng, place.lat, place.lng).round() as u32;
+    place.distance_m = geo::rounded_m(from_lat, from_lng, place.lat, place.lng);
     if let Some(h) = &mut place.hours {
         h.status = hours::status(&h.raw, place.lat, place.lng, now)
             .map(|(open, text)| HoursStatus { open, text });
@@ -1320,7 +1320,7 @@ async fn unknown_places(
     let mut places = store::unknown_in(&state.db, shape.bbox(), user.as_deref()).await?;
     places.retain(|p| shape.contains(p.lat, p.lng));
     for p in &mut places {
-        p.distance_m = geo::distance_m(lat, lng, p.lat, p.lng).round() as u32;
+        p.distance_m = geo::rounded_m(lat, lng, p.lat, p.lng);
     }
     places.sort_by_key(|p| p.distance_m);
     places.truncate(UNKNOWN_LISTED);
@@ -1565,7 +1565,7 @@ async fn refresh_nearby(
     );
     Ok(Json(NearbyResult {
         added,
-        matched: matched as u32,
+        matched: crate::count(matched),
     }))
 }
 
@@ -1680,7 +1680,7 @@ async fn add_visit(
         Some(area) => Some(progress::load(&state, Some(&user), area.id(), today).await?),
         None => None,
     };
-    let check_in = body.map(|JsonBody(b)| b).unwrap_or_default();
+    let check_in = body.map_or_default(|JsonBody(b)| b);
     let verified = check_in
         .position
         .is_some_and(|p| geo::distance_m(p.lat, p.lng, plat, plng) <= VERIFY_DISTANCE_M);
@@ -1911,7 +1911,8 @@ async fn render_card(
     caption: String,
 ) -> Result<Vec<u8>, ApiError> {
     tokio::task::spawn_blocking(move || {
-        let statuses = statuses.iter().map(|(c, s)| (c.as_str(), *s)).collect();
+        let statuses: HashMap<&str, game::Status> =
+            statuses.iter().map(|(c, s)| (c.as_str(), *s)).collect();
         share::card_png(&statuses, &headline, &caption)
     })
     .await
@@ -2057,7 +2058,7 @@ async fn push_key(State(state): State<AppState>) -> ApiResult<PushKey> {
     Ok(Json(PushKey { public_key }))
 }
 
-/// A browser's PushSubscription (as from `subscription.toJSON()`), plus the user's area.
+/// A browser's `PushSubscription` (as from `subscription.toJSON()`), plus the user's area.
 #[derive(Deserialize, ToSchema)]
 struct SubscribeBody {
     endpoint: String,

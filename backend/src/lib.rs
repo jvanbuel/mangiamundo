@@ -44,6 +44,11 @@ pub struct AppState {
     pub limits: limits::Limits,
 }
 
+/// A count as the `u32` clients get, saturating: no count here comes near 4 billion.
+pub fn count(n: impl TryInto<u32>) -> u32 {
+    n.try_into().unwrap_or(u32::MAX)
+}
+
 impl AppState {
     pub fn now(&self) -> i64 {
         (self.clock)()

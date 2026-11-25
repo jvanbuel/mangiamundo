@@ -32,7 +32,7 @@ async fn main() -> anyhow::Result<()> {
     )
     .await?;
     let state = AppState {
-        loads: Default::default(),
+        loads: mangiamundo::areas::Loads::default(),
         limits,
         db,
         places,

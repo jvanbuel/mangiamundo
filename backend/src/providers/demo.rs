@@ -22,8 +22,18 @@ impl Rng {
         z ^ (z >> 31)
     }
 
+    #[expect(clippy::cast_precision_loss, reason = "53 bits fit an f64 exactly")]
     fn unit(&mut self) -> f64 {
         (self.next() >> 11) as f64 / (1u64 << 53) as f64
+    }
+
+    /// One of `items`.
+    #[expect(
+        clippy::cast_possible_truncation,
+        reason = "the remainder is below items.len(), a usize"
+    )]
+    fn pick<'a, T>(&mut self, items: &'a [T]) -> &'a T {
+        &items[(self.next() % items.len() as u64) as usize]
     }
 }
 
@@ -174,8 +184,8 @@ impl City {
             name: format!("{} {}", self.codes[index], self.name),
             kind: AreaKind::PostalCode,
             detail: Some(self.country.into()),
-            lat: (b.south + b.north) / 2.0,
-            lng: (b.west + b.east) / 2.0,
+            lat: f64::midpoint(b.south, b.north),
+            lng: f64::midpoint(b.west, b.east),
         }
     }
 
@@ -205,7 +215,7 @@ impl City {
             let seed = format!("{}/{}", self.slug, cuisine.country)
                 .bytes()
                 .fold(0xcbf2_9ce4_8422_2325u64, |h, b| {
-                    (h ^ b as u64).wrapping_mul(0x100_0000_01b3)
+                    (h ^ u64::from(b)).wrapping_mul(0x100_0000_01b3)
                 });
             let mut rng = Rng(seed);
             let country = catalog::country(cuisine.country).expect("catalog is consistent");
@@ -217,7 +227,7 @@ impl City {
             for n in 0..count {
                 let lat = b.south + rng.unit() * (b.north - b.south);
                 let lng = b.west + rng.unit() * (b.east - b.west);
-                let prefix = NAMES[(rng.next() % NAMES.len() as u64) as usize];
+                let prefix = rng.pick(NAMES);
                 places.push(FoundPlace {
                     id: format!("demo-{}-{}-{n}", self.slug, cuisine.country),
                     name: format!("{prefix} {}", country.name),
@@ -226,8 +236,7 @@ impl City {
                     address: Some(format!("{} Demo Street", 1 + rng.next() % 200)),
                     url: None,
                     cuisine: Some(cuisine.osm[0].to_string()),
-                    opening_hours: HOURS[(rng.next() % HOURS.len() as u64) as usize]
-                        .map(str::to_string),
+                    opening_hours: rng.pick(HOURS).map(str::to_string),
                     countries: vec![cuisine.country],
                 });
             }

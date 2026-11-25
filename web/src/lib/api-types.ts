@@ -935,7 +935,7 @@ export interface components {
             code: string;
             continent: string;
             /**
-             * @description The OpenStreetMap `cuisine` value for its food, like "sri_lankan"; `null` when the
+             * @description The OpenStreetMap `cuisine` value for its food, like `sri_lankan`; `null` when the
              *     catalog has none. Only countries with one can be picked for a new place.
              */
             cuisine: string | null;
@@ -1349,7 +1349,7 @@ export interface components {
          * @enum {string}
          */
         Status: "available" | "discovered" | "platinum" | "completed";
-        /** @description A browser's PushSubscription (as from `subscription.toJSON()`), plus the user's area. */
+        /** @description A browser's `PushSubscription` (as from `subscription.toJSON()`), plus the user's area. */
         SubscribeBody: {
             /** @description The area to send reminders for. */
             area: string;

@@ -16,8 +16,7 @@ use crate::providers::{AreaInfo, AreaKind, Boundary, FoundPlace, Lookup};
 pub fn now() -> i64 {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
-        .map(|d| d.as_secs() as i64)
-        .unwrap_or(0)
+        .map_or(0, |d| d.as_secs().cast_signed())
 }
 
 pub async fn connect(url: &str) -> anyhow::Result<SqlitePool> {
@@ -280,13 +279,13 @@ pub async fn lifetime(db: &SqlitePool, user: &str, today: NaiveDate) -> sqlx::Re
     let days: Vec<NaiveDate> = days.iter().filter_map(|d| d.parse().ok()).collect();
     let (streak, best_streak) = game::streaks(&days, today);
     Ok(Lifetime {
-        visits: visits as u32,
-        verified: verified as u32,
-        countries: countries as u32,
-        added: added as u32,
-        country_bonuses: country_bonuses as u32,
-        continent_bonuses: continent_bonuses as u32,
-        quest_xp: quest_xp as u32,
+        visits: crate::count(visits),
+        verified: crate::count(verified),
+        countries: crate::count(countries),
+        added: crate::count(added),
+        country_bonuses: crate::count(country_bonuses),
+        continent_bonuses: crate::count(continent_bonuses),
+        quest_xp: crate::count(quest_xp),
         streak,
         best_streak,
     })
@@ -449,8 +448,7 @@ fn place_view(r: &sqlx::sqlite::SqliteRow) -> PlaceView {
             }),
         countries: r
             .get::<Option<String>, _>("countries")
-            .map(|s| s.split(',').map(str::to_string).collect())
-            .unwrap_or_default(),
+            .map_or_default(|s| s.split(',').map(str::to_string).collect()),
         distance_m: 0,
         visits: Vec::new(),
         osm_url: None,
@@ -561,7 +559,7 @@ pub async fn visits_between(
     for country in countries {
         query = query.bind(country);
     }
-    Ok(query.fetch_one(db).await? as u32)
+    Ok(crate::count(query.fetch_one(db).await?))
 }
 
 /// Records a visit and returns it as stored. There is at most one visit per place per local
@@ -1163,7 +1161,7 @@ async fn match_pending(tx: &mut sqlx::SqliteConnection, at: i64) -> sqlx::Result
         .fetch_all(&mut *tx)
         .await?;
         let twin = near
-            .into_iter()
+            .iter()
             .filter_map(found)
             .filter(|o| o.countries.contains(&country.as_str()) && similar_names(&o.name, &name))
             .map(|o| (geo::distance_m(lat, lng, o.lat, o.lng), o))
@@ -1176,6 +1174,7 @@ async fn match_pending(tx: &mut sqlx::SqliteConnection, at: i64) -> sqlx::Result
                 .bind(osm_id)
                 .fetch_optional(&mut *tx)
                 .await?
+                .as_ref()
                 .and_then(found),
         };
         let twin = match (twin, overruled) {
@@ -1403,7 +1402,7 @@ fn similar_names(a: &str, b: &str) -> bool {
 }
 
 /// An `osm_places` row, or `None` when its cuisine maps to no country.
-fn found(r: sqlx::sqlite::SqliteRow) -> Option<FoundPlace> {
+fn found(r: &sqlx::sqlite::SqliteRow) -> Option<FoundPlace> {
     let cuisine: String = r.get("cuisine");
     let countries = catalog::countries_for_cuisine_tag(&cuisine);
     (!countries.is_empty()).then(|| FoundPlace {
@@ -1525,7 +1524,7 @@ pub async fn imported_in(db: &SqlitePool, b: Bbox) -> sqlx::Result<Vec<FoundPlac
             .bind(b.east)
             .fetch_all(db)
             .await?;
-    Ok(rows.into_iter().filter_map(found).collect())
+    Ok(rows.iter().filter_map(found).collect())
 }
 
 /// The cached areas whose outline holds a point, by id.

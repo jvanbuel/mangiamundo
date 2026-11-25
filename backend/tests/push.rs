@@ -105,8 +105,8 @@ async fn sends_each_reminder_once_in_the_subscribers_morning() {
     let now = Arc::new(AtomicI64::new(START));
     let clock = now.clone();
     let state = AppState {
-        loads: Default::default(),
-        limits: Default::default(),
+        loads: mangiamundo::areas::Loads::default(),
+        limits: mangiamundo::limits::Limits::default(),
         db: db.clone(),
         places: Arc::new(Demo),
         areas: Arc::new(Demo),
@@ -115,7 +115,7 @@ async fn sends_each_reminder_once_in_the_subscribers_morning() {
         push_key: Some(pusher.public_key.clone()),
         osm_notes_url: None,
         osm_notes_token: None,
-        auth: Default::default(),
+        auth: Arc::default(),
     };
     let app = api::router(state.clone());
     let (push_url, service) = fake_push_service().await;
@@ -270,8 +270,8 @@ async fn tells_subscribers_once_about_new_food_from_the_import() {
         .await
         .unwrap();
     let state = AppState {
-        loads: Default::default(),
-        limits: Default::default(),
+        loads: mangiamundo::areas::Loads::default(),
+        limits: mangiamundo::limits::Limits::default(),
         db: db.clone(),
         // As in production: the daily import's copy answers before the live provider.
         places: Arc::new(mangiamundo::providers::osm::WithImport::new(
@@ -284,7 +284,7 @@ async fn tells_subscribers_once_about_new_food_from_the_import() {
         push_key: Some(pusher.public_key.clone()),
         osm_notes_url: None,
         osm_notes_token: None,
-        auth: Default::default(),
+        auth: Arc::default(),
     };
     let app = api::router(state.clone());
     let (push_url, service) = fake_push_service().await;
@@ -439,8 +439,8 @@ async fn a_subscriber_whose_reminders_fail_does_not_stop_the_others() {
     let now = Arc::new(AtomicI64::new(START));
     let clock = now.clone();
     let state = AppState {
-        loads: Default::default(),
-        limits: Default::default(),
+        loads: mangiamundo::areas::Loads::default(),
+        limits: mangiamundo::limits::Limits::default(),
         db: db.clone(),
         places: Arc::new(BrokenOnce(true.into())),
         areas: Arc::new(Demo),
@@ -450,7 +450,7 @@ async fn a_subscriber_whose_reminders_fail_does_not_stop_the_others() {
         push_key: Some(pusher.public_key.clone()),
         osm_notes_url: None,
         osm_notes_token: None,
-        auth: Default::default(),
+        auth: Arc::default(),
     };
     let app = api::router(state.clone());
     let (push_url, service) = fake_push_service().await;
@@ -509,8 +509,8 @@ async fn the_plan_holds_what_is_sent_on_the_day() {
     let now = Arc::new(AtomicI64::new(START));
     let clock = now.clone();
     let state = AppState {
-        loads: Default::default(),
-        limits: Default::default(),
+        loads: mangiamundo::areas::Loads::default(),
+        limits: mangiamundo::limits::Limits::default(),
         db: db.clone(),
         places: Arc::new(Demo),
         areas: Arc::new(Demo),
@@ -519,7 +519,7 @@ async fn the_plan_holds_what_is_sent_on_the_day() {
         push_key: Some(pusher.public_key.clone()),
         osm_notes_url: None,
         osm_notes_token: None,
-        auth: Default::default(),
+        auth: Arc::default(),
     };
     let app = api::router(state.clone());
     let (push_url, service) = fake_push_service().await;
@@ -577,7 +577,7 @@ async fn the_plan_holds_what_is_sent_on_the_day() {
         .filter(|r| r["local_date"] == date)
         .map(|r| r["key"].as_str().unwrap())
         .collect();
-    expected.sort();
+    expected.sort_unstable();
     assert_eq!(run_once(&state, &pusher).await.unwrap(), expected.len());
     assert_eq!(service.received.lock().unwrap().len(), expected.len());
     let sent: Vec<String> = sqlx::query_scalar("SELECT key FROM push_sent ORDER BY key")

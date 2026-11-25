@@ -3,6 +3,7 @@
 
 use std::collections::HashMap;
 use std::fmt::Write as _;
+use std::hash::BuildHasher;
 use std::sync::{Arc, OnceLock};
 
 use resvg::{tiny_skia, usvg};
@@ -140,8 +141,7 @@ pub fn visit_headline(visit: &SharedVisit) -> String {
 /// "22 Nov 2026".
 pub fn pretty_date(date: &str) -> String {
     chrono::NaiveDate::parse_from_str(date, "%Y-%m-%d")
-        .map(|d| d.format("%-d %b %Y").to_string())
-        .unwrap_or_else(|_| date.to_string())
+        .map_or_else(|_| date.to_string(), |d| d.format("%-d %b %Y").to_string())
 }
 
 pub fn profile_headline(summary: &Summary) -> String {
@@ -217,7 +217,11 @@ fn escape(text: &str) -> String {
 }
 
 /// The card as SVG: a flat world map coloured like the app's (light theme), and the caption.
-fn card_svg(statuses: &HashMap<&str, Status>, headline: &str, caption: &str) -> String {
+fn card_svg<S: BuildHasher>(
+    statuses: &HashMap<&str, Status, S>,
+    headline: &str,
+    caption: &str,
+) -> String {
     let map_h = H - STRIP;
     let scale = W / 360.0;
     let top = NORTH;
@@ -294,8 +298,8 @@ fn card_svg(statuses: &HashMap<&str, Status>, headline: &str, caption: &str) -> 
 }
 
 /// The card as PNG, 1200 × 630 like link previews.
-pub fn card_png(
-    statuses: &HashMap<&str, Status>,
+pub fn card_png<S: BuildHasher>(
+    statuses: &HashMap<&str, Status, S>,
     headline: &str,
     caption: &str,
 ) -> anyhow::Result<Vec<u8>> {
@@ -304,7 +308,7 @@ pub fn card_png(
         ..Default::default()
     };
     let tree = usvg::Tree::from_str(&card_svg(statuses, headline, caption), &options)?;
-    let mut pixmap = tiny_skia::Pixmap::new(W as u32, H as u32).expect("the card has a size");
+    let mut pixmap = tiny_skia::Pixmap::new(1200, 630).expect("the card has a size");
     resvg::render(
         &tree,
         tiny_skia::Transform::identity(),
@@ -319,7 +323,7 @@ pub fn card_png(
 pub fn page(title: &str, description: &str, image: &str, url: &str, body: &str) -> String {
     let (title, description) = (escape(title), escape(description));
     format!(
-        r##"<!doctype html>
+        r#"<!doctype html>
 <html lang="en">
 <head>
 <meta charset="utf-8">
@@ -354,7 +358,7 @@ pub fn page(title: &str, description: &str, image: &str, url: &str, body: &str) 
 <a class="start" href="/">Start your own map</a>
 </main></body>
 </html>
-"##
+"#
     )
 }
 
@@ -432,7 +436,10 @@ mod tests {
     fn visit_headlines_name_the_food() {
         let visit = |countries: &[&str]| SharedVisit {
             place: "Casa".into(),
-            countries: countries.iter().map(|c| c.to_string()).collect(),
+            countries: countries
+                .iter()
+                .map(std::string::ToString::to_string)
+                .collect(),
             date: "2026-11-22".into(),
         };
         assert_eq!(visit_headline(&visit(&["PE"])), "Peruvian food at Casa");
