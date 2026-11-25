@@ -46,6 +46,13 @@ Search for Brussels, Antwerp, Amsterdam or Berlin in demo mode. Drop
 Tests: `cargo test` in `backend/`, `npm run check` in `web/`. Mobile apps: see
 [`mobile/README.md`](mobile/README.md).
 
+CI also runs `cargo fmt --check` and `cargo clippy --all-targets -- -D warnings` on the
+backend. To have them run before each commit that touches `backend/`:
+
+```sh
+git config core.hooksPath .githooks
+```
+
 ## Repo layout
 
 | | |

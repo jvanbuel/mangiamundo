@@ -14,9 +14,14 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: backend
+      # The same checks as .githooks/pre-commit.
+      - run: cargo fmt --check
+      - run: cargo clippy --all-targets --locked -- -D warnings
       - run: cargo test --locked
       # The tests rewrite contract/*.json, which the Android and iOS tests decode.
       - name: Contract fixtures are up to date

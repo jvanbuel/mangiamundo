@@ -1,0 +1,19 @@
+#!/bin/sh
+# Checks the backend before a commit that changes it: formatting and clippy, as CI does.
+# Enable once per clone with: git config core.hooksPath .githooks
+# Skip for one commit with: git commit --no-verify
+set -e
+
+git diff --cached --name-only --diff-filter=ACMR | grep -q '^backend/' || exit 0
+
+cd "$(git rev-parse --show-toplevel)/backend"
+
+if ! cargo fmt --check >/dev/null; then
+    echo "pre-commit: backend is not formatted; run cargo fmt in backend/." >&2
+    exit 1
+fi
+
+if ! cargo clippy --all-targets --locked --quiet -- -D warnings; then
+    echo "pre-commit: clippy found problems in backend/ (see above)." >&2
+    exit 1
+fi
