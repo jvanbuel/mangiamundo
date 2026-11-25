@@ -1,0 +1,29 @@
+//! End-to-end tests of the HTTP API against the offline demo provider.
+
+mod account_limits;
+mod addable;
+mod added_places;
+mod additions_xp;
+mod anonymous;
+mod area_lookups;
+mod areas;
+mod celebrations;
+mod closed_reports;
+mod common;
+mod completion;
+mod contract;
+mod contract_fixtures;
+mod devices;
+mod errors;
+mod events;
+mod fake_osm;
+mod osm_nearby;
+mod osm_refresh;
+mod quests;
+mod recovery;
+mod shared_links;
+mod sharing;
+mod suggestions;
+mod unknown_food;
+mod visit_counts;
+mod visits;
