@@ -22,7 +22,6 @@ import app.mangiamundo.core.Area
 import app.mangiamundo.core.AreaProgress
 import app.mangiamundo.core.Place
 import app.mangiamundo.core.ProjectionKind
-import app.mangiamundo.core.ReminderSchedule
 import app.mangiamundo.core.World
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -44,6 +43,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     private val osm = OsmRefreshModel(this)
     private val adding = AddPlaceModel(this)
     private val locations = LocationModel(this)
+    private val reminders = RemindersModel(this)
 
     var world by mutableStateOf<World?>(null); private set
     var catalog by mutableStateOf<Catalog?>(null); private set
@@ -82,7 +82,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     val locateError: String? get() = locations.locateError
 
     var celebrations by mutableStateOf<List<Celebration>>(emptyList()); internal set
-    var remindersOn by mutableStateOf(settings.remindersOn && Notifications.allowed(application)); private set
+    val remindersOn: Boolean get() = reminders.remindersOn
     /** 0 = countries, 1 = badges. */
     var tab by mutableStateOf(0)
     /** The server's version and commit; null until it answers, "not reached" after a failure. */
@@ -110,7 +110,6 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     /** The last real device position, used to verify check-ins while browsing another city. */
     internal var gpsFix: Triple<Double, Double, Long>? = null
     private var refreshJob: Job? = null
-    private var remindersJob: Job? = null
     /** A country to open once progress has loaded, from a notification tap. */
     private var pendingCountry: String? = null
     private var placesJob: Job? = null
@@ -203,7 +202,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
                 }
                 celebrations = runCatching { api.celebrations(here.area.id) }.getOrDefault(emptyList())
                 adding.announceConfirmedAdditions()
-                rescheduleReminders()
+                reminders.rescheduleReminders()
             } catch (e: kotlinx.coroutines.CancellationException) {
                 throw e
             } catch (e: Exception) {
@@ -247,37 +246,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     /** Call after the notification permission was granted (or with false when refused). */
-    fun setReminders(on: Boolean) {
-        val app = getApplication<Application>()
-        remindersOn = on && Notifications.allowed(app)
-        settings.remindersOn = remindersOn
-        if (remindersOn) {
-            rescheduleReminders()
-            messageChannel.trySend("Reminders on. We will let you know when a country near you has something to celebrate.")
-        } else {
-            Notifications.cancelAll(app)
-            if (on) messageChannel.trySend("Notifications are turned off for Mangiamundo in your settings.")
-        }
-    }
-
-    /** Schedules what the server plans for the area. Without an answer, what was scheduled stays. */
-    private fun rescheduleReminders() {
-        if (!remindersOn) return
-        val here = location ?: return
-        remindersJob?.cancel()
-        remindersJob = viewModelScope.launch {
-            val plan = try {
-                api.reminders(here.area.id)
-            } catch (e: kotlinx.coroutines.CancellationException) {
-                throw e
-            } catch (e: Exception) {
-                return@launch
-            }
-            // Turned off or moved meanwhile: this plan is no longer wanted.
-            if (!remindersOn || location?.area?.id != here.area.id) return@launch
-            Notifications.schedule(getApplication(), ReminderSchedule.requests(plan, java.time.ZonedDateTime.now()))
-        }
-    }
+    fun setReminders(on: Boolean) = reminders.setReminders(on)
 
     fun select(code: String?) {
         selected = code
