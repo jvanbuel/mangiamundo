@@ -78,6 +78,12 @@ final class AppModel {
     /// Shown once, right after it is made.
     var recoveryCode: String?
     var linkCode: LinkCode?
+    /// Whether a share sheet is being prepared.
+    var sharing = false
+    /// The address a sign-in code went to, while the code is awaited.
+    var codeSentTo: String?
+    /// Goes up with every change of account, so an answer for the previous one can be told apart.
+    var accountGeneration = 0
 
     @ObservationIgnored let api: APIClient
     @ObservationIgnored let locationService = LocationService()
@@ -796,9 +802,6 @@ final class AppModel {
         }
     }
 
-    /// Whether a share sheet is being prepared.
-    var sharing = false
-
     /// Shares the map of the current area through a public page, made on first use.
     func shareProgress() {
         guard let areaID = location?.area.id else { return }
@@ -871,9 +874,6 @@ final class AppModel {
             self.account = try await self.api.account()
         }
     }
-
-    /// The address a sign-in code went to, while the code is awaited.
-    var codeSentTo: String?
 
     func sendEmailCode(_ email: String) {
         accountAction {
@@ -966,9 +966,6 @@ final class AppModel {
         linkCode = nil
         await accountChanged()
     }
-
-    /// Goes up with every change of account, so an answer for the previous one can be told apart.
-    var accountGeneration = 0
 
     /// After this device switches account: drop the previous account's visits, then load this one's.
     func accountChanged() async {
