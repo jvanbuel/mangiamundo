@@ -70,6 +70,21 @@ describe('loadPlaces', () => {
 		expect(app.placesLoading).toBe(false);
 	});
 
+	it('lists the nearest places elsewhere for a country the area has none of', async () => {
+		app.discover = { ...shown('leuven'), countries: [{ code: 'JP' }] } as Discover;
+		vi.mocked(api.nearest).mockResolvedValue([place({ id: 'far', countries: ['PE'] })]);
+		await discover.loadPlaces('PE');
+		// Without a fix, measured from the map pin.
+		expect(api.nearest).toHaveBeenCalledWith('PE', { lat: 50.88, lng: 4.7 });
+		expect(api.places).not.toHaveBeenCalled();
+		expect(app.places.map((p) => p.id)).toEqual(['far']);
+
+		vi.mocked(api.places).mockResolvedValue([place({ id: 'near' })]);
+		await discover.loadPlaces('JP');
+		expect(api.places).toHaveBeenCalledWith('city-leuven', 'JP', null);
+		expect(app.places.map((p) => p.id)).toEqual(['near']);
+	});
+
 	it('clears the list when no country is selected', async () => {
 		app.places = [place()];
 		await discover.loadPlaces(null);

@@ -32,7 +32,11 @@ internal class PlacesModel(private val vm: AppViewModel) {
         placesJob = vm.viewModelScope.launch {
             placesLoading = true
             try {
-                vm.places = api.places(here.area.id, code, vm.userPosition())
+                vm.places = if (elsewhere(code)) {
+                    api.nearest(code, vm.userPosition() ?: (here.lat to here.lng))
+                } else {
+                    api.places(here.area.id, code, vm.userPosition())
+                }
             } catch (e: kotlinx.coroutines.CancellationException) {
                 throw e
             } catch (e: Exception) {
@@ -66,12 +70,22 @@ internal class PlacesModel(private val vm: AppViewModel) {
         vm.detail = null
     }
 
-    /** A tap on the map: open the country if it is available here, otherwise say so. */
+    /**
+     * A country the area has no place of, once the area's countries are known. Its list is
+     * then the nearest places elsewhere, measured from the user or else the map pin.
+     */
+    fun elsewhere(code: String): Boolean {
+        val countries = vm.discover?.countries ?: return false
+        return countries.none { it.code == code }
+    }
+
+    /** A tap on the map: open the country, with its nearest places elsewhere when the area has none. */
     fun tapCountry(code: String, name: String) {
-        if (vm.discover?.countries?.any { it.code == code } == true) {
+        if (vm.discover == null) return
+        if (vm.country(code) != null) {
             select(code)
-        } else if (vm.discover != null) {
-            vm.messageChannel.trySend("No places from $name in ${vm.location?.area?.name ?: "this area"}.")
+        } else {
+            vm.messageChannel.trySend("The game has no cuisine for $name yet.")
         }
     }
 }

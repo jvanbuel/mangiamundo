@@ -2728,6 +2728,85 @@
         ]
       }
     },
+    "/api/countries/{code}/nearest": {
+      "get": {
+        "operationId": "nearest",
+        "parameters": [
+          {
+            "description": "ISO 3166-1 alpha-2, as in `/api/countries`.",
+            "in": "path",
+            "name": "code",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Where the user is, or the centre of their area.",
+            "in": "query",
+            "name": "lat",
+            "required": true,
+            "schema": {
+              "format": "double",
+              "type": "number"
+            }
+          },
+          {
+            "in": "query",
+            "name": "lng",
+            "required": true,
+            "schema": {
+              "format": "double",
+              "type": "number"
+            }
+          },
+          {
+            "description": "How many places, 1 to 50. Defaults to 10.",
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "minimum": 0,
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/PlaceView"
+                  },
+                  "type": "array"
+                }
+              }
+            }
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "An error"
+          }
+        },
+        "security": [
+          {},
+          {
+            "token": []
+          }
+        ],
+        "summary": "The places serving a country's food nearest to a point, nearest first, whatever area\nthey are in: for a country with nothing in the user's area, or to look further afield.\nPlaces come from the cached areas and the daily import, so far-away places are known only\nwhere somebody has played. An unknown country is a 404; one with no known place an empty list.",
+        "tags": [
+          "game"
+        ]
+      }
+    },
     "/api/discover": {
       "get": {
         "operationId": "discover",

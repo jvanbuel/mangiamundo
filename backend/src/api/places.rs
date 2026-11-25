@@ -8,7 +8,7 @@ use utoipa::{IntoParams, ToSchema};
 use super::{ApiError, ApiResult, ErrorBody, MaybeUser, Path, Query};
 use crate::providers::osm;
 use crate::store::{self, HoursStatus, PlaceView};
-use crate::{areas, game, geo, hours, AppState};
+use crate::{areas, catalog, game, geo, hours, AppState};
 
 #[derive(Deserialize, IntoParams)]
 #[into_params(parameter_in = Query)]
@@ -184,4 +184,53 @@ pub(super) async fn place(
         h.week = hours::week(&h.raw, place.lat, place.lng, now);
     }
     Ok(Json(place))
+}
+
+#[derive(Deserialize, IntoParams)]
+#[into_params(parameter_in = Query)]
+pub(super) struct NearestQuery {
+    /// Where the user is, or the centre of their area.
+    lat: f64,
+    lng: f64,
+    /// How many places, 1 to 50. Defaults to 10.
+    limit: Option<usize>,
+}
+
+/// The places serving a country's food nearest to a point, nearest first, whatever area
+/// they are in: for a country with nothing in the user's area, or to look further afield.
+/// Places come from the cached areas and the daily import, so far-away places are known only
+/// where somebody has played. An unknown country is a 404; one with no known place an empty list.
+#[utoipa::path(
+    get, path = "/api/countries/{code}/nearest", tag = "game",
+    params(("code" = String, Path, description = "ISO 3166-1 alpha-2, as in `/api/countries`."), NearestQuery),
+    security((), ("token" = [])),
+    responses((status = 200, body = Vec<PlaceView>), (status = "default", description = "An error", body = ErrorBody)),
+)]
+pub(super) async fn nearest(
+    State(state): State<AppState>,
+    MaybeUser(user): MaybeUser,
+    Path(code): Path<String>,
+    Query(query): Query<NearestQuery>,
+) -> ApiResult<Vec<PlaceView>> {
+    let code = code.to_uppercase();
+    let country = catalog::country(&code).ok_or(ApiError::NotFound("country"))?;
+    if !(-90.0..=90.0).contains(&query.lat) || !(-180.0..=180.0).contains(&query.lng) {
+        return Err(ApiError::BadRequest(
+            "lat and lng must be a position on Earth".into(),
+        ));
+    }
+    let limit = query.limit.unwrap_or(10).clamp(1, 50);
+    let mut places = store::nearest(
+        &state.db,
+        &country.code,
+        user.as_deref(),
+        (query.lat, query.lng),
+        limit,
+    )
+    .await?;
+    let now = state.now();
+    for place in &mut places {
+        complete(place, query.lat, query.lng, now);
+    }
+    Ok(Json(places))
 }

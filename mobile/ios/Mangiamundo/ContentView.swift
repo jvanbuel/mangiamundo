@@ -173,17 +173,18 @@ struct ContentView: View {
                 }
             }
         } else if let discover = model.discover {
-            if discover.world.available == 0 {
+            // A country tapped on the map still opens, with its nearest places elsewhere.
+            if discover.world.available == 0 && model.selected == nil {
                 Text("No restaurants with a national cuisine turned up in \(model.location?.area.name ?? "this area"). \(model.location?.area.kind == .postalCode ? "Try the whole city or another location." : "Try another location.")")
                     .foregroundStyle(Theme.muted)
                 addLink
             } else {
                 Passport(discover: discover)
-                if selected == nil && !model.celebrations.isEmpty {
+                if model.selected == nil && !model.celebrations.isEmpty {
                     ComingUp(celebrations: model.celebrations)
                 }
-                if let selected {
-                    CountryDetail(progress: selected)
+                if let open = model.selected {
+                    CountryDetail(code: open, progress: selected)
                 } else {
                     Picker("Section", selection: Binding(get: { model.tab }, set: { model.tab = $0 })) {
                         Text("Countries \(discover.world.available)").tag(0)

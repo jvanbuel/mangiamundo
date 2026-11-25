@@ -28,8 +28,12 @@ import app.mangiamundo.core.CountryProgress
 import app.mangiamundo.core.Place
 import app.mangiamundo.core.Status
 
+/**
+ * The top of a country's list. `progress` is null for a country the area has no place of,
+ * whose list is then the nearest places elsewhere.
+ */
 @Composable
-fun CountryHeader(progress: CountryProgress, info: Country?, onBack: () -> Unit) {
+fun CountryHeader(code: String, progress: CountryProgress?, info: Country?, area: String, onBack: () -> Unit) {
     val colors = LocalAppColors.current
     Column(Modifier.padding(top = 4.dp, bottom = 8.dp)) {
         TextButton(onClick = onBack) {
@@ -39,9 +43,9 @@ fun CountryHeader(progress: CountryProgress, info: Country?, onBack: () -> Unit)
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text(info?.flag.orEmpty(), fontSize = 44.sp)
             Column(Modifier.padding(start = 14.dp)) {
-                Text(info?.name ?: progress.code, style = MaterialTheme.typography.headlineSmall, color = colors.text)
+                Text(info?.name ?: code, style = MaterialTheme.typography.headlineSmall, color = colors.text)
                 Text(
-                    buildString {
+                    if (progress == null) "None in $area yet" else buildString {
                         if (progress.status != Status.AVAILABLE) append("${progress.status.label} · ")
                         append("${progress.visited} of ${progress.places} ${if (progress.places == 1) "place" else "places"} visited")
                         if (progress.status != Status.COMPLETED) append(" · ${progress.goal - progress.visited} more for diamond")
@@ -51,7 +55,7 @@ fun CountryHeader(progress: CountryProgress, info: Country?, onBack: () -> Unit)
                 )
             }
         }
-        Bar(
+        if (progress != null) Bar(
             fraction(progress.visited, progress.goal).coerceAtMost(1f),
             Modifier.fillMaxWidth().padding(top = 10.dp),
             brush = when (progress.status) {

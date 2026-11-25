@@ -139,11 +139,22 @@ class ScreensTest {
     fun countryDetailLight() = snapshot(dark = false) {
         val colors = LocalAppColors.current
         Column(Modifier.fillMaxSize().background(colors.panel).padding(16.dp)) {
-            CountryHeader(progress.first { it.code == "JP" }, countries.first { it.code == "JP" }) {}
+            CountryHeader("JP", progress.first { it.code == "JP" }, countries.first { it.code == "JP" }, "Leuven") {}
             PlaceRow(Place("a", "Sushi Kaito", 50.88, 4.70, address = "Naamsestraat 12, Leuven", url = "https://example.org", countries = listOf("JP"), distanceM = 420, visits = listOf(Visit(1, 1, verified = true))), busy = false, onOpen = {}) {}
             PlaceRow(Place("b", "Ramen Bar Ichi", 50.87, 4.71, address = "Bondgenotenlaan 40", countries = listOf("JP"), distanceM = 1250, visits = listOf(Visit(2, 1))), busy = false, onOpen = {}) {}
             PlaceRow(Place("c", "Izakaya Kumo", 50.86, 4.69, countries = listOf("JP"), distanceM = 3400), busy = false, onOpen = {}) {}
             BadgeGrid(discover.badges)
+        }
+    }
+
+    @Test
+    fun nearestElsewhereDark() = snapshot(dark = true) {
+        val colors = LocalAppColors.current
+        Column(Modifier.fillMaxSize().background(colors.panel).padding(16.dp)) {
+            CountryHeader("IT", null, countries.first { it.code == "IT" }, "Leuven") {}
+            Note("The nearest we know of:")
+            PlaceRow(Place("a", "Trattoria Roma", 50.85, 4.35, address = "Rue Haute 1, Brussels", countries = listOf("IT"), distanceM = 24_700), busy = false, onOpen = {}) {}
+            PlaceRow(Place("b", "Da Mario", 51.22, 4.40, address = "Meir 5, Antwerp", countries = listOf("IT"), distanceM = 41_300, visits = listOf(Visit(1, 1))), busy = false, onOpen = {}) {}
         }
     }
 

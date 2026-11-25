@@ -58,6 +58,17 @@ then, and the client can try again in a moment. A request Nominatim doesn't answ
 within 15 seconds fails with `upstream`, and the next one gets its turn. The counts and
 the memory live in the one server process and start empty after a restart.
 
+## Further afield: the nearest places of a country
+
+A country with no place in the area isn't a dead end: `GET /api/countries/{code}/nearest`
+lists the places serving its food nearest to the user (or the map pin), whatever area
+they are in. It looks in every cached area and in the local copy of Belgium, so it knows
+Belgium everywhere and elsewhere only the areas someone has played. A place only in the
+local copy is saved as a place when it is listed, so it opens and takes check-ins like
+any other. Places hidden from the user (closed reports, other users' pending additions)
+stay hidden. The web, Android and iOS apps show this list when a country without places in the area is
+tapped on the map (#78).
+
 ## From a place a player adds to a place on OpenStreetMap
 
 Four tables hold restaurants:

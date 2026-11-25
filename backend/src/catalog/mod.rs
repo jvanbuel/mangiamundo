@@ -62,6 +62,14 @@ pub fn cuisine_tag(country: &str) -> Option<&'static str> {
     Some(CUISINES.iter().find(|c| c.country == country)?.osm[0])
 }
 
+/// Every OpenStreetMap `cuisine` value for a country's food; empty when the catalog has none.
+pub fn cuisine_tags(country: &str) -> &'static [&'static str] {
+    CUISINES
+        .iter()
+        .find(|c| c.country == country)
+        .map_or(&[], |c| c.osm)
+}
+
 /// The cuisine's adjective, like "Lebanese" or "Sri Lankan", when the catalog has one.
 pub fn cuisine_adjective(country: &str) -> Option<String> {
     let tag = cuisine_tag(country)?;

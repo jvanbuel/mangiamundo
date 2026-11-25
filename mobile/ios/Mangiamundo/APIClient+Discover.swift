@@ -20,6 +20,11 @@ extension APIClient {
         return try decode(await read("/api/places?\(area(areaID))&country=\(country)\(position)"))
     }
 
+    /// The places serving a country's food nearest to `from`, nearest first, whatever area they are in.
+    func nearest(country: String, from: (lat: Double, lng: Double), limit: Int = 10) async throws -> [Place] {
+        try decode(await read("/api/countries/\(country)/nearest?lat=\(from.lat)&lng=\(from.lng)&limit=\(limit)"))
+    }
+
     /// A random unvisited place to try, open now unless `open` is false, skipping `exclude`.
     func suggestion(areaID: String, from: (lat: Double, lng: Double)?, exclude: [String], open: Bool) async throws -> Suggestion {
         let position = from.map { "&lat=\($0.lat)&lng=\($0.lng)" } ?? ""
