@@ -238,9 +238,9 @@ fn card_svg(statuses: &HashMap<&str, Status>, headline: &str, caption: &str) -> 
                 shifts.push(-360.0);
             }
             for shift in shifts {
-                for (i, point) in ring.chunks_exact(2).enumerate() {
-                    let x = (point[0] + shift + 180.0) * scale;
-                    let y = (top - point[1]) * scale;
+                for (i, [lng, lat]) in ring.as_chunks::<2>().0.iter().enumerate() {
+                    let x = (lng + shift + 180.0) * scale;
+                    let y = (top - lat) * scale;
                     let _ = write!(path, "{}{:.1} {:.1}", if i == 0 { "M" } else { "L" }, x, y);
                 }
                 path.push('Z');
