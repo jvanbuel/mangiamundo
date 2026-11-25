@@ -8,7 +8,7 @@ use axum::http::{Request, StatusCode};
 use axum::Router;
 use http_body_util::BodyExt;
 use mangiamundo::providers::demo::Demo;
-use mangiamundo::{api, store, AppState};
+use mangiamundo::{api, limits, store, AppState};
 use serde_json::Value;
 use tower::ServiceExt;
 
@@ -3242,7 +3242,7 @@ impl mangiamundo::providers::AreaDirectory for CountedAreas {
 /// An app whose area directory is cached and limited as the OpenStreetMap one is.
 async fn app_with_cached_areas() -> (Router, Arc<CountedAreas>) {
     let db = store::connect("sqlite::memory:").await.unwrap();
-    let limits = api::Limits::default();
+    let limits = limits::Limits::default();
     let counted = Arc::new(CountedAreas::default());
     let areas = mangiamundo::providers::cached::CachedDirectory::new(
         db.clone(),

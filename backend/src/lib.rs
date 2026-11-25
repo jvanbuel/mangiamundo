@@ -8,6 +8,7 @@ pub mod config;
 pub mod game;
 pub mod geo;
 pub mod hours;
+pub mod limits;
 pub mod progress;
 pub mod providers;
 pub mod push;
@@ -40,7 +41,7 @@ pub struct AppState {
     pub loads: areas::Loads,
     /// Recent requests per user or client address, for limits on the ones that ask
     /// OpenStreetMap.
-    pub limits: api::Limits,
+    pub limits: limits::Limits,
 }
 
 impl AppState {

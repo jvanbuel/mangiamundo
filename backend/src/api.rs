@@ -21,7 +21,6 @@ use utoipa_axum::router::OpenApiRouter;
 use utoipa_axum::routes;
 
 use std::collections::HashMap;
-use std::sync::{Arc, Mutex};
 
 use chrono::NaiveDate;
 use chrono_tz::Tz;
@@ -32,7 +31,7 @@ use crate::providers::{osm, AreaInfo, Located, Lookup, Refused};
 use crate::store::{self, Area, HoursStatus, PlaceView, Visit};
 use crate::progress::{self, Progress, VisitChange};
 use crate::push::{self, Reminder};
-use crate::{account, areas, auth, catalog, geo, hours, share, AppState};
+use crate::{account, areas, auth, catalog, geo, hours, limits, share, AppState};
 
 /// A check-in counts as verified when made within this distance of the place.
 const VERIFY_DISTANCE_M: f64 = 250.0;
@@ -126,11 +125,6 @@ pub fn router(state: AppState) -> Router {
     .with_state(state)
 }
 
-tokio::task_local! {
-    /// Who sent the request being handled, for limits counted below the handlers.
-    static CLIENT: String;
-}
-
 /// Who sent a request: the address Fly's proxy saw it come from, which the proxy puts in
 /// `Fly-Client-IP` itself, whatever the client sent. An IPv6 address counts as its /64,
 /// since one connection has all of those. Without the proxy (development, tests) everyone
@@ -152,17 +146,7 @@ fn client_of(headers: &header::HeaderMap) -> String {
 
 /// Handles the request with its sender known to [`client`].
 async fn with_client(request: Request, next: axum::middleware::Next) -> Response {
-    as_client(client_of(request.headers()), next.run(request)).await
-}
-
-/// Runs `work` as if a request from `client` were being handled.
-pub(crate) async fn as_client<F: std::future::Future>(client: String, work: F) -> F::Output {
-    CLIENT.scope(client, work).await
-}
-
-/// Who sent the request being handled, or `None` in background work.
-pub(crate) fn client() -> Option<String> {
-    CLIENT.try_with(Clone::clone).ok()
+    limits::as_client(client_of(request.headers()), next.run(request)).await
 }
 
 #[derive(Serialize, ToSchema)]
@@ -840,52 +824,6 @@ fn zone(tz: Option<&str>) -> Tz {
     }
 }
 
-/// Recent requests per user and kind, for rate limits. In memory: the server runs as one
-/// machine, and a restart forgetting them is harmless.
-#[derive(Clone, Default)]
-pub struct Limits(Arc<Mutex<HashMap<LimitKey, Vec<i64>>>>);
-
-/// A user id and the kind of request.
-type LimitKey = (String, &'static str);
-
-impl Limits {
-    /// Counts the request and returns true when `user` made fewer than `max` requests of this
-    /// kind in the `window` seconds before `now`.
-    fn allow(&self, user: &str, kind: &'static str, max: usize, window: i64, now: i64) -> bool {
-        let mut all = self.0.lock().unwrap();
-        // ponytail: entries of users who stopped asking stay until restart; a few bytes each.
-        let times = all.entry((user.to_string(), kind)).or_default();
-        times.retain(|&at| at > now - window);
-        let allowed = times.len() < max;
-        if allowed {
-            times.push(now);
-        }
-        allowed
-    }
-
-    /// Like `allow`, for several budgets at once, each a `(max, window)`: the request is
-    /// counted, and true returned, when `user` is within all of them.
-    pub fn allow_each(
-        &self,
-        user: &str,
-        kind: &'static str,
-        budgets: &[(usize, i64)],
-        now: i64,
-    ) -> bool {
-        let mut all = self.0.lock().unwrap();
-        let times = all.entry((user.to_string(), kind)).or_default();
-        let longest = budgets.iter().map(|&(_, window)| window).max().unwrap_or(0);
-        times.retain(|&at| at > now - longest);
-        let allowed = budgets
-            .iter()
-            .all(|&(max, window)| times.iter().filter(|&&at| at > now - window).count() < max);
-        if allowed {
-            times.push(now);
-        }
-        allowed
-    }
-}
-
 /// An area as clients see it.
 #[derive(Serialize, ToSchema)]
 struct AreaView {
@@ -1296,15 +1234,8 @@ async fn add(
     };
     let id = added.id;
 
-    if let Some((notes, text)) = state.osm_notes_url.clone().zip(note) {
-        let (db, id, token) = (state.db.clone(), id.clone(), state.osm_notes_token.clone());
-        tokio::spawn(async move {
-            if let Some(note) = osm::post_note(notes, token, new.lat, new.lng, text).await {
-                if let Err(error) = store::set_osm_note(&db, &id, note).await {
-                    tracing::warn!(%error, "could not keep the osm note id");
-                }
-            }
-        });
+    if let Some(text) = note {
+        osm::note_added(state, id.clone(), new.lat, new.lng, text);
     }
     let mut place = store::place(&state.db, &id, Some(user))
         .await?
@@ -1995,14 +1926,8 @@ async fn report_closed(
     };
     let reports = store::report_closed(&state.db, &user, &place_id, state.now()).await?;
     // Tell OSM once, when the place gets hidden for everyone, so one person cannot spam mappers.
-    if let (Some(2), Some(url), Some(page)) = (reports, &state.osm_notes_url, osm::link(&place_id)) {
-        tokio::spawn(osm::post_note(
-            url.clone(),
-            state.osm_notes_token.clone(),
-            lat,
-            lng,
-            osm::closed_note(&name, &page),
-        ));
+    if reports == Some(2) {
+        osm::note_closed(&state, &place_id, &name, lat, lng);
     }
     let progress = match &area {
         Some(area) => {

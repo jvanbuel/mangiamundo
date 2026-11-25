@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use mangiamundo::config::{Config, ProviderKind};
 use mangiamundo::providers::{self, cached::CachedDirectory, osm};
-use mangiamundo::{account, api, auth, calendar, push, store, AppState};
+use mangiamundo::{account, api, auth, calendar, limits, push, store, AppState};
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
@@ -11,7 +11,7 @@ async fn main() -> anyhow::Result<()> {
     let config = Config::from_env()?;
     let (mut places, mut areas) = providers::build(&config)?;
     let db = store::connect(&config.database_url).await?;
-    let limits = api::Limits::default();
+    let limits = limits::Limits::default();
     if config.provider == ProviderKind::Osm {
         // Belgium comes from a daily import, so searches there skip the slow live query.
         let http = reqwest::Client::builder()

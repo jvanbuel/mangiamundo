@@ -14,7 +14,7 @@ use async_trait::async_trait;
 use sqlx::SqlitePool;
 
 use super::{AreaDirectory, AreaInfo, AreaKind, Boundary, Located, Refused};
-use crate::api::{self, Limits};
+use crate::limits::{self, Limits};
 use crate::store;
 
 /// How long an answer is kept. Boundaries rarely change, and a restart forgets them all.
@@ -127,7 +127,7 @@ impl CachedDirectory {
     /// Counts a request to the inner directory against the client being served, and
     /// refuses it when that client made too many. Background work is never refused.
     fn spend(&self, kind: &'static str, budgets: &[(usize, i64)]) -> Result<(), Refused> {
-        let Some(client) = api::client() else {
+        let Some(client) = limits::client() else {
             return Ok(());
         };
         if self
@@ -466,7 +466,7 @@ mod tests {
     async fn a_client_that_keeps_searching_is_refused_and_another_is_not() {
         let s = setup().await;
         let looping = "203.0.113.7".to_string();
-        api::as_client(looping.clone(), async {
+        limits::as_client(looping.clone(), async {
             for i in 0..10 {
                 s.directory.search(&format!("town {i}")).await.unwrap();
             }
@@ -477,14 +477,14 @@ mod tests {
         })
         .await;
 
-        api::as_client("198.51.100.1".into(), async {
+        limits::as_client("198.51.100.1".into(), async {
             s.directory.search("town 10").await.unwrap();
         })
         .await;
         assert_eq!(s.inner.asked.load(Ordering::SeqCst), 11);
 
         // A minute later there is room again, until the hour is used up.
-        api::as_client(looping, async {
+        limits::as_client(looping, async {
             for minute in 1..=5 {
                 s.now.fetch_add(60, Ordering::SeqCst);
                 for i in 0..10 {
@@ -503,7 +503,7 @@ mod tests {
     #[tokio::test]
     async fn locating_and_outlines_are_counted_per_client_too() {
         let s = setup().await;
-        api::as_client("203.0.113.7".into(), async {
+        limits::as_client("203.0.113.7".into(), async {
             for i in 0..5 {
                 s.directory.locate(10.0 + f64::from(i), 4.7).await.unwrap();
             }

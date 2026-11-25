@@ -15,7 +15,7 @@ use super::{
     Refused,
 };
 use crate::geo::{Bbox, Shape};
-use crate::{catalog, store};
+use crate::{catalog, store, AppState};
 
 /// The area kept as a local copy: Belgium plus a margin, so border towns such as
 /// Lille, Maastricht and Aachen are covered too.
@@ -944,9 +944,40 @@ pub fn closed_note(name: &str, page: &str) -> String {
     )
 }
 
+/// In the background, tells mappers about a place a user added (or suggested a cuisine for),
+/// and keeps the note's id with the pending place. Nothing when notes are off.
+pub fn note_added(state: &AppState, place_id: String, lat: f64, lng: f64, text: String) {
+    let Some(url) = state.osm_notes_url.clone() else {
+        return;
+    };
+    let (db, token) = (state.db.clone(), state.osm_notes_token.clone());
+    tokio::spawn(async move {
+        if let Some(note) = post_note(url, token, lat, lng, text).await {
+            if let Err(error) = store::set_osm_note(&db, &place_id, note).await {
+                tracing::warn!(%error, "could not keep the osm note id");
+            }
+        }
+    });
+}
+
+/// In the background, tells mappers that an OSM place has closed. Nothing when notes are
+/// off or the place isn't from OSM.
+pub fn note_closed(state: &AppState, place_id: &str, name: &str, lat: f64, lng: f64) {
+    let (Some(url), Some(page)) = (state.osm_notes_url.clone(), link(place_id)) else {
+        return;
+    };
+    tokio::spawn(post_note(
+        url,
+        state.osm_notes_token.clone(),
+        lat,
+        lng,
+        closed_note(name, &page),
+    ));
+}
+
 /// Posts an OSM note, as the account `token` belongs to or anonymously, and returns its id.
 /// Best effort: a failure is logged, not retried.
-pub async fn post_note(
+async fn post_note(
     url: String,
     token: Option<String>,
     lat: f64,
