@@ -1,0 +1,5 @@
+# The Rust used for the backend locally, in the prek hooks and in CI, so all of them lint
+# with the same clippy. Move it along with new releases (and the Dockerfile's rust image).
+[toolchain]
+channel = "1.100"
+components = ["rustfmt", "clippy"]
