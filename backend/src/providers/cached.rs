@@ -142,7 +142,7 @@ impl CachedDirectory {
     }
 
     /// The city and postal code among the cached areas around the point.
-    async fn from_outlines(&self, lat: f64, lng: f64) -> sqlx::Result<Located> {
+    async fn located_by_outlines(&self, lat: f64, lng: f64) -> sqlx::Result<Located> {
         let around = store::areas_containing(&self.db, lat, lng).await?;
         Ok(Located {
             city: smallest(&around, AreaKind::City),
@@ -196,7 +196,7 @@ impl AreaDirectory for CachedDirectory {
         if let Some(located) = self.located.get(&cell, (self.clock)()) {
             return Ok(located);
         }
-        let mut located = self.from_outlines(lat, lng).await?;
+        let mut located = self.located_by_outlines(lat, lng).await?;
         if located.city.is_none() || located.postal_code.is_none() {
             // Half an answer would hide the other half, so the directory gives all of it.
             // An error is not remembered: the next lookup asks again.

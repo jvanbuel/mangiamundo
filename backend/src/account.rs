@@ -696,7 +696,7 @@ mod tests {
                 .users,
             0
         );
-        assert_eq!(users(&db).await, [user.clone()]);
+        assert_eq!(users(&db).await, std::slice::from_ref(&user));
         // A recovery code is a way back in.
         new_recovery_code(&db, &user, 0).await.unwrap();
         let later = at + 31 * DAY + ABANDONED_AFTER_SECS;
@@ -885,7 +885,7 @@ mod tests {
             .fetch_all(&db)
             .await
             .unwrap();
-        assert_eq!(reports, [into.clone()]);
+        assert_eq!(reports, std::slice::from_ref(&into));
         let sessions: Vec<String> = sqlx::query_scalar("SELECT DISTINCT user_id FROM sessions")
             .fetch_all(&db)
             .await
