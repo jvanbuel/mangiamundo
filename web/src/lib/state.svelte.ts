@@ -4,17 +4,10 @@ import * as api from './api';
 import * as push from './push';
 import { hideSplash } from './splash';
 import {
-	type Account,
 	type AddPlace,
 	type AddedPlace,
 	type Bonus,
-	type BadgeKind,
-	type Celebration,
-	type Catalog,
-	type Country,
 	type Area,
-	type AreaProgress,
-	type Discover,
 	type Located,
 	type Location,
 	type Place,
@@ -23,6 +16,9 @@ import {
 	type Visit,
 	visitedToday
 } from './types';
+import { app, country, load, message, toast, type Theme, type ToastIcon } from './state/app.svelte';
+
+export { app, country, toast, type Theme, type Toast, type ToastIcon } from './state/app.svelte';
 
 const LOCATION_KEY = 'mangiamundo.location';
 const PROJECTION_KEY = 'mangiamundo.projection';
@@ -34,95 +30,11 @@ export const SPIN_MS = 1600;
 /** Areas kept as recent, including the current one; the picker shows the others. */
 const MAX_RECENTS = 6;
 
-export type Theme = 'system' | 'light' | 'dark';
-
-/** What a toast shows on its left: a flag (or other text), a badge medal, or nothing. */
-export type ToastIcon = { text: string } | { badge: BadgeKind | 'event' } | null;
-
-export interface Toast {
-	id: number;
-	icon: ToastIcon;
-	title: string;
-	text: string;
-}
-
-function load<T>(key: string): T | null {
-	try {
-		return JSON.parse(localStorage.getItem(key) ?? 'null');
-	} catch {
-		return null;
-	}
-}
-
-export const app = $state({
-	/** The server's version and commit; null until it answers, 'not reached' after a failure. */
-	server: null as string | null,
-	catalog: null as Catalog | null,
-	location: null as Location | null,
-	discover: null as Discover | null,
-	loading: false,
-	/** How far the area's restaurants have loaded, while that takes a while. */
-	areaProgress: null as AreaProgress | null,
-	error: null as string | null,
-	/** Code of the country whose places are shown. */
-	selected: null as string | null,
-	places: [] as Place[],
-	placesLoading: false,
-	/** Id of the place whose details are open, and the details once loaded. */
-	placeId: null as string | null,
-	detail: null as Place | null,
-	/** The last place whose details closed, so its link in the list gets focus back. */
-	closedPlace: null as string | null,
-	/** The place whose check-in or undo is running. One at a time, across cards and details. */
-	busyPlace: null as string | null,
-	/** The place being read again from OpenStreetMap. */
-	refreshingPlace: null as string | null,
-	/** While true the map turns the globe; when it ends the map flies to the selected country. */
-	spinning: false,
-	/** The place the last spin landed on, whose details offer to spin again. */
-	spun: null as string | null,
-	/** Asking OpenStreetMap for places just mapped nearby. */
-	lookingNearby: false,
-	locating: false,
-	locateError: null as string | null,
-	projection: 'globe' as 'globe' | 'mercator',
-	theme: 'system' as Theme,
-	tab: 'countries' as 'countries' | 'badges',
-	celebrations: [] as Celebration[],
-	/** Web Push reminders: on, off, not possible here, or possible once installed (iPhone). */
-	reminders: 'off' as 'on' | 'off' | 'unsupported' | 'install',
-	remindersBusy: false,
-	toasts: [] as Toast[],
-	/** This device's account, for showing whether and how it is signed in. */
-	account: null as Account | null,
-	/** Goes up whenever the public link is made or turned off, or the device is signed out, for whatever shows the account. */
-	publicLink: 0,
-	/** Areas used lately, newest first, for switching back quickly. */
-	recents: [] as Area[]
-});
-
 /** The last real GPS position, used to verify check-ins even when browsing another city. */
 let gpsFix: { lat: number; lng: number; at: number } | null = null;
 let requestId = 0;
 /** A ?country= link that arrived before there was anything to discover: opened on the first load. */
 let pendingCountry: string | null = null;
-let toastId = 0;
-
-export function country(code: string): Country | undefined {
-	return app.catalog?.countries.find((c) => c.code === code);
-}
-
-export function toast(icon: ToastIcon, title: string, text: string) {
-	const id = ++toastId;
-	app.toasts.push({ id, icon, title, text });
-	setTimeout(() => {
-		app.toasts = app.toasts.filter((t) => t.id !== id);
-	}, 5000);
-}
-
-function message(error: unknown): string {
-	return error instanceof Error ? error.message : 'Something went wrong.';
-}
 
 /** Asks for the server's version until it answers once. */
 function loadServer() {
