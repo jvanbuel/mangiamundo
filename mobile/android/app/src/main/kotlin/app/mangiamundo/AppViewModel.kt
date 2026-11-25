@@ -19,13 +19,11 @@ import app.mangiamundo.core.Celebration
 import app.mangiamundo.core.Country
 import app.mangiamundo.core.Discover
 import app.mangiamundo.core.Area
-import app.mangiamundo.core.AreaKind
 import app.mangiamundo.core.AreaProgress
 import app.mangiamundo.core.Place
 import app.mangiamundo.core.ProjectionKind
 import app.mangiamundo.core.ReminderSchedule
 import app.mangiamundo.core.World
-import app.mangiamundo.core.withRecent
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.channels.Channel
@@ -34,7 +32,6 @@ import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import kotlin.math.abs
 
 private const val NOT_REACHED = "not reached"
 
@@ -42,16 +39,17 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     internal val settings = Settings(application)
     internal val api = ApiClient(BuildConfig.API_BASE, settings, android.os.Build.MODEL) { accounts.signedOut() }
     private val accounts = AccountModel(this)
-    private val spins = SpinModel(this)
+    internal val spins = SpinModel(this)
     private val visits = VisitsModel(this)
     private val osm = OsmRefreshModel(this)
     private val adding = AddPlaceModel(this)
+    private val locations = LocationModel(this)
 
     var world by mutableStateOf<World?>(null); private set
     var catalog by mutableStateOf<Catalog?>(null); private set
-    var location by mutableStateOf(settings.location); private set
+    var location by mutableStateOf(settings.location); internal set
     /** Areas chosen recently, newest first, for the location picker. Includes the current one. */
-    var recentAreas by mutableStateOf(settings.recentAreas); private set
+    val recentAreas: List<Area> get() = locations.recentAreas
     var discover by mutableStateOf<Discover?>(null); internal set
     var loading by mutableStateOf(false); private set
     var error by mutableStateOf<String?>(null); private set
@@ -80,10 +78,10 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     /** The place the last spin landed on, whose details offer to spin again. */
     val spun: String? get() = spins.spun
 
-    var locating by mutableStateOf(false); private set
-    var locateError by mutableStateOf<String?>(null); private set
+    val locating: Boolean get() = locations.locating
+    val locateError: String? get() = locations.locateError
 
-    var celebrations by mutableStateOf<List<Celebration>>(emptyList()); private set
+    var celebrations by mutableStateOf<List<Celebration>>(emptyList()); internal set
     var remindersOn by mutableStateOf(settings.remindersOn && Notifications.allowed(application)); private set
     /** 0 = countries, 1 = badges. */
     var tab by mutableStateOf(0)
@@ -148,21 +146,13 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     /** Picks a city or postal code from a search. */
-    fun chooseArea(area: Area) {
-        moveTo(SavedLocation(area, area.lat, area.lng, fromGps = false))
-    }
+    fun chooseArea(area: Area) = locations.chooseArea(area)
 
     /** Switches between the city and the postal code found at the GPS position. */
-    fun switchArea(area: Area) {
-        val current = location ?: return
-        if (current.area.id != area.id) moveTo(current.copy(area = area))
-    }
+    fun switchArea(area: Area) = locations.switchArea(area)
 
     /** Takes an area off the recent list. */
-    fun forgetRecent(id: String) {
-        recentAreas = recentAreas.filter { it.id != id }
-        settings.recentAreas = recentAreas
-    }
+    fun forgetRecent(id: String) = locations.forgetRecent(id)
 
     /** Where the user is, when known recently: distances are measured from it. */
     internal fun userPosition(): Pair<Double, Double>? {
@@ -170,62 +160,10 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         return location?.takeIf { it.fromGps }?.let { it.lat to it.lng }
     }
 
-    private fun moveTo(target: SavedLocation) {
-        // The area being left too, so one saved before recents existed shows up.
-        recentAreas = withRecent(location?.let { withRecent(recentAreas, it.area) } ?: recentAreas, target.area)
-        settings.recentAreas = recentAreas
-        location = target
-        spins.forgetSpun()
-        // The old area's countries must not show while the new area loads.
-        discover = null
-        celebrations = emptyList()
-        settings.location = target
-        closePlace()
-        select(null)
-        refresh()
-    }
-
     /** Moves to the device position. With `quiet`, failures leave the current location alone. */
-    fun locate(quiet: Boolean = false) {
-        if (locating) return
-        locating = true
-        locateError = null
-        viewModelScope.launch {
-            val fix = DeviceLocation.current(getApplication())
-            if (fix == null) {
-                if (!quiet || location == null) {
-                    locateError = "Could not determine your location. Search for your city instead."
-                }
-            } else {
-                gpsFix = Triple(fix.latitude, fix.longitude, System.currentTimeMillis())
-                val previous = location
-                val moved = previous == null || !previous.fromGps ||
-                    abs(previous.lat - fix.latitude) > 0.01 || abs(previous.lng - fix.longitude) > 0.01
-                // Background refreshes skip small moves; an explicit request always looks the area
-                // up, since a short walk can cross a postal-code boundary.
-                if (moved || !quiet) {
-                    val located = runCatching { api.locateArea(fix.latitude, fix.longitude) }.getOrNull()
-                    // The city by default; someone who narrowed to their postal code keeps that. Read
-                    // the selection now: it may have changed while the lookup ran.
-                    val current = location
-                    val keepPostalCode = current?.fromGps == true && current.area.kind == AreaKind.POSTAL_CODE
-                    val area = located?.let { (if (keepPostalCode) it.postalCode else null) ?: it.city ?: it.postalCode }
-                    if (located == null || area == null) {
-                        if (!quiet || location == null) {
-                            locateError = "No city or postal code found here. Search for your city instead."
-                        }
-                    } else {
-                        moveTo(SavedLocation(area, fix.latitude, fix.longitude, fromGps = true, options = located.options))
-                    }
-                }
-            }
-            locating = false
-        }
-    }
+    fun locate(quiet: Boolean = false) = locations.locate(quiet)
 
-    fun locationDenied() {
-        locateError = "Location access was denied. Search for your city instead."
-    }
+    fun locationDenied() = locations.locationDenied()
 
     suspend fun search(query: String): List<Area> = api.searchAreas(query)
 
