@@ -1,6 +1,10 @@
 //! End-to-end tests of the HTTP API against the offline demo provider.
 
-use std::sync::atomic::{AtomicI64, Ordering};
+mod common;
+mod fake_osm;
+mod shared_links;
+
+use std::sync::atomic::Ordering;
 use std::sync::Arc;
 
 use axum::body::Body;
@@ -14,123 +18,12 @@ use mangiamundo::{account, api, limits, store, AppState};
 use serde_json::Value;
 use tower::ServiceExt;
 
-const HERE: &str = "area=demo-leuven";
-
-/// 16 November 2026, 12:00 UTC.
-const START: i64 = 1_794_830_400;
-const DAY: i64 = 86_400;
-
-async fn app() -> Router {
-    app_with_clock().await.0
-}
-
-/// An app with its own clock, starting at START, that the test can move.
-async fn app_with_clock() -> (Router, Arc<AtomicI64>) {
-    let db = store::connect("sqlite::memory:").await.unwrap();
-    app_with(db, None, START)
-}
-
-fn app_with(
-    db: sqlx::SqlitePool,
-    osm_notes_url: Option<String>,
-    start: i64,
-) -> (Router, Arc<AtomicI64>) {
-    app_with_notes(db, osm_notes_url, None, start)
-}
-
-fn app_with_notes(
-    db: sqlx::SqlitePool,
-    osm_notes_url: Option<String>,
-    osm_notes_token: Option<String>,
-    start: i64,
-) -> (Router, Arc<AtomicI64>) {
-    let (state, now) = state_with_notes(db, osm_notes_url, osm_notes_token, start);
-    (api::router(state), now)
-}
-
-/// The state of such an app, for a test that needs a hand in it.
-fn state_with_notes(
-    db: sqlx::SqlitePool,
-    osm_notes_url: Option<String>,
-    osm_notes_token: Option<String>,
-    start: i64,
-) -> (AppState, Arc<AtomicI64>) {
-    let now = Arc::new(AtomicI64::new(start));
-    let clock = now.clone();
-    let state = AppState {
-        loads: mangiamundo::areas::Loads::default(),
-        limits: mangiamundo::limits::Limits::default(),
-        db,
-        places: Arc::new(Demo),
-        areas: Arc::new(Demo),
-        cache_ttl_secs: 3600,
-        clock: Arc::new(move || clock.load(Ordering::Relaxed)),
-        push_key: None,
-        osm_notes_url,
-        osm_notes_token,
-        auth: Arc::default(),
-    };
-    (state, now)
-}
-
-async fn call(
-    app: &Router,
-    method: &str,
-    uri: &str,
-    token: Option<&str>,
-    body: Option<&str>,
-) -> (StatusCode, Value) {
-    let mut request = Request::builder().method(method).uri(uri);
-    if let Some(token) = token {
-        request = request.header("authorization", format!("Bearer {token}"));
-    }
-    let body = match body {
-        Some(json) => {
-            request = request.header("content-type", "application/json");
-            Body::from(json.to_string())
-        }
-        None => Body::empty(),
-    };
-    let response = app
-        .clone()
-        .oneshot(request.body(body).unwrap())
-        .await
-        .unwrap();
-    let status = response.status();
-    let bytes = response.into_body().collect().await.unwrap().to_bytes();
-    (
-        status,
-        serde_json::from_slice(&bytes).unwrap_or(Value::Null),
-    )
-}
-
-async fn session(app: &Router) -> String {
-    let (status, body) = call(app, "POST", "/api/session", None, None).await;
-    assert_eq!(status, StatusCode::OK);
-    body["token"].as_str().unwrap().to_string()
-}
-
-/// Where to check in at a place from `/api/places`.
-fn visits_uri(place: &Value) -> String {
-    format!("/api/places/{}/visits", place["id"].as_str().unwrap())
-}
-
-/// A check-in body made at the place itself.
-fn at(place: &Value) -> String {
-    format!(
-        r#"{{"position":{{"lat":{},"lng":{}}}}}"#,
-        place["lat"], place["lng"]
-    )
-}
-
-fn badge<'a>(discover: &'a Value, id: &str) -> &'a Value {
-    discover["badges"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .find(|b| b["id"] == id)
-        .unwrap()
-}
+use crate::common::{
+    app, app_with, app_with_clock, app_with_notes, assert_error, at, badge, call, fake_osm_notes,
+    session, state_with_notes, visits_uri, DAY, HERE, START,
+};
+use crate::fake_osm::{app_with_osm, countries_here, osm_place};
+use crate::shared_links::{fetch, path_of, post_shared};
 
 #[tokio::test]
 async fn health_reports_the_server_version() {
@@ -542,15 +435,6 @@ async fn rejects_bad_input() {
     .await;
     assert_eq!(status, StatusCode::NOT_FOUND);
     assert_eq!(body["code"], "not_found");
-}
-
-/// Asserts a JSON error body with a message and the given code.
-fn assert_error(body: &Value, code: &str) {
-    assert_eq!(body["code"], code, "{body}");
-    assert!(
-        !body["error"].as_str().unwrap_or_default().is_empty(),
-        "{body}"
-    );
 }
 
 #[tokio::test]
@@ -1153,31 +1037,6 @@ async fn closed_reports_hide_a_place_from_the_reporter_then_from_everyone() {
     assert!(!list(None).await.contains(&place));
 }
 
-/// A fake OSM Notes API: its URL, and the notes posted to it as `<authorization> <form
-/// body>`, with `-` for an anonymous note. Each note gets id 7.
-async fn fake_osm_notes() -> (String, Arc<std::sync::Mutex<Vec<String>>>) {
-    use axum::routing::post;
-    let notes: Arc<std::sync::Mutex<Vec<String>>> = Arc::default();
-    let seen = notes.clone();
-    let fake = Router::new().route(
-        "/notes.json",
-        post(
-            move |headers: axum::http::HeaderMap, body: String| async move {
-                let auth = headers
-                    .get("authorization")
-                    .map_or("-", |v| v.to_str().unwrap())
-                    .to_string();
-                seen.lock().unwrap().push(format!("{auth} {body}"));
-                axum::Json(serde_json::json!({"type": "Feature", "properties": {"id": 7}}))
-            },
-        ),
-    );
-    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
-    let url = format!("http://{}/notes", listener.local_addr().unwrap());
-    tokio::spawn(async move { axum::serve(listener, fake).await.unwrap() });
-    (url, notes)
-}
-
 #[tokio::test]
 async fn the_second_closed_report_of_an_osm_place_posts_one_osm_note() {
     let (url, notes) = fake_osm_notes().await;
@@ -1455,8 +1314,6 @@ async fn an_added_place_shows_up_for_whoever_added_it_and_is_sent_to_osm() {
     );
 }
 
-/// Writes real responses to `contract/`, where the Android and iOS tests decode them.
-/// CI fails when the checked-in files differ, so an API change shows up in the diff.
 #[tokio::test]
 async fn a_check_in_says_what_it_unlocked_in_the_area() {
     let app = app().await;
@@ -1536,6 +1393,8 @@ async fn a_check_in_says_what_it_unlocked_in_the_area() {
     assert_eq!(plain["unlocked"], serde_json::json!([]));
 }
 
+/// Writes real responses to `contract/`, where the Android and iOS tests decode them.
+/// CI fails when the checked-in files differ, so an API change shows up in the diff.
 #[tokio::test]
 async fn writes_contract_fixtures() {
     let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../contract");
@@ -2147,133 +2006,6 @@ async fn an_added_place_earns_xp_once_the_import_confirms_it() {
     );
 }
 
-/// A provider whose OpenStreetMap answers the test sets: areas come from the demo provider.
-#[derive(Default)]
-struct FakeOsm {
-    places: std::sync::Mutex<std::collections::HashMap<String, mangiamundo::providers::Lookup>>,
-    nearby: std::sync::Mutex<Vec<mangiamundo::providers::FoundPlace>>,
-    down: std::sync::atomic::AtomicBool,
-}
-
-#[async_trait::async_trait]
-impl mangiamundo::providers::PlacesProvider for FakeOsm {
-    fn name(&self) -> &'static str {
-        "osm"
-    }
-    async fn search(
-        &self,
-        area: &mangiamundo::providers::Boundary,
-        next: &(dyn Fn() + Send + Sync),
-    ) -> anyhow::Result<Vec<mangiamundo::providers::FoundPlace>> {
-        mangiamundo::providers::PlacesProvider::search(&Demo, area, next).await
-    }
-    async fn place(&self, id: &str) -> anyhow::Result<mangiamundo::providers::Lookup> {
-        anyhow::ensure!(!self.down.load(Ordering::Relaxed), "overpass is down");
-        Ok(self
-            .places
-            .lock()
-            .unwrap()
-            .get(id)
-            .cloned()
-            .unwrap_or(mangiamundo::providers::Lookup::Gone))
-    }
-    async fn nearby(
-        &self,
-        _lat: f64,
-        _lng: f64,
-        _radius_m: f64,
-    ) -> anyhow::Result<Vec<mangiamundo::providers::FoundPlace>> {
-        anyhow::ensure!(!self.down.load(Ordering::Relaxed), "overpass is down");
-        Ok(self.nearby.lock().unwrap().clone())
-    }
-}
-
-/// An app on `osm`, with Leuven cached holding one OSM place, osm-node-42 (Lalibela, Ethiopian).
-async fn app_with_osm() -> (Router, Arc<AtomicI64>, Arc<FakeOsm>, sqlx::SqlitePool) {
-    let db = store::connect("sqlite::memory:").await.unwrap();
-    let area = store::Area {
-        boundary: Boundary {
-            info: AreaInfo {
-                id: "demo-leuven".into(),
-                name: "Leuven".into(),
-                kind: AreaKind::City,
-                detail: None,
-                lat: 50.88,
-                lng: 4.7,
-            },
-            shape: Shape::rect(Bbox {
-                south: 50.8,
-                west: 4.6,
-                north: 50.95,
-                east: 4.8,
-            }),
-        },
-        provider: "osm".into(),
-        fetched_at: START,
-    };
-    store::save_area(
-        &db,
-        &area,
-        &[osm_place(42, "Lalibela", "ethiopian", 50.8798, 4.7005)],
-    )
-    .await
-    .unwrap();
-    let fake = Arc::new(FakeOsm::default());
-    let now = Arc::new(AtomicI64::new(START));
-    let clock = now.clone();
-    let router = api::router(AppState {
-        loads: mangiamundo::areas::Loads::default(),
-        limits: mangiamundo::limits::Limits::default(),
-        db: db.clone(),
-        places: fake.clone(),
-        areas: Arc::new(Demo),
-        cache_ttl_secs: 3600,
-        clock: Arc::new(move || clock.load(Ordering::Relaxed)),
-        push_key: None,
-        osm_notes_url: None,
-        osm_notes_token: None,
-        auth: Arc::default(),
-    });
-    (router, now, fake, db)
-}
-
-fn osm_place(
-    n: u64,
-    name: &str,
-    cuisine: &str,
-    lat: f64,
-    lng: f64,
-) -> mangiamundo::providers::FoundPlace {
-    mangiamundo::providers::FoundPlace {
-        id: format!("osm-node-{n}"),
-        name: name.into(),
-        lat,
-        lng,
-        address: None,
-        url: None,
-        cuisine: Some(cuisine.into()),
-        opening_hours: None,
-        countries: mangiamundo::catalog::countries_for_cuisine_tag(cuisine),
-    }
-}
-
-async fn countries_here(app: &Router, token: &str) -> Vec<String> {
-    let (_, discover) = call(
-        app,
-        "GET",
-        &format!("/api/discover?{HERE}"),
-        Some(token),
-        None,
-    )
-    .await;
-    discover["countries"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .map(|c| c["code"].as_str().unwrap().to_string())
-        .collect()
-}
-
 #[tokio::test]
 async fn a_place_can_be_refreshed_from_osm_before_the_next_import() {
     use mangiamundo::providers::Lookup;
@@ -2868,54 +2600,6 @@ async fn a_restore_merges_the_account_its_session_belongs_to_now() {
         left, None,
         "`moved_to` was merged into the restored account"
     );
-}
-
-/// A GET of a public page or image: its status, content type and bytes.
-async fn fetch(app: &Router, uri: &str) -> (StatusCode, String, Vec<u8>) {
-    let request = Request::builder()
-        .uri(uri)
-        .header("host", "mangiamundo.test")
-        .body(Body::empty())
-        .unwrap();
-    let response = app.clone().oneshot(request).await.unwrap();
-    let status = response.status();
-    let kind = response
-        .headers()
-        .get("content-type")
-        .map_or_default(|v| v.to_str().unwrap().to_string());
-    let bytes = response
-        .into_body()
-        .collect()
-        .await
-        .unwrap()
-        .to_bytes()
-        .to_vec();
-    (status, kind, bytes)
-}
-
-/// The path of a shared link: `https://mangiamundo.test/p/abc` → `/p/abc`.
-fn path_of(url: &Value) -> String {
-    let url = url.as_str().unwrap();
-    assert!(url.starts_with("https://mangiamundo.test/"), "{url}");
-    url.trim_start_matches("https://mangiamundo.test")
-        .to_string()
-}
-
-async fn post_shared(app: &Router, uri: &str, token: &str) -> (StatusCode, Value) {
-    let request = Request::builder()
-        .method("POST")
-        .uri(uri)
-        .header("host", "mangiamundo.test")
-        .header("authorization", format!("Bearer {token}"))
-        .body(Body::empty())
-        .unwrap();
-    let response = app.clone().oneshot(request).await.unwrap();
-    let status = response.status();
-    let bytes = response.into_body().collect().await.unwrap().to_bytes();
-    (
-        status,
-        serde_json::from_slice(&bytes).unwrap_or(Value::Null),
-    )
 }
 
 #[tokio::test]
