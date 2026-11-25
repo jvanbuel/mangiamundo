@@ -11,6 +11,7 @@ mod closed_reports;
 mod common;
 mod completion;
 mod contract;
+mod contract_fixtures;
 mod devices;
 mod errors;
 mod events;
