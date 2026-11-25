@@ -15,55 +15,55 @@ final class AppModel {
 
     private(set) var world: World?
     private(set) var catalog: Catalog?
-    private(set) var location: SavedLocation?
+    var location: SavedLocation?
     /// Areas chosen before, newest first, to switch back to from the location picker.
-    private(set) var recentAreas: [Area] = []
-    private(set) var discover: Discover?
-    private(set) var loading = false
+    var recentAreas: [Area] = []
+    var discover: Discover?
+    var loading = false
     /// How far loading the area has come, while that takes long enough to show a wheel.
-    private(set) var areaProgress: AreaProgress?
-    private(set) var error: String?
+    var areaProgress: AreaProgress?
+    var error: String?
     /// The first data is in (or failed), so the startup loader can go.
-    private(set) var ready = false
+    var ready = false
 
     /// Code of the country whose places are shown.
-    private(set) var selected: String?
-    private(set) var places: [Place] = []
-    private(set) var placesLoading = false
-    private(set) var busyPlace: String?
+    var selected: String?
+    var places: [Place] = []
+    var placesLoading = false
+    var busyPlace: String?
     /// The place being read again from OpenStreetMap.
-    private(set) var refreshingPlace: String?
+    var refreshingPlace: String?
     /// True while OpenStreetMap is asked for places just mapped nearby.
-    private(set) var lookingNearby = false
+    var lookingNearby = false
     /// The place the user went to edit in an OpenStreetMap app, read again when they come back.
-    @ObservationIgnored private var editing: String?
+    @ObservationIgnored var editing: String?
     /// A refresh waiting for the one running to finish.
-    @ObservationIgnored private var queuedRefresh: String?
+    @ObservationIgnored var queuedRefresh: String?
     /// The place whose details are open: its card's data until the full place has loaded.
-    private(set) var detail: Place?
+    var detail: Place?
     /// Whether `detail` holds all visits yet.
-    private(set) var detailVisits = DetailVisits.loading
-    @ObservationIgnored private var detailTask: Task<Void, Never>?
+    var detailVisits = DetailVisits.loading
+    @ObservationIgnored var detailTask: Task<Void, Never>?
 
     /// A spin is running: the globe turns and the Spin buttons wait.
-    private(set) var spinning = false
+    var spinning = false
     /// The place the last spin landed on, whose details offer to spin again.
-    private(set) var spun: String?
+    var spun: String?
     /// Places suggested since the area was picked, so spinning again finds another.
-    @ObservationIgnored private var spunIDs: [String] = []
+    @ObservationIgnored var spunIDs: [String] = []
     /// How long the globe turns at least before a spin lands, and how long one turn takes.
     private static let spinSeconds = 1.6
     private static let notTodayKey = "mangiamundo.notToday"
 
-    private(set) var locating = false
-    private(set) var locateError: String?
+    var locating = false
+    var locateError: String?
 
-    private(set) var celebrations: [Celebration] = []
-    private(set) var remindersOn = false
+    var celebrations: [Celebration] = []
+    var remindersOn = false
     /// 0 = countries, 1 = badges.
     var tab = 0
     /// The server's version and commit; nil until it answers, "not reached" after a failure.
-    private(set) var server: String?
+    var server: String?
 
     private(set) var projection = ProjectionKind.globe
     private(set) var directionsWith = DirectionsPreference.ask
@@ -72,26 +72,26 @@ final class AppModel {
     private(set) var toasts: [Toast] = []
 
     /// The account's recovery code status and devices, loaded when settings open.
-    private(set) var account: Account?
-    private(set) var accountError: String?
-    private(set) var accountBusy = false
+    var account: Account?
+    var accountError: String?
+    var accountBusy = false
     /// Shown once, right after it is made.
-    private(set) var recoveryCode: String?
-    private(set) var linkCode: LinkCode?
+    var recoveryCode: String?
+    var linkCode: LinkCode?
 
-    @ObservationIgnored private let api: APIClient
-    @ObservationIgnored private let locationService = LocationService()
-    @ObservationIgnored private let defaults = UserDefaults.standard
+    @ObservationIgnored let api: APIClient
+    @ObservationIgnored let locationService = LocationService()
+    @ObservationIgnored let defaults = UserDefaults.standard
     /// The last real device position, used to verify check-ins while browsing another city.
-    @ObservationIgnored private var gpsFix: (lat: Double, lng: Double, at: Date)?
-    @ObservationIgnored private var refreshTask: Task<Void, Never>?
+    @ObservationIgnored var gpsFix: (lat: Double, lng: Double, at: Date)?
+    @ObservationIgnored var refreshTask: Task<Void, Never>?
     /// Counts refreshes, so only the latest one shows or clears the progress wheel.
-    @ObservationIgnored private var refreshes = 0
-    @ObservationIgnored private var placesTask: Task<Void, Never>?
+    @ObservationIgnored var refreshes = 0
+    @ObservationIgnored var placesTask: Task<Void, Never>?
     @ObservationIgnored private var started = false
-    @ObservationIgnored private let reminders = ReminderCenter()
+    @ObservationIgnored let reminders = ReminderCenter()
     /// A country to open once progress has loaded, from a notification tap.
-    @ObservationIgnored private var pendingCountry: String?
+    @ObservationIgnored var pendingCountry: String?
 
     init() {
         let base = Bundle.main.object(forInfoDictionaryKey: "APIBaseURL") as? String
@@ -169,13 +169,13 @@ final class AppModel {
     }
 
     /// Where the user is, when known recently: distances are measured from it.
-    private var userPosition: (lat: Double, lng: Double)? {
+    var userPosition: (lat: Double, lng: Double)? {
         if let fix = gpsFix, Date().timeIntervalSince(fix.at) < 600 { return (fix.lat, fix.lng) }
         guard let location, location.fromGPS else { return nil }
         return (location.lat, location.lng)
     }
 
-    private static let recentKey = "mangiamundo.recentAreas"
+    static let recentKey = "mangiamundo.recentAreas"
 
     /// `area` at the front of `recent`, without duplicates, keeping at most 6.
     static func remembering(_ area: Area, in recent: [Area]) -> [Area] {
@@ -254,7 +254,7 @@ final class AppModel {
     }
 
     /// Asks for the server's version until it answers once.
-    private func loadServer() {
+    func loadServer() {
         guard server == nil || server == "not reached" else { return }
         Task {
             if let health = try? await api.health() {
@@ -745,7 +745,7 @@ final class AppModel {
 
     /// "Lalibela is on the map. +130 XP…" for each addition OpenStreetMap now has that the
     /// user wasn't told about. A failure leaves them for the next refresh.
-    private func announceConfirmedAdditions() async {
+    func announceConfirmedAdditions() async {
         // A few at a time: any more wait for the next refresh.
         guard let all = try? await api.additions() else { return }
         let news = Array(all.filter(\.isNews).prefix(10))
@@ -776,7 +776,7 @@ final class AppModel {
     }
 
     /// Runs one account action at a time, reporting failures in a toast.
-    private func accountAction(_ work: @escaping @MainActor () async throws -> Void) {
+    func accountAction(_ work: @escaping @MainActor () async throws -> Void) {
         guard !accountBusy else { return }
         accountBusy = true
         Task {
@@ -797,7 +797,7 @@ final class AppModel {
     }
 
     /// Whether a share sheet is being prepared.
-    private(set) var sharing = false
+    var sharing = false
 
     /// Shares the map of the current area through a public page, made on first use.
     func shareProgress() {
@@ -873,7 +873,7 @@ final class AppModel {
     }
 
     /// The address a sign-in code went to, while the code is awaited.
-    private(set) var codeSentTo: String?
+    var codeSentTo: String?
 
     func sendEmailCode(_ email: String) {
         accountAction {
@@ -960,7 +960,7 @@ final class AppModel {
     /// account is gone. Says so, and shows everything again as for someone without an
     /// account, so nothing of the old account stays on screen as if it were still here. A
     /// new account only starts with the next check-in or other change.
-    private func signedOut() async {
+    func signedOut() async {
         toast("You were signed out. Sign in or use a recovery code to get your progress back.")
         recoveryCode = nil
         linkCode = nil
@@ -968,10 +968,10 @@ final class AppModel {
     }
 
     /// Goes up with every change of account, so an answer for the previous one can be told apart.
-    private var accountGeneration = 0
+    var accountGeneration = 0
 
     /// After this device switches account: drop the previous account's visits, then load this one's.
-    private func accountChanged() async {
+    func accountChanged() async {
         accountGeneration += 1
         detailTask?.cancel()
         detail = nil
