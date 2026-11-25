@@ -13,10 +13,14 @@ jobs:
         working-directory: backend
     steps:
       - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
+      # The version and components in rust-toolchain.toml.
+      - run: rustup toolchain install
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: backend
+      # The same checks as the prek hooks in .pre-commit-config.yaml.
+      - run: cargo fmt --check
+      - run: cargo clippy --all-targets --locked -- -D warnings
       - run: cargo test --locked
       # The tests rewrite contract/*.json, which the Android and iOS tests decode.
       - name: Contract fixtures are up to date

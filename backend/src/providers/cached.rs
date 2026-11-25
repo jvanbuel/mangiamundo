@@ -49,6 +49,10 @@ const OUTLINES: &[(usize, i64)] = &[(20, 60), (100, 3600)];
 /// A point rounded to 3 decimal places: a cell of about 100 m.
 type Cell = (i32, i32);
 
+#[expect(
+    clippy::cast_possible_truncation,
+    reason = "thousandths of a degree fit an i32"
+)]
 fn cell(lat: f64, lng: f64) -> Cell {
     ((lat * 1000.0).round() as i32, (lng * 1000.0).round() as i32)
 }
@@ -73,7 +77,7 @@ impl<K: Hash + Eq + Clone, V: Clone> Memory<K, V> {
     fn new(max: usize) -> Self {
         Self {
             max,
-            kept: Default::default(),
+            kept: Mutex::default(),
         }
     }
 
@@ -142,7 +146,7 @@ impl CachedDirectory {
     }
 
     /// The city and postal code among the cached areas around the point.
-    async fn from_outlines(&self, lat: f64, lng: f64) -> sqlx::Result<Located> {
+    async fn located_by_outlines(&self, lat: f64, lng: f64) -> sqlx::Result<Located> {
         let around = store::areas_containing(&self.db, lat, lng).await?;
         Ok(Located {
             city: smallest(&around, AreaKind::City),
@@ -196,7 +200,7 @@ impl AreaDirectory for CachedDirectory {
         if let Some(located) = self.located.get(&cell, (self.clock)()) {
             return Ok(located);
         }
-        let mut located = self.from_outlines(lat, lng).await?;
+        let mut located = self.located_by_outlines(lat, lng).await?;
         if located.city.is_none() || located.postal_code.is_none() {
             // Half an answer would hide the other half, so the directory gives all of it.
             // An error is not remembered: the next lookup asks again.
@@ -433,9 +437,15 @@ mod tests {
     #[tokio::test]
     async fn a_search_that_found_nothing_is_remembered_for_minutes() {
         let s = setup().await;
-        assert!(s.directory.search("nowhere").await.unwrap().is_empty());
+        assert_eq!(
+            s.directory.search("nowhere").await.unwrap(),
+            [] as [AreaInfo; 0]
+        );
         s.now.fetch_add(NOTHING_TTL_SECS - 1, Ordering::SeqCst);
-        assert!(s.directory.search("nowhere").await.unwrap().is_empty());
+        assert_eq!(
+            s.directory.search("nowhere").await.unwrap(),
+            [] as [AreaInfo; 0]
+        );
         assert_eq!(s.inner.asked.load(Ordering::SeqCst), 1);
 
         s.now.fetch_add(1, Ordering::SeqCst);
@@ -449,7 +459,10 @@ mod tests {
         s.inner.down.store(true, Ordering::SeqCst);
         assert!(s.directory.search("leuven").await.is_err());
         s.inner.down.store(false, Ordering::SeqCst);
-        assert!(!s.directory.search("leuven").await.unwrap().is_empty());
+        assert_ne!(
+            s.directory.search("leuven").await.unwrap(),
+            [] as [AreaInfo; 0]
+        );
         assert_eq!(s.inner.asked.load(Ordering::SeqCst), 2);
 
         let long = "a".repeat(MAX_QUERY_BYTES + 1);
@@ -473,7 +486,10 @@ mod tests {
             assert!(refused(s.directory.search("town 10").await));
             assert_eq!(s.inner.asked.load(Ordering::SeqCst), 10, "not asked");
             // What is remembered costs nothing, also when nothing is left.
-            assert!(!s.directory.search("Town 3").await.unwrap().is_empty());
+            assert_ne!(
+                s.directory.search("Town 3").await.unwrap(),
+                [] as [AreaInfo; 0]
+            );
         })
         .await;
 

@@ -7,8 +7,10 @@ use axum::body::Body;
 use axum::http::{Request, StatusCode};
 use axum::Router;
 use http_body_util::BodyExt;
+use mangiamundo::geo::{Bbox, Shape};
 use mangiamundo::providers::demo::Demo;
-use mangiamundo::{api, limits, store, AppState};
+use mangiamundo::providers::{AreaInfo, AreaKind, Boundary};
+use mangiamundo::{account, api, limits, store, AppState};
 use serde_json::Value;
 use tower::ServiceExt;
 
@@ -25,18 +27,18 @@ async fn app() -> Router {
 /// An app with its own clock, starting at START, that the test can move.
 async fn app_with_clock() -> (Router, Arc<AtomicI64>) {
     let db = store::connect("sqlite::memory:").await.unwrap();
-    app_with(db, None, START).await
+    app_with(db, None, START)
 }
 
-async fn app_with(
+fn app_with(
     db: sqlx::SqlitePool,
     osm_notes_url: Option<String>,
     start: i64,
 ) -> (Router, Arc<AtomicI64>) {
-    app_with_notes(db, osm_notes_url, None, start).await
+    app_with_notes(db, osm_notes_url, None, start)
 }
 
-async fn app_with_notes(
+fn app_with_notes(
     db: sqlx::SqlitePool,
     osm_notes_url: Option<String>,
     osm_notes_token: Option<String>,
@@ -56,8 +58,8 @@ fn state_with_notes(
     let now = Arc::new(AtomicI64::new(start));
     let clock = now.clone();
     let state = AppState {
-        loads: Default::default(),
-        limits: Default::default(),
+        loads: mangiamundo::areas::Loads::default(),
+        limits: mangiamundo::limits::Limits::default(),
         db,
         places: Arc::new(Demo),
         areas: Arc::new(Demo),
@@ -66,7 +68,7 @@ fn state_with_notes(
         push_key: None,
         osm_notes_url,
         osm_notes_token,
-        auth: Default::default(),
+        auth: Arc::default(),
     };
     (state, now)
 }
@@ -751,7 +753,7 @@ async fn celebrations_only_list_countries_found_nearby() {
     .await;
     assert_eq!(status, StatusCode::OK);
     let list = list.as_array().unwrap();
-    assert!(!list.is_empty());
+    assert_ne!(list.as_slice(), [] as [Value; 0]);
     let mut previous = String::new();
     for celebration in list {
         let starts = celebration["starts"].as_str().unwrap().to_string();
@@ -761,7 +763,10 @@ async fn celebrations_only_list_countries_found_nearby() {
             assert!(here.contains(&nearby["code"].as_str().unwrap()));
             assert!(nearby["places"].as_u64().unwrap() > 0);
         }
-        assert!(!celebration["nearby"].as_array().unwrap().is_empty());
+        assert_ne!(
+            celebration["nearby"].as_array().unwrap().as_slice(),
+            [] as [Value; 0]
+        );
         assert!(celebration["reminder"]["title"]
             .as_str()
             .unwrap()
@@ -828,7 +833,7 @@ async fn event_days_follow_the_users_time_zone() {
     // 30 November (23:00) in UTC.
     let morning_in_tokyo = 1_796_079_600;
     let db = store::connect("sqlite::memory:").await.unwrap();
-    let (app, clock) = app_with(db, None, morning_in_tokyo).await;
+    let (app, clock) = app_with(db, None, morning_in_tokyo);
     let token = session(&app).await;
     let (_, places) = call(
         &app,
@@ -951,7 +956,7 @@ async fn celebrations_start_on_the_users_local_day() {
         .unwrap()
         .timestamp();
     let db = store::connect("sqlite::memory:").await.unwrap();
-    let (app, _) = app_with(db, None, at).await;
+    let (app, _) = app_with(db, None, at);
     let ids = |list: &Value| {
         list.as_array()
             .unwrap()
@@ -1028,7 +1033,6 @@ async fn visits_between_counts_distinct_places_inside_the_window() {
     )
     .await
     .unwrap();
-    use mangiamundo::account;
     let token = account::create_user(&db, None, START).await.unwrap();
     let session = account::session_for_token(&db, &token, START).await;
     let user = session.unwrap().unwrap().user;
@@ -1116,13 +1120,31 @@ async fn closed_reports_hide_a_place_from_the_reporter_then_from_everyone() {
     assert_eq!(status, StatusCode::OK);
     assert_eq!(reported["progress"], Value::Null, "no area, no progress");
     // Reporting twice counts once. With the area, the answer has the progress without it.
-    let (status, reported) = call(&app, "PUT", &format!("{report}?{HERE}"), Some(&alice), None).await;
+    let (status, reported) =
+        call(&app, "PUT", &format!("{report}?{HERE}"), Some(&alice), None).await;
     assert_eq!(status, StatusCode::OK);
-    let (_, mut discover) = call(&app, "GET", &format!("/api/discover?{HERE}"), Some(&alice), None).await;
+    let (_, mut discover) = call(
+        &app,
+        "GET",
+        &format!("/api/discover?{HERE}"),
+        Some(&alice),
+        None,
+    )
+    .await;
     discover.as_object_mut().unwrap().remove("area");
     assert_eq!(reported["progress"], discover);
-    let (_, theirs) = call(&app, "GET", &format!("/api/discover?{HERE}"), Some(&bob), None).await;
-    assert_eq!(discover["places"].as_u64().unwrap() + 1, theirs["places"].as_u64().unwrap());
+    let (_, theirs) = call(
+        &app,
+        "GET",
+        &format!("/api/discover?{HERE}"),
+        Some(&bob),
+        None,
+    )
+    .await;
+    assert_eq!(
+        discover["places"].as_u64().unwrap() + 1,
+        theirs["places"].as_u64().unwrap()
+    );
     assert!(!list(Some(alice.clone())).await.contains(&place));
     assert!(list(Some(bob.clone())).await.contains(&place));
     assert!(list(None).await.contains(&place));
@@ -1173,8 +1195,6 @@ async fn the_second_closed_report_of_an_osm_place_posts_one_osm_note() {
         opening_hours: None,
         countries: vec!["ET"],
     };
-    use mangiamundo::geo::{Bbox, Shape};
-    use mangiamundo::providers::{AreaInfo, AreaKind, Boundary};
     let area = store::Area {
         boundary: Boundary {
             info: AreaInfo {
@@ -1196,7 +1216,7 @@ async fn the_second_closed_report_of_an_osm_place_posts_one_osm_note() {
         fetched_at: START,
     };
     store::save_area(&db, &area, &[place]).await.unwrap();
-    let (app, _) = app_with(db, Some(url), START).await;
+    let (app, _) = app_with(db, Some(url), START);
 
     let users = [
         session(&app).await,
@@ -1241,7 +1261,7 @@ async fn the_second_closed_report_of_an_osm_place_posts_one_osm_note() {
 async fn an_added_place_shows_up_for_whoever_added_it_and_is_sent_to_osm() {
     let (url, notes) = fake_osm_notes().await;
     let db = store::connect("sqlite::memory:").await.unwrap();
-    let (app, clock) = app_with_notes(db.clone(), Some(url), Some("secret".into()), START).await;
+    let (app, clock) = app_with_notes(db.clone(), Some(url), Some("secret".into()), START);
     let (alice, bob) = (session(&app).await, session(&app).await);
     let countries = |token: String| {
         let app = app.clone();
@@ -1486,7 +1506,14 @@ async fn a_check_in_says_what_it_unlocked_in_the_area() {
     assert_eq!(earned["text"], first_bite["description"]);
     // The progress is what discover says next, so clients need not ask.
     let after = discover(token.clone()).await;
-    for part in ["countries", "badges", "profile", "events", "quests", "world"] {
+    for part in [
+        "countries",
+        "badges",
+        "profile",
+        "events",
+        "quests",
+        "world",
+    ] {
         assert_eq!(result["progress"][part], after[part], "{part}");
     }
     assert_eq!(result["profile"], after["profile"]);
@@ -1529,7 +1556,7 @@ async fn writes_contract_fixtures() {
         distance_m: 0,
     };
     store::replace_unknown(&db, &[unknown]).await.unwrap();
-    let (app, _) = app_with(db, None, START).await;
+    let (app, _) = app_with(db, None, START);
     let token = session(&app).await;
     let get = |uri: String| {
         let (app, token) = (&app, &token);
@@ -1612,7 +1639,14 @@ async fn writes_contract_fixtures() {
     write("additions", &additions);
 
     // Taking back the unverified check-in, after everything that shows it is written.
-    let (_, places) = call(&app, "GET", &format!("/api/places/{}", second["id"].as_str().unwrap()), Some(&token), None).await;
+    let (_, places) = call(
+        &app,
+        "GET",
+        &format!("/api/places/{}", second["id"].as_str().unwrap()),
+        Some(&token),
+        None,
+    )
+    .await;
     let uri = format!("/api/visits/{}?{HERE}", places["visits"][0]["id"]);
     let (status, removed) = call(&app, "DELETE", &uri, Some(&token), None).await;
     assert_eq!(status, StatusCode::OK);
@@ -1697,7 +1731,11 @@ async fn writes_contract_fixtures() {
         .map(id)
         .unwrap();
     let others: Vec<String> = everywhere.iter().map(id).filter(|i| *i != only).collect();
-    let suggestion = get(format!("/api/suggestion?{HERE}&exclude={}", others.join(","))).await;
+    let suggestion = get(format!(
+        "/api/suggestion?{HERE}&exclude={}",
+        others.join(",")
+    ))
+    .await;
     assert_eq!(suggestion["place"]["id"], only.as_str());
     write("suggestion", &suggestion);
 
@@ -1708,8 +1746,14 @@ async fn writes_contract_fixtures() {
     let _loading = loads.begin("demo-leuven");
     loads.step("demo-leuven", 15.0, 95.0, "Looking for restaurants", 1e9);
     let loading = api::router(state);
-    let (status, progress) =
-        call(&loading, "GET", "/api/areas/demo-leuven/progress", None, None).await;
+    let (status, progress) = call(
+        &loading,
+        "GET",
+        "/api/areas/demo-leuven/progress",
+        None,
+        None,
+    )
+    .await;
     assert_eq!(status, StatusCode::OK);
     write("area-progress", &progress);
 
@@ -1720,7 +1764,10 @@ async fn writes_contract_fixtures() {
     let mut edited = osm_place(42, "Lalibela", "ethiopian", 50.8798, 4.7005);
     edited.opening_hours = Some("Mo-Su 12:00-22:00".into());
     let found = mangiamundo::providers::Lookup::Found(edited);
-    fake.places.lock().unwrap().insert("osm-node-42".into(), found);
+    fake.places
+        .lock()
+        .unwrap()
+        .insert("osm-node-42".into(), found);
     let uri = "/api/places/osm-node-42/refresh?lat=50.88&lng=4.7";
     let (status, refreshed) = call(&osm, "POST", uri, Some(&token), None).await;
     assert_eq!(status, StatusCode::OK);
@@ -1797,7 +1844,10 @@ async fn suggests_an_open_unvisited_place_and_says_why_when_there_is_none() {
         assert_eq!(status, StatusCode::OK);
         assert_ne!(s["place"]["id"], visited["id"]);
         assert!(is_open(&s["place"]), "{s}");
-        assert!(s["place"]["visits"].as_array().unwrap().is_empty());
+        assert_eq!(
+            s["place"]["visits"].as_array().unwrap().as_slice(),
+            [] as [Value; 0]
+        );
         assert_eq!(s["place"]["countries"][0], s["country"]);
     }
 
@@ -1844,7 +1894,7 @@ async fn serves_and_writes_the_openapi_document() {
 #[tokio::test]
 async fn an_added_place_earns_xp_once_the_import_confirms_it() {
     let db = store::connect("sqlite::memory:").await.unwrap();
-    let (app, clock) = app_with(db.clone(), None, START).await;
+    let (app, clock) = app_with(db.clone(), None, START);
     let (alice, bob, carol) = (
         session(&app).await,
         session(&app).await,
@@ -2140,8 +2190,6 @@ impl mangiamundo::providers::PlacesProvider for FakeOsm {
 
 /// An app on `osm`, with Leuven cached holding one OSM place, osm-node-42 (Lalibela, Ethiopian).
 async fn app_with_osm() -> (Router, Arc<AtomicI64>, Arc<FakeOsm>, sqlx::SqlitePool) {
-    use mangiamundo::geo::{Bbox, Shape};
-    use mangiamundo::providers::{AreaInfo, AreaKind, Boundary};
     let db = store::connect("sqlite::memory:").await.unwrap();
     let area = store::Area {
         boundary: Boundary {
@@ -2174,8 +2222,8 @@ async fn app_with_osm() -> (Router, Arc<AtomicI64>, Arc<FakeOsm>, sqlx::SqlitePo
     let now = Arc::new(AtomicI64::new(START));
     let clock = now.clone();
     let router = api::router(AppState {
-        loads: Default::default(),
-        limits: Default::default(),
+        loads: mangiamundo::areas::Loads::default(),
+        limits: mangiamundo::limits::Limits::default(),
         db: db.clone(),
         places: fake.clone(),
         areas: Arc::new(Demo),
@@ -2184,7 +2232,7 @@ async fn app_with_osm() -> (Router, Arc<AtomicI64>, Arc<FakeOsm>, sqlx::SqlitePo
         push_key: None,
         osm_notes_url: None,
         osm_notes_token: None,
-        auth: Default::default(),
+        auth: Arc::default(),
     });
     (router, now, fake, db)
 }
@@ -2672,7 +2720,10 @@ async fn new_accounts_are_limited_per_address_and_hour() {
     for _ in 0..20 {
         assert_eq!(session_from(&app, "203.0.113.7").await, StatusCode::OK);
     }
-    assert_eq!(session_from(&app, "203.0.113.7").await, StatusCode::TOO_MANY_REQUESTS);
+    assert_eq!(
+        session_from(&app, "203.0.113.7").await,
+        StatusCode::TOO_MANY_REQUESTS
+    );
     let (status, error) = call(&app, "GET", "/api/health", None, None).await;
     assert_eq!((status, &error["ok"]), (StatusCode::OK, &Value::Bool(true)));
     // Someone else is not held up, and one connection's IPv6 addresses count as one.
@@ -2680,7 +2731,10 @@ async fn new_accounts_are_limited_per_address_and_hour() {
     for _ in 0..20 {
         assert_eq!(session_from(&app, "2001:db8:1:2::1").await, StatusCode::OK);
     }
-    assert_eq!(session_from(&app, "2001:db8:1:2:a:b:c:d").await, StatusCode::TOO_MANY_REQUESTS);
+    assert_eq!(
+        session_from(&app, "2001:db8:1:2:a:b:c:d").await,
+        StatusCode::TOO_MANY_REQUESTS
+    );
     assert_eq!(session_from(&app, "2001:db8:1:3::1").await, StatusCode::OK);
     // The accounts that were made keep working, and an hour later there is room again.
     now.fetch_add(3600, Ordering::Relaxed);
@@ -2704,11 +2758,18 @@ async fn new_accounts_are_limited_for_everyone_together() {
 #[tokio::test]
 async fn everything_a_client_reads_at_first_works_without_an_account() {
     let db = store::connect("sqlite::memory:").await.unwrap();
-    let (app, _) = app_with(db.clone(), None, START).await;
+    let (app, _) = app_with(db.clone(), None, START);
     let (status, discover) = call(&app, "GET", &format!("/api/discover?{HERE}"), None, None).await;
     assert_eq!(status, StatusCode::OK);
     let country = discover["countries"][0]["code"].as_str().unwrap();
-    let (status, places) = call(&app, "GET", &format!("/api/places?{HERE}&country={country}"), None, None).await;
+    let (status, places) = call(
+        &app,
+        "GET",
+        &format!("/api/places?{HERE}&country={country}"),
+        None,
+        None,
+    )
+    .await;
     assert_eq!(status, StatusCode::OK);
     assert_eq!(places[0]["visits"], serde_json::json!([]));
     let place = places[0]["id"].as_str().unwrap();
@@ -2736,7 +2797,14 @@ async fn everything_a_client_reads_at_first_works_without_an_account() {
     let token = session(&app).await;
     let (_, account) = call(&app, "GET", "/api/account", Some(&token), None).await;
     let device = account["devices"][0]["id"].as_str().unwrap();
-    let (status, _) = call(&app, "DELETE", &format!("/api/account/devices/{device}"), Some(&token), None).await;
+    let (status, _) = call(
+        &app,
+        "DELETE",
+        &format!("/api/account/devices/{device}"),
+        Some(&token),
+        None,
+    )
+    .await;
     assert_eq!(status, StatusCode::NO_CONTENT);
     for uri in &reads[..4] {
         let (status, body) = call(&app, "GET", uri, Some(&token), None).await;
@@ -2744,7 +2812,14 @@ async fn everything_a_client_reads_at_first_works_without_an_account() {
         assert_error(&body, "unauthorized");
     }
     // A write needs an account.
-    let (status, _) = call(&app, "POST", &format!("/api/places/{place}/visits?{HERE}"), None, Some("{}")).await;
+    let (status, _) = call(
+        &app,
+        "POST",
+        &format!("/api/places/{place}/visits?{HERE}"),
+        None,
+        Some("{}"),
+    )
+    .await;
     assert_eq!(status, StatusCode::UNAUTHORIZED);
 }
 
@@ -2797,15 +2872,24 @@ async fn a_restore_merges_the_account_its_session_belongs_to_now() {
 
 /// A GET of a public page or image: its status, content type and bytes.
 async fn fetch(app: &Router, uri: &str) -> (StatusCode, String, Vec<u8>) {
-    let request = Request::builder().uri(uri).header("host", "mangiamundo.test").body(Body::empty()).unwrap();
+    let request = Request::builder()
+        .uri(uri)
+        .header("host", "mangiamundo.test")
+        .body(Body::empty())
+        .unwrap();
     let response = app.clone().oneshot(request).await.unwrap();
     let status = response.status();
     let kind = response
         .headers()
         .get("content-type")
-        .map(|v| v.to_str().unwrap().to_string())
-        .unwrap_or_default();
-    let bytes = response.into_body().collect().await.unwrap().to_bytes().to_vec();
+        .map_or_default(|v| v.to_str().unwrap().to_string());
+    let bytes = response
+        .into_body()
+        .collect()
+        .await
+        .unwrap()
+        .to_bytes()
+        .to_vec();
     (status, kind, bytes)
 }
 
@@ -2813,7 +2897,8 @@ async fn fetch(app: &Router, uri: &str) -> (StatusCode, String, Vec<u8>) {
 fn path_of(url: &Value) -> String {
     let url = url.as_str().unwrap();
     assert!(url.starts_with("https://mangiamundo.test/"), "{url}");
-    url.trim_start_matches("https://mangiamundo.test").to_string()
+    url.trim_start_matches("https://mangiamundo.test")
+        .to_string()
 }
 
 async fn post_shared(app: &Router, uri: &str, token: &str) -> (StatusCode, Value) {
@@ -2827,22 +2912,45 @@ async fn post_shared(app: &Router, uri: &str, token: &str) -> (StatusCode, Value
     let response = app.clone().oneshot(request).await.unwrap();
     let status = response.status();
     let bytes = response.into_body().collect().await.unwrap().to_bytes();
-    (status, serde_json::from_slice(&bytes).unwrap_or(Value::Null))
+    (
+        status,
+        serde_json::from_slice(&bytes).unwrap_or(Value::Null),
+    )
 }
 
 #[tokio::test]
 async fn sharing_progress_makes_a_public_page_that_can_be_turned_off() {
     let app = app().await;
     let token = session(&app).await;
-    let (_, discover) = call(&app, "GET", &format!("/api/discover?{HERE}"), Some(&token), None).await;
-    let country = discover["countries"][0]["code"].as_str().unwrap().to_string();
-    let (_, places) = call(&app, "GET", &format!("/api/places?{HERE}&country={country}"), Some(&token), None).await;
+    let (_, discover) = call(
+        &app,
+        "GET",
+        &format!("/api/discover?{HERE}"),
+        Some(&token),
+        None,
+    )
+    .await;
+    let country = discover["countries"][0]["code"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    let (_, places) = call(
+        &app,
+        "GET",
+        &format!("/api/places?{HERE}&country={country}"),
+        Some(&token),
+        None,
+    )
+    .await;
     let (status, _) = call(&app, "POST", &visits_uri(&places[0]), Some(&token), None).await;
     assert_eq!(status, StatusCode::OK);
 
     let (status, link) = post_shared(&app, &format!("/api/share?{HERE}"), &token).await;
     assert_eq!(status, StatusCode::OK);
-    assert!(link["text"].as_str().unwrap().contains("I've tasted food from 1 of the"));
+    assert!(link["text"]
+        .as_str()
+        .unwrap()
+        .contains("I've tasted food from 1 of the"));
     let page = path_of(&link["url"]);
     assert_eq!(path_of(&link["image_url"]), format!("{page}/card.png"));
 
@@ -2859,7 +2967,10 @@ async fn sharing_progress_makes_a_public_page_that_can_be_turned_off() {
     let html = String::from_utf8(html).unwrap();
     assert!(html.contains(r#"<meta property="og:image" content="https://mangiamundo.test/p/"#));
     assert!(html.contains("1 of "));
-    assert!(!html.contains(places[0]["name"].as_str().unwrap()), "no place names on the public page");
+    assert!(
+        !html.contains(places[0]["name"].as_str().unwrap()),
+        "no place names on the public page"
+    );
     let (status, kind, png) = fetch(&app, &format!("{page}/card.png")).await;
     assert_eq!(status, StatusCode::OK);
     assert_eq!(kind, "image/png");
@@ -2878,9 +2989,26 @@ async fn a_shared_check_in_has_its_own_page_until_it_is_removed() {
     let app = app().await;
     let token = session(&app).await;
     let other = session(&app).await;
-    let (_, discover) = call(&app, "GET", &format!("/api/discover?{HERE}"), Some(&token), None).await;
-    let country = discover["countries"][0]["code"].as_str().unwrap().to_string();
-    let (_, places) = call(&app, "GET", &format!("/api/places?{HERE}&country={country}"), Some(&token), None).await;
+    let (_, discover) = call(
+        &app,
+        "GET",
+        &format!("/api/discover?{HERE}"),
+        Some(&token),
+        None,
+    )
+    .await;
+    let country = discover["countries"][0]["code"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    let (_, places) = call(
+        &app,
+        "GET",
+        &format!("/api/places?{HERE}&country={country}"),
+        Some(&token),
+        None,
+    )
+    .await;
     let (_, result) = call(&app, "POST", &visits_uri(&places[0]), Some(&token), None).await;
     let visit = result["visit"]["id"].as_i64().unwrap();
 
@@ -2902,7 +3030,14 @@ async fn a_shared_check_in_has_its_own_page_until_it_is_removed() {
     let (status, kind, _) = fetch(&app, &format!("{page}/card.png")).await;
     assert_eq!((status, kind.as_str()), (StatusCode::OK, "image/png"));
 
-    let (status, _) = call(&app, "DELETE", &format!("/api/visits/{visit}"), Some(&token), None).await;
+    let (status, _) = call(
+        &app,
+        "DELETE",
+        &format!("/api/visits/{visit}"),
+        Some(&token),
+        None,
+    )
+    .await;
     assert_eq!(status, StatusCode::OK);
     assert_eq!(fetch(&app, &page).await.0, StatusCode::NOT_FOUND);
 }
@@ -2978,7 +3113,7 @@ async fn monthly_quests_pay_once_and_the_streak_shows() {
 #[tokio::test]
 async fn quests_are_paid_per_area_at_check_in_and_taken_back_with_it() {
     let db = store::connect("sqlite::memory:").await.unwrap();
-    let (app, _) = app_with(db.clone(), None, START).await;
+    let (app, _) = app_with(db.clone(), None, START);
     let token = session(&app).await;
     // Who was paid for "two check-ins", per area.
     let paid = || async {
@@ -3020,26 +3155,48 @@ async fn quests_are_paid_per_area_at_check_in_and_taken_back_with_it() {
     }
 
     // They don't count in Tokyo, which has the quest too: one check-in there is one of two.
-    assert_eq!(done(app.clone(), token.clone(), "demo-tokyo").await, (0, false));
+    assert_eq!(
+        done(app.clone(), token.clone(), "demo-tokyo").await,
+        (0, false)
+    );
     let uri = format!("{}?area=demo-tokyo", visits_uri(&tokyo[0]));
     call(&app, "POST", &uri, Some(&token), None).await;
-    assert_eq!(done(app.clone(), token.clone(), "demo-tokyo").await, (1, false));
+    assert_eq!(
+        done(app.clone(), token.clone(), "demo-tokyo").await,
+        (1, false)
+    );
     assert_eq!(paid().await, ["demo-leuven", "demo-leuven-3000"]);
     let uri = format!("{}?area=demo-tokyo", visits_uri(&tokyo[1]));
     call(&app, "POST", &uri, Some(&token), None).await;
-    assert_eq!(paid().await, ["demo-leuven", "demo-leuven-3000", "demo-tokyo"]);
+    assert_eq!(
+        paid().await,
+        ["demo-leuven", "demo-leuven-3000", "demo-tokyo"]
+    );
 
     // Taking a check-in back takes back the quests it finished, where it finished them.
     let uri = format!("/api/visits/{}", visits[0]["visit"]["id"]);
     let (status, _) = call(&app, "DELETE", &uri, Some(&token), None).await;
     assert_eq!(status, StatusCode::OK);
     assert_eq!(paid().await, ["demo-tokyo"]);
-    assert_eq!(done(app.clone(), token.clone(), "demo-leuven").await, (1, false));
+    assert_eq!(
+        done(app.clone(), token.clone(), "demo-leuven").await,
+        (1, false)
+    );
     // And checking in again pays them again, once.
     let uri = visits_uri(&west[0]);
     let (_, back) = call(&app, "POST", &uri, Some(&token), None).await;
-    assert_eq!(paid().await, ["demo-leuven", "demo-leuven-3000", "demo-tokyo"]);
-    let (_, d) = call(&app, "GET", "/api/discover?area=demo-tokyo", Some(&token), None).await;
+    assert_eq!(
+        paid().await,
+        ["demo-leuven", "demo-leuven-3000", "demo-tokyo"]
+    );
+    let (_, d) = call(
+        &app,
+        "GET",
+        "/api/discover?area=demo-tokyo",
+        Some(&token),
+        None,
+    )
+    .await;
     assert_eq!(d["profile"]["xp"], back["profile"]["xp"]);
 }
 
@@ -3048,7 +3205,7 @@ async fn planning_reminders_books_no_quest_rewards() {
     // 1 December 2026, 12:00 UTC: the day the quests reminder is due.
     let first = START + 15 * DAY;
     let db = store::connect("sqlite::memory:").await.unwrap();
-    let (app, _) = app_with(db.clone(), None, first).await;
+    let (app, _) = app_with(db.clone(), None, first);
     let token = session(&app).await;
     let (_, places) = call(&app, "GET", &format!("/api/places?{HERE}"), None, None).await;
     let booked = || async {
@@ -3128,7 +3285,7 @@ async fn restaurants_with_unknown_food_can_be_given_a_country_or_none() {
     )
     .await
     .unwrap();
-    let (app, _) = app_with(db, Some(url), START).await;
+    let (app, _) = app_with(db, Some(url), START);
     let (alice, bob, carol) = (
         session(&app).await,
         session(&app).await,
@@ -3250,7 +3407,7 @@ async fn app_with_cached_areas() -> (Router, Arc<CountedAreas>) {
         limits.clone(),
     );
     let router = api::router(AppState {
-        loads: Default::default(),
+        loads: mangiamundo::areas::Loads::default(),
         limits,
         db,
         places: Arc::new(Demo),
@@ -3260,7 +3417,7 @@ async fn app_with_cached_areas() -> (Router, Arc<CountedAreas>) {
         push_key: None,
         osm_notes_url: None,
         osm_notes_token: None,
-        auth: Default::default(),
+        auth: Arc::default(),
     });
     (router, counted)
 }
@@ -3337,8 +3494,12 @@ async fn a_client_looping_on_area_lookups_is_limited_and_others_are_served() {
     assert_eq!(body["code"], "too_many_requests");
     let (status, _) = get_from(&app, looping, "/api/areas/locate?lat=12&lng=4.7").await;
     assert_eq!(status, StatusCode::OK, "a remembered cell is free");
-    let (status, here) =
-        get_from(&app, "198.51.100.1", "/api/areas/locate?lat=50.8798&lng=4.71").await;
+    let (status, here) = get_from(
+        &app,
+        "198.51.100.1",
+        "/api/areas/locate?lat=50.8798&lng=4.71",
+    )
+    .await;
     assert_eq!(status, StatusCode::OK);
     assert_eq!(here["city"]["id"], "demo-leuven");
 

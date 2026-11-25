@@ -3,6 +3,7 @@
 //! published keys, so no third-party auth service is involved.
 
 use std::collections::HashMap;
+use std::fmt::Write as _;
 use std::sync::Mutex;
 
 use jsonwebtoken::jwk::JwkSet;
@@ -70,7 +71,10 @@ pub struct Auth {
 
 impl Auth {
     pub fn new(config: AuthConfig) -> Self {
-        Auth { config, ..Default::default() }
+        Auth {
+            config,
+            ..Default::default()
+        }
     }
 }
 
@@ -131,10 +135,21 @@ impl Auth {
 
     /// The provider's signing key with this id, fetching the published set when it is old
     /// or doesn't have it (keys rotate).
-    async fn key(&self, provider: Provider, kid: &str, now: i64) -> Result<Option<DecodingKey>, AuthError> {
-        let cached = self.keys.lock().unwrap().get(&provider).and_then(|(set, at)| {
-            (now - at < KEYS_TTL_SECS).then(|| set.find(kid).and_then(|k| DecodingKey::from_jwk(k).ok()))
-        });
+    async fn key(
+        &self,
+        provider: Provider,
+        kid: &str,
+        now: i64,
+    ) -> Result<Option<DecodingKey>, AuthError> {
+        let cached = self
+            .keys
+            .lock()
+            .unwrap()
+            .get(&provider)
+            .and_then(|(set, at)| {
+                (now - at < KEYS_TTL_SECS)
+                    .then(|| set.find(kid).and_then(|k| DecodingKey::from_jwk(k).ok()))
+            });
         if let Some(Some(key)) = cached {
             return Ok(Some(key));
         }
@@ -142,26 +157,44 @@ impl Auth {
             Provider::Apple => &self.config.apple_keys_url,
             Provider::Google => &self.config.google_keys_url,
         };
-        let set: JwkSet = async { self.http.get(url).send().await?.error_for_status()?.json().await }
-            .await
-            .map_err(|e: reqwest::Error| AuthError::Upstream(provider.name(), e.into()))?;
+        let set: JwkSet = async {
+            self.http
+                .get(url)
+                .send()
+                .await?
+                .error_for_status()?
+                .json()
+                .await
+        }
+        .await
+        .map_err(|e: reqwest::Error| AuthError::Upstream(provider.name(), e.into()))?;
         let key = set.find(kid).and_then(|k| DecodingKey::from_jwk(k).ok());
         self.keys.lock().unwrap().insert(provider, (set, now));
         Ok(key)
     }
 
     /// Checks an ID token's signature, issuer, audience and expiry.
-    pub async fn verify(&self, provider: Provider, token: &str, now: i64) -> Result<Verified, AuthError> {
+    pub async fn verify(
+        &self,
+        provider: Provider,
+        token: &str,
+        now: i64,
+    ) -> Result<Verified, AuthError> {
         if self.audiences(provider).is_empty() {
             return Err(AuthError::NotConfigured(provider.name()));
         }
         let header = decode_header(token).map_err(|_| AuthError::Invalid)?;
         let kid = header.kid.ok_or(AuthError::Invalid)?;
-        let key = self.key(provider, &kid, now).await?.ok_or(AuthError::Invalid)?;
+        let key = self
+            .key(provider, &kid, now)
+            .await?
+            .ok_or(AuthError::Invalid)?;
         let mut validation = Validation::new(Algorithm::RS256);
         validation.set_audience(self.audiences(provider));
         validation.set_issuer(provider.issuers());
-        let claims = decode::<Claims>(token, &key, &validation).map_err(|_| AuthError::Invalid)?.claims;
+        let claims = decode::<Claims>(token, &key, &validation)
+            .map_err(|_| AuthError::Invalid)?
+            .claims;
         let verified = matches!(&claims.email_verified, Some(serde_json::Value::Bool(true)))
             || matches!(&claims.email_verified, Some(serde_json::Value::String(s)) if s == "true");
         Ok(Verified {
@@ -169,7 +202,9 @@ impl Auth {
             email: claims.email.filter(|_| verified).map(|e| e.to_lowercase()),
             name: claims.name.map(|n| n.chars().take(100).collect()),
             // Only a secure link, shown as an image in the app.
-            picture: claims.picture.filter(|p| p.starts_with("https://") && p.len() <= 1000),
+            picture: claims
+                .picture
+                .filter(|p| p.starts_with("https://") && p.len() <= 1000),
         })
     }
 
@@ -207,13 +242,18 @@ pub fn normalized_email(input: &str) -> Option<String> {
         && !domain.starts_with('.')
         && !domain.ends_with('.')
         && email.len() <= 254
-        && !email.chars().any(|c| c.is_whitespace() || c == ',' || c == '<' || c == '>');
+        && !email
+            .chars()
+            .any(|c| c.is_whitespace() || c == ',' || c == '<' || c == '>');
     ok.then_some(email)
 }
 
 fn code_hash(email: &str, code: &str) -> String {
     let digest = Sha256::digest(format!("{email}:{code}").as_bytes());
-    digest.iter().map(|b| format!("{b:02x}")).collect()
+    digest.iter().fold(String::new(), |mut hex, b| {
+        let _ = write!(hex, "{b:02x}");
+        hex
+    })
 }
 
 /// Makes a new 6-digit code for the address, replacing any earlier one, and returns it.
@@ -235,11 +275,12 @@ pub async fn new_code(db: &SqlitePool, email: &str, now: i64) -> sqlx::Result<St
 
 /// Uses up the address's code when `code` matches. A wrong one counts as an attempt.
 pub async fn take_code(db: &SqlitePool, email: &str, code: &str, now: i64) -> sqlx::Result<bool> {
-    let code: String = code.chars().filter(|c| c.is_ascii_digit()).collect();
-    let Some(row) = sqlx::query("SELECT hash, expires_at, attempts FROM email_codes WHERE email = ?")
-        .bind(email)
-        .fetch_optional(db)
-        .await?
+    let code: String = code.chars().filter(char::is_ascii_digit).collect();
+    let Some(row) =
+        sqlx::query("SELECT hash, expires_at, attempts FROM email_codes WHERE email = ?")
+            .bind(email)
+            .fetch_optional(db)
+            .await?
     else {
         return Ok(false);
     };
@@ -253,7 +294,10 @@ pub async fn take_code(db: &SqlitePool, email: &str, code: &str, now: i64) -> sq
             .await?;
         return Ok(false);
     }
-    sqlx::query("DELETE FROM email_codes WHERE email = ?").bind(email).execute(db).await?;
+    sqlx::query("DELETE FROM email_codes WHERE email = ?")
+        .bind(email)
+        .execute(db)
+        .await?;
     Ok(true)
 }
 
@@ -263,7 +307,10 @@ mod tests {
 
     #[test]
     fn emails_are_normalized_and_checked() {
-        assert_eq!(normalized_email("  Jan@Example.COM "), Some("jan@example.com".into()));
+        assert_eq!(
+            normalized_email("  Jan@Example.COM "),
+            Some("jan@example.com".into())
+        );
         assert_eq!(normalized_email("no-at-sign"), None);
         assert_eq!(normalized_email("a@localhost"), None);
         assert_eq!(normalized_email("a@b.c, x@y.z"), None);

@@ -241,10 +241,7 @@ pub fn unlocked(before: &Progress, after: &Progress, area: &str) -> Vec<Unlocked
         let Some(country) = catalog::country(&now.code) else {
             continue;
         };
-        let more = format!(
-            "{} more for diamond.",
-            now.goal.saturating_sub(now.visited)
-        );
+        let more = format!("{} more for diamond.", now.goal.saturating_sub(now.visited));
         let (medal, text) = match now.status {
             Status::Available => continue,
             Status::Discovered => ("gold", more),
@@ -278,7 +275,10 @@ pub fn unlocked(before: &Progress, after: &Progress, area: &str) -> Vec<Unlocked
     }
     for event in after.events.iter().filter(|e| e.earned) {
         let had = before.events.iter();
-        if !had.filter(|e| e.earned).any(|e| e.event.id == event.event.id) {
+        if !had
+            .filter(|e| e.earned)
+            .any(|e| e.event.id == event.event.id)
+        {
             out.push(Unlocked::new(
                 UnlockedKind::Event,
                 format!("Badge earned: {}", event.event.title),

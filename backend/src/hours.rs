@@ -101,8 +101,9 @@ pub fn week(raw: &str, lat: f64, lng: f64, now: i64) -> Option<Vec<Day>> {
         .collect();
     Some(
         (0..7)
-            .map(|i| {
-                let date = monday + TimeDelta::days(i as i64);
+            .zip(0..)
+            .map(|(i, offset)| {
+                let date = monday + TimeDelta::days(offset);
                 Day {
                     name: date.format("%A").to_string(),
                     today: date == today,

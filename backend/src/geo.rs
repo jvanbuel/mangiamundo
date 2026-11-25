@@ -9,6 +9,16 @@ pub fn distance_m(lat1: f64, lng1: f64, lat2: f64, lng2: f64) -> f64 {
     2.0 * EARTH_RADIUS_M * a.sqrt().asin()
 }
 
+/// [`distance_m`] in whole metres.
+#[expect(
+    clippy::cast_possible_truncation,
+    clippy::cast_sign_loss,
+    reason = "a distance on Earth is positive and far below u32::MAX metres"
+)]
+pub fn rounded_m(lat1: f64, lng1: f64, lat2: f64, lng2: f64) -> u32 {
+    distance_m(lat1, lng1, lat2, lng2).round() as u32
+}
+
 /// An area's outline: polygons as in a GeoJSON MultiPolygon, `[lng, lat]` pairs, each
 /// polygon an outer ring followed by its holes.
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]

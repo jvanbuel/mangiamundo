@@ -205,7 +205,12 @@ pub fn profile(lifetime: Lifetime) -> Profile {
         + lifetime.continent_bonuses * XP_NEW_CONTINENT
         + lifetime.quest_xp;
     // Level n starts at 100 * (n - 1)^2 XP: 0, 100, 400, 900, ...
-    let level = (xp as f64 / 100.0).sqrt().floor() as u32 + 1;
+    #[expect(
+        clippy::cast_possible_truncation,
+        clippy::cast_sign_loss,
+        reason = "the square root of a u32 over 100 fits a u32"
+    )]
+    let level = (f64::from(xp) / 100.0).sqrt().floor() as u32 + 1;
     Profile {
         xp,
         level,
@@ -239,13 +244,15 @@ fn badge(
 }
 
 pub fn summarize(rows: &[PlaceRow], lifetime: Lifetime) -> Summary {
+    use BadgeKind::{Completed, Continent, Countries, Everything, Pioneer, Streak, Visits, World};
+
     let mut by_country: BTreeMap<&str, (u32, u32)> = BTreeMap::new();
     let mut all_places = HashSet::new();
     let mut visited_places = HashSet::new();
     for row in rows {
         let entry = by_country.entry(row.country.as_str()).or_default();
         entry.0 += 1;
-        entry.1 += row.visited as u32;
+        entry.1 += u32::from(row.visited);
         all_places.insert(row.place_id.as_str());
         if row.visited {
             visited_places.insert(row.place_id.as_str());
@@ -269,12 +276,14 @@ pub fn summarize(rows: &[PlaceRow], lifetime: Lifetime) -> Summary {
     let group = |code: &str, name: &str, members: &[&CountryProgress]| GroupProgress {
         code: code.to_string(),
         name: name.to_string(),
-        available: members.len() as u32,
-        discovered: members.iter().filter(|c| c.visited > 0).count() as u32,
-        completed: members
-            .iter()
-            .filter(|c| c.status == Status::Completed)
-            .count() as u32,
+        available: crate::count(members.len()),
+        discovered: crate::count(members.iter().filter(|c| c.visited > 0).count()),
+        completed: crate::count(
+            members
+                .iter()
+                .filter(|c| c.status == Status::Completed)
+                .count(),
+        ),
     };
 
     let continents: Vec<GroupProgress> = CONTINENTS
@@ -286,7 +295,6 @@ pub fn summarize(rows: &[PlaceRow], lifetime: Lifetime) -> Summary {
         .collect();
     let world = group("WORLD", "World", &countries.iter().collect::<Vec<_>>());
 
-    use BadgeKind::*;
     let mut badges = vec![
         badge(
             "first-bite",
@@ -380,16 +388,16 @@ pub fn summarize(rows: &[PlaceRow], lifetime: Lifetime) -> Summary {
         Everything,
         "Every place",
         "Visit every single place here.",
-        visited_places.len() as u32,
-        all_places.len() as u32,
+        crate::count(visited_places.len()),
+        crate::count(all_places.len()),
     ));
 
     Summary {
         countries,
         continents,
         world,
-        places: all_places.len() as u32,
-        places_visited: visited_places.len() as u32,
+        places: crate::count(all_places.len()),
+        places_visited: crate::count(visited_places.len()),
         badges,
         profile: profile(lifetime),
     }
@@ -529,8 +537,8 @@ pub fn monthly_quests(
     for row in rows {
         let e = by_country.entry(row.country.as_str()).or_default();
         e.0 += 1;
-        e.1 += before_places.contains(&(row.place_id.as_str(), row.country.as_str())) as u32;
-        e.2 += row.visited as u32;
+        e.1 += u32::from(before_places.contains(&(row.place_id.as_str(), row.country.as_str())));
+        e.2 += u32::from(row.visited);
     }
 
     let quest =
@@ -549,7 +557,7 @@ pub fn monthly_quests(
     let untried: Vec<String> = by_country
         .keys()
         .filter(|c| !tried.contains(*c))
-        .map(|c| c.to_string())
+        .map(std::string::ToString::to_string)
         .collect();
     if !untried.is_empty() {
         let new: HashSet<&str> = this_month
@@ -562,7 +570,7 @@ pub fn monthly_quests(
             "Taste a new country",
             "Eat the food of a country you haven't tried yet.",
             Vec::new(),
-            new.len() as u32,
+            crate::count(new.len()),
             1,
         ));
     }
@@ -577,7 +585,7 @@ pub fn monthly_quests(
             "Two continents",
             "Eat from two different continents this month.",
             Vec::new(),
-            eaten.len() as u32,
+            crate::count(eaten.len()),
             2,
         ));
     }
@@ -598,7 +606,7 @@ pub fn monthly_quests(
             "Join the celebration",
             "Visit places of a country celebrating this month.",
             festive,
-            visited.len() as u32,
+            crate::count(visited.len()),
             places.min(2),
         ));
     }
@@ -618,7 +626,7 @@ pub fn monthly_quests(
             "Level up a country",
             "Go back to a country you tried and reach its next level.",
             growing.iter().map(|(c, _)| c.to_string()).collect(),
-            raised as u32,
+            u32::from(raised),
             1,
         ));
     }
@@ -626,7 +634,7 @@ pub fn monthly_quests(
     // ponytail: a byte sum is enough to vary the pick per area; a real hash if it looks samey.
     let seed = area_id.bytes().map(usize::from).sum::<usize>()
         + first.month() as usize
-        + first.year() as usize;
+        + first.year().unsigned_abs() as usize;
     // Rotate the four kinds (in enum order) by the seed and keep the first that apply.
     let n = QuestKind::CheckIns as usize;
     candidates.sort_by_key(|q: &Quest| (q.kind as usize + n - seed % n) % n);
@@ -637,7 +645,7 @@ pub fn monthly_quests(
         "Two check-ins",
         "Check in at two places this month.",
         Vec::new(),
-        places_this_month.len() as u32,
+        crate::count(places_this_month.len()),
         2,
     ));
 
@@ -703,7 +711,9 @@ fn pick(weights: &[f64], r: f64) -> usize {
 fn random_unit() -> f64 {
     let mut bytes = [0u8; 8];
     getrandom::fill(&mut bytes).expect("the system has no randomness");
-    (u64::from_le_bytes(bytes) >> 11) as f64 / (1u64 << 53) as f64
+    #[expect(clippy::cast_precision_loss, reason = "53 bits fit an f64 exactly")]
+    let unit = (u64::from_le_bytes(bytes) >> 11) as f64 / (1u64 << 53) as f64;
+    unit
 }
 
 #[cfg(test)]

@@ -89,7 +89,8 @@ impl Config {
             google_web_client_id: var("GOOGLE_WEB_CLIENT_ID"),
             google_ios_client_id: var("GOOGLE_IOS_CLIENT_ID"),
             resend_api_key: var("RESEND_API_KEY"),
-            mail_from: var("MAIL_FROM").unwrap_or_else(|| "Mangiamundo <hello@mangiamundo.com>".into()),
+            mail_from: var("MAIL_FROM")
+                .unwrap_or_else(|| "Mangiamundo <hello@mangiamundo.com>".into()),
             push_interval_secs: var("PUSH_INTERVAL_SECS")
                 .map(|v| v.parse())
                 .transpose()?
