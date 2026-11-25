@@ -21,18 +21,17 @@ use utoipa_axum::router::OpenApiRouter;
 use utoipa_axum::routes;
 
 use std::collections::HashMap;
-use std::sync::{Arc, Mutex};
 
 use chrono::NaiveDate;
 use chrono_tz::Tz;
 
 use crate::calendar::{self, Celebration};
 use crate::game::{self, Summary};
-use crate::providers::{osm, AreaInfo, Located, Lookup, Refused};
-use crate::store::{self, Area, HoursStatus, PlaceView, Visit};
 use crate::progress::{self, Progress, VisitChange};
+use crate::providers::{osm, AreaInfo, Located, Lookup, Refused};
 use crate::push::{self, Reminder};
-use crate::{account, areas, auth, catalog, geo, hours, share, AppState};
+use crate::store::{self, Area, HoursStatus, PlaceView, Visit};
+use crate::{account, areas, auth, catalog, geo, hours, limits, share, AppState};
 
 /// A check-in counts as verified when made within this distance of the place.
 const VERIFY_DISTANCE_M: f64 = 250.0;
@@ -111,9 +110,17 @@ pub fn router(state: AppState) -> Router {
         get(move || std::future::ready(Json(doc.clone()))),
     )
     // Public pages of shared progress and check-ins, with their card images.
-    .route("/p/{slug}", get(|state, headers, slug| async { page_or_gone(profile_page(state, headers, slug).await) }))
+    .route(
+        "/p/{slug}",
+        get(|state, headers, slug| async {
+            page_or_gone(profile_page(state, headers, slug).await)
+        }),
+    )
     .route("/p/{slug}/card.png", get(profile_card))
-    .route("/c/{slug}", get(|state, headers, slug| async { page_or_gone(visit_page(state, headers, slug).await) }))
+    .route(
+        "/c/{slug}",
+        get(|state, headers, slug| async { page_or_gone(visit_page(state, headers, slug).await) }),
+    )
     .route("/c/{slug}/card.png", get(visit_card))
     // Unknown API paths get a JSON 404 rather than the web app's index.html.
     .route("/api", any(not_found))
@@ -124,11 +131,6 @@ pub fn router(state: AppState) -> Router {
     .layer(CorsLayer::permissive())
     .layer(TraceLayer::new_for_http())
     .with_state(state)
-}
-
-tokio::task_local! {
-    /// Who sent the request being handled, for limits counted below the handlers.
-    static CLIENT: String;
 }
 
 /// Who sent a request: the address Fly's proxy saw it come from, which the proxy puts in
@@ -152,17 +154,7 @@ fn client_of(headers: &header::HeaderMap) -> String {
 
 /// Handles the request with its sender known to [`client`].
 async fn with_client(request: Request, next: axum::middleware::Next) -> Response {
-    as_client(client_of(request.headers()), next.run(request)).await
-}
-
-/// Runs `work` as if a request from `client` were being handled.
-pub(crate) async fn as_client<F: std::future::Future>(client: String, work: F) -> F::Output {
-    CLIENT.scope(client, work).await
-}
-
-/// Who sent the request being handled, or `None` in background work.
-pub(crate) fn client() -> Option<String> {
-    CLIENT.try_with(Clone::clone).ok()
+    limits::as_client(client_of(request.headers()), next.run(request)).await
 }
 
 #[derive(Serialize, ToSchema)]
@@ -497,7 +489,9 @@ async fn create_session(
     if client.is_some_and(|client| !state.limits.allow(&client, "session", 20, 3600, now))
         || !state.limits.allow("*", "session", 1000, 3600, now)
     {
-        return Err(ApiError::TooManyRequests("too many new accounts from here; try again in an hour"));
+        return Err(ApiError::TooManyRequests(
+            "too many new accounts from here; try again in an hour",
+        ));
     }
     let device = body.and_then(|JsonBody(b)| b.device);
     let token = account::create_user(&state.db, device.as_deref(), now).await?;
@@ -549,7 +543,9 @@ impl From<auth::AuthError> for ApiError {
     fn from(error: auth::AuthError) -> Self {
         match error {
             // Not a 401: clients take that to mean their own session is gone.
-            auth::AuthError::NotConfigured(_) | auth::AuthError::Invalid => ApiError::BadRequest(error.to_string()),
+            auth::AuthError::NotConfigured(_) | auth::AuthError::Invalid => {
+                ApiError::BadRequest(error.to_string())
+            }
             auth::AuthError::Upstream(_, source) => ApiError::Upstream(source),
         }
     }
@@ -593,12 +589,19 @@ async fn sign_in_provider(
     current: Option<account::Session>,
     body: IdTokenSignIn,
 ) -> ApiResult<Session> {
-    let who = state.auth.verify(provider, &body.id_token, state.now()).await?;
+    let who = state
+        .auth
+        .verify(provider, &body.id_token, state.now())
+        .await?;
     let token = account::sign_in_with(
         &state.db,
         provider.name(),
         &who.subject,
-        &account::Profile { email: who.email.as_deref(), name: who.name.as_deref(), picture: who.picture.as_deref() },
+        &account::Profile {
+            email: who.email.as_deref(),
+            name: who.name.as_deref(),
+            picture: who.picture.as_deref(),
+        },
         current.as_ref(),
         body.device.as_deref(),
         state.now(),
@@ -655,14 +658,23 @@ async fn send_email_code(
     State(state): State<AppState>,
     JsonBody(body): JsonBody<EmailCodeRequest>,
 ) -> Result<StatusCode, ApiError> {
-    let email = auth::normalized_email(&body.email).ok_or_else(|| ApiError::BadRequest("that isn't an email address".into()))?;
+    let email = auth::normalized_email(&body.email)
+        .ok_or_else(|| ApiError::BadRequest("that isn't an email address".into()))?;
     let now = state.now();
     // Each mail costs, and nobody should flood an inbox: a few per address, and a cap for all.
-    if !state.limits.allow(&email, "email_code", 3, 600, now) || !state.limits.allow("*", "email_code", 300, 3600, now) {
-        return Err(ApiError::TooManyRequests("too many codes asked for; try again in a few minutes"));
+    if !state.limits.allow(&email, "email_code", 3, 600, now)
+        || !state.limits.allow("*", "email_code", 300, 3600, now)
+    {
+        return Err(ApiError::TooManyRequests(
+            "too many codes asked for; try again in a few minutes",
+        ));
     }
     let code = auth::new_code(&state.db, &email, now).await?;
-    state.auth.send_code(&email, &code).await.map_err(ApiError::Upstream)?;
+    state
+        .auth
+        .send_code(&email, &code)
+        .await
+        .map_err(ApiError::Upstream)?;
     Ok(StatusCode::NO_CONTENT)
 }
 
@@ -692,12 +704,25 @@ async fn sign_in_email(
     MaybeSession(current): MaybeSession,
     JsonBody(body): JsonBody<EmailSignIn>,
 ) -> ApiResult<Session> {
-    let email = auth::normalized_email(&body.email).ok_or_else(|| ApiError::BadRequest("that isn't an email address".into()))?;
+    let email = auth::normalized_email(&body.email)
+        .ok_or_else(|| ApiError::BadRequest("that isn't an email address".into()))?;
     if !auth::take_code(&state.db, &email, &body.code, state.now()).await? {
         return Err(ApiError::NotFound("code"));
     }
-    let profile = account::Profile { email: Some(&email), ..Default::default() };
-    let token = account::sign_in_with(&state.db, "email", &email, &profile, current.as_ref(), body.device.as_deref(), state.now()).await?;
+    let profile = account::Profile {
+        email: Some(&email),
+        ..Default::default()
+    };
+    let token = account::sign_in_with(
+        &state.db,
+        "email",
+        &email,
+        &profile,
+        current.as_ref(),
+        body.device.as_deref(),
+        state.now(),
+    )
+    .await?;
     Ok(Json(Session { token }))
 }
 
@@ -837,52 +862,6 @@ fn zone(tz: Option<&str>) -> Tz {
             tracing::warn!(tz = name, "unknown time zone, using UTC");
             Tz::UTC
         }),
-    }
-}
-
-/// Recent requests per user and kind, for rate limits. In memory: the server runs as one
-/// machine, and a restart forgetting them is harmless.
-#[derive(Clone, Default)]
-pub struct Limits(Arc<Mutex<HashMap<LimitKey, Vec<i64>>>>);
-
-/// A user id and the kind of request.
-type LimitKey = (String, &'static str);
-
-impl Limits {
-    /// Counts the request and returns true when `user` made fewer than `max` requests of this
-    /// kind in the `window` seconds before `now`.
-    fn allow(&self, user: &str, kind: &'static str, max: usize, window: i64, now: i64) -> bool {
-        let mut all = self.0.lock().unwrap();
-        // ponytail: entries of users who stopped asking stay until restart; a few bytes each.
-        let times = all.entry((user.to_string(), kind)).or_default();
-        times.retain(|&at| at > now - window);
-        let allowed = times.len() < max;
-        if allowed {
-            times.push(now);
-        }
-        allowed
-    }
-
-    /// Like `allow`, for several budgets at once, each a `(max, window)`: the request is
-    /// counted, and true returned, when `user` is within all of them.
-    pub fn allow_each(
-        &self,
-        user: &str,
-        kind: &'static str,
-        budgets: &[(usize, i64)],
-        now: i64,
-    ) -> bool {
-        let mut all = self.0.lock().unwrap();
-        let times = all.entry((user.to_string(), kind)).or_default();
-        let longest = budgets.iter().map(|&(_, window)| window).max().unwrap_or(0);
-        times.retain(|&at| at > now - longest);
-        let allowed = budgets
-            .iter()
-            .all(|&(max, window)| times.iter().filter(|&&at| at > now - window).count() < max);
-        if allowed {
-            times.push(now);
-        }
-        allowed
     }
 }
 
@@ -1083,7 +1062,7 @@ async fn places(
 /// its OSM page.
 fn complete(place: &mut PlaceView, from_lat: f64, from_lng: f64, now: i64) {
     place.osm_url = osm::link(&place.id);
-    place.distance_m = geo::distance_m(from_lat, from_lng, place.lat, place.lng).round() as u32;
+    place.distance_m = geo::rounded_m(from_lat, from_lng, place.lat, place.lng);
     if let Some(h) = &mut place.hours {
         h.status = hours::status(&h.raw, place.lat, place.lng, now)
             .map(|(open, text)| HoursStatus { open, text });
@@ -1296,15 +1275,8 @@ async fn add(
     };
     let id = added.id;
 
-    if let Some((notes, text)) = state.osm_notes_url.clone().zip(note) {
-        let (db, id, token) = (state.db.clone(), id.clone(), state.osm_notes_token.clone());
-        tokio::spawn(async move {
-            if let Some(note) = osm::post_note(notes, token, new.lat, new.lng, text).await {
-                if let Err(error) = store::set_osm_note(&db, &id, note).await {
-                    tracing::warn!(%error, "could not keep the osm note id");
-                }
-            }
-        });
+    if let Some(text) = note {
+        osm::note_added(state, id.clone(), new.lat, new.lng, text);
     }
     let mut place = store::place(&state.db, &id, Some(user))
         .await?
@@ -1348,7 +1320,7 @@ async fn unknown_places(
     let mut places = store::unknown_in(&state.db, shape.bbox(), user.as_deref()).await?;
     places.retain(|p| shape.contains(p.lat, p.lng));
     for p in &mut places {
-        p.distance_m = geo::distance_m(lat, lng, p.lat, p.lng).round() as u32;
+        p.distance_m = geo::rounded_m(lat, lng, p.lat, p.lng);
     }
     places.sort_by_key(|p| p.distance_m);
     places.truncate(UNKNOWN_LISTED);
@@ -1593,7 +1565,7 @@ async fn refresh_nearby(
     );
     Ok(Json(NearbyResult {
         added,
-        matched: matched as u32,
+        matched: crate::count(matched),
     }))
 }
 
@@ -1708,7 +1680,7 @@ async fn add_visit(
         Some(area) => Some(progress::load(&state, Some(&user), area.id(), today).await?),
         None => None,
     };
-    let check_in = body.map(|JsonBody(b)| b).unwrap_or_default();
+    let check_in = body.map_or_default(|JsonBody(b)| b);
     let verified = check_in
         .position
         .is_some_and(|p| geo::distance_m(p.lat, p.lng, plat, plng) <= VERIFY_DISTANCE_M);
@@ -1799,7 +1771,9 @@ fn origin(headers: &header::HeaderMap) -> String {
         .get(header::HOST)
         .and_then(|h| h.to_str().ok())
         .unwrap_or("localhost");
-    let local = host.starts_with("localhost") || host.starts_with("127.0.0.1") || host.starts_with("10.0.2.2");
+    let local = host.starts_with("localhost")
+        || host.starts_with("127.0.0.1")
+        || host.starts_with("10.0.2.2");
     let proto = headers
         .get("x-forwarded-proto")
         .and_then(|h| h.to_str().ok())
@@ -1808,7 +1782,11 @@ fn origin(headers: &header::HeaderMap) -> String {
 }
 
 fn host(headers: &header::HeaderMap) -> String {
-    origin(headers).split("://").nth(1).unwrap_or_default().to_string()
+    origin(headers)
+        .split("://")
+        .nth(1)
+        .unwrap_or_default()
+        .to_string()
 }
 
 /// Shares the user's progress in an area: makes their public page (the first time) or
@@ -1841,7 +1819,10 @@ async fn share_profile(
     delete, path = "/api/share", tag = "share", security(("token" = [])),
     responses((status = 204, description = "Off, or it was never on"), (status = "default", description = "An error", body = ErrorBody)),
 )]
-async fn unshare_profile(State(state): State<AppState>, User(user): User) -> Result<StatusCode, ApiError> {
+async fn unshare_profile(
+    State(state): State<AppState>,
+    User(user): User,
+) -> Result<StatusCode, ApiError> {
     share::unpublish_profile(&state.db, &user).await?;
     Ok(StatusCode::NO_CONTENT)
 }
@@ -1863,7 +1844,9 @@ async fn share_visit(
     let slug = share::share_visit(&state.db, &user, visit_id, state.now())
         .await?
         .ok_or(ApiError::NotFound("visit"))?;
-    let visit = share::find_visit(&state.db, &slug).await?.ok_or(ApiError::NotFound("visit"))?;
+    let visit = share::find_visit(&state.db, &slug)
+        .await?
+        .ok_or(ApiError::NotFound("visit"))?;
     let url = format!("{}/c/{slug}", origin(&headers));
     Ok(Json(ShareLink {
         image_url: format!("{url}/card.png"),
@@ -1874,8 +1857,12 @@ async fn share_visit(
 
 /// A public page's progress: the summary and the area's name.
 async fn public_profile(state: &AppState, slug: &str) -> Result<(Summary, String), ApiError> {
-    let (user, area_id) = share::find_profile(&state.db, slug).await?.ok_or(ApiError::NotFound("page"))?;
-    let area = store::find_area(&state.db, &area_id).await?.ok_or(ApiError::NotFound("page"))?;
+    let (user, area_id) = share::find_profile(&state.db, slug)
+        .await?
+        .ok_or(ApiError::NotFound("page"))?;
+    let area = store::find_area(&state.db, &area_id)
+        .await?
+        .ok_or(ApiError::NotFound("page"))?;
     let rows = store::area_rows(&state.db, &area_id, Some(&user)).await?;
     // ponytail: the viewer's zone is unknown here; UTC can be a day off for the streak.
     let today = state.today(Tz::UTC);
@@ -1908,16 +1895,24 @@ fn page_or_gone(result: Result<Response, ApiError>) -> Response {
 fn png(bytes: Vec<u8>) -> Response {
     (
         // Not kept by caches: a card must stop showing once its share is turned off.
-        [(header::CONTENT_TYPE, "image/png"), (header::CACHE_CONTROL, "no-store")],
+        [
+            (header::CONTENT_TYPE, "image/png"),
+            (header::CACHE_CONTROL, "no-store"),
+        ],
         bytes,
     )
         .into_response()
 }
 
 /// Draws a card off the async threads; it takes a few dozen milliseconds.
-async fn render_card(statuses: HashMap<String, game::Status>, headline: String, caption: String) -> Result<Vec<u8>, ApiError> {
+async fn render_card(
+    statuses: HashMap<String, game::Status>,
+    headline: String,
+    caption: String,
+) -> Result<Vec<u8>, ApiError> {
     tokio::task::spawn_blocking(move || {
-        let statuses = statuses.iter().map(|(c, s)| (c.as_str(), *s)).collect();
+        let statuses: HashMap<&str, game::Status> =
+            statuses.iter().map(|(c, s)| (c.as_str(), *s)).collect();
         share::card_png(&statuses, &headline, &caption)
     })
     .await
@@ -1925,7 +1920,11 @@ async fn render_card(statuses: HashMap<String, game::Status>, headline: String, 
     .map_err(ApiError::Internal)
 }
 
-async fn profile_page(State(state): State<AppState>, headers: header::HeaderMap, Path(slug): Path<String>) -> Result<Response, ApiError> {
+async fn profile_page(
+    State(state): State<AppState>,
+    headers: header::HeaderMap,
+    Path(slug): Path<String>,
+) -> Result<Response, ApiError> {
     let (summary, area) = public_profile(&state, &slug).await?;
     let url = format!("{}/p/{slug}", origin(&headers));
     Ok(html(share::page(
@@ -1937,15 +1936,38 @@ async fn profile_page(State(state): State<AppState>, headers: header::HeaderMap,
     )))
 }
 
-async fn profile_card(State(state): State<AppState>, headers: header::HeaderMap, Path(slug): Path<String>) -> Result<Response, ApiError> {
+async fn profile_card(
+    State(state): State<AppState>,
+    headers: header::HeaderMap,
+    Path(slug): Path<String>,
+) -> Result<Response, ApiError> {
     let (summary, area) = public_profile(&state, &slug).await?;
-    let statuses = summary.countries.iter().map(|c| (c.code.clone(), c.status)).collect();
-    let caption = format!("{area} · Level {} · {}", summary.profile.level, host(&headers));
-    Ok(png(render_card(statuses, share::profile_headline(&summary), caption).await?))
+    let statuses = summary
+        .countries
+        .iter()
+        .map(|c| (c.code.clone(), c.status))
+        .collect();
+    let caption = format!(
+        "{area} · Level {} · {}",
+        summary.profile.level,
+        host(&headers)
+    );
+    Ok(png(render_card(
+        statuses,
+        share::profile_headline(&summary),
+        caption,
+    )
+    .await?))
 }
 
-async fn visit_page(State(state): State<AppState>, headers: header::HeaderMap, Path(slug): Path<String>) -> Result<Response, ApiError> {
-    let visit = share::find_visit(&state.db, &slug).await?.ok_or(ApiError::NotFound("page"))?;
+async fn visit_page(
+    State(state): State<AppState>,
+    headers: header::HeaderMap,
+    Path(slug): Path<String>,
+) -> Result<Response, ApiError> {
+    let visit = share::find_visit(&state.db, &slug)
+        .await?
+        .ok_or(ApiError::NotFound("page"))?;
     let url = format!("{}/c/{slug}", origin(&headers));
     let headline = share::visit_headline(&visit);
     Ok(html(share::page(
@@ -1957,12 +1979,27 @@ async fn visit_page(State(state): State<AppState>, headers: header::HeaderMap, P
     )))
 }
 
-async fn visit_card(State(state): State<AppState>, headers: header::HeaderMap, Path(slug): Path<String>) -> Result<Response, ApiError> {
-    let visit = share::find_visit(&state.db, &slug).await?.ok_or(ApiError::NotFound("page"))?;
+async fn visit_card(
+    State(state): State<AppState>,
+    headers: header::HeaderMap,
+    Path(slug): Path<String>,
+) -> Result<Response, ApiError> {
+    let visit = share::find_visit(&state.db, &slug)
+        .await?
+        .ok_or(ApiError::NotFound("page"))?;
     // The check-in's countries light up gold, as freshly tasted.
-    let statuses = visit.countries.iter().map(|c| (c.clone(), game::Status::Discovered)).collect();
+    let statuses = visit
+        .countries
+        .iter()
+        .map(|c| (c.clone(), game::Status::Discovered))
+        .collect();
     let caption = format!("{} · {}", share::pretty_date(&visit.date), host(&headers));
-    Ok(png(render_card(statuses, share::visit_headline(&visit), caption).await?))
+    Ok(png(render_card(
+        statuses,
+        share::visit_headline(&visit),
+        caption,
+    )
+    .await?))
 }
 
 #[derive(Serialize, ToSchema)]
@@ -1995,14 +2032,8 @@ async fn report_closed(
     };
     let reports = store::report_closed(&state.db, &user, &place_id, state.now()).await?;
     // Tell OSM once, when the place gets hidden for everyone, so one person cannot spam mappers.
-    if let (Some(2), Some(url), Some(page)) = (reports, &state.osm_notes_url, osm::link(&place_id)) {
-        tokio::spawn(osm::post_note(
-            url.clone(),
-            state.osm_notes_token.clone(),
-            lat,
-            lng,
-            osm::closed_note(&name, &page),
-        ));
+    if reports == Some(2) {
+        osm::note_closed(&state, &place_id, &name, lat, lng);
     }
     let progress = match &area {
         Some(area) => {
@@ -2027,7 +2058,7 @@ async fn push_key(State(state): State<AppState>) -> ApiResult<PushKey> {
     Ok(Json(PushKey { public_key }))
 }
 
-/// A browser's PushSubscription (as from `subscription.toJSON()`), plus the user's area.
+/// A browser's `PushSubscription` (as from `subscription.toJSON()`), plus the user's area.
 #[derive(Deserialize, ToSchema)]
 struct SubscribeBody {
     endpoint: String,

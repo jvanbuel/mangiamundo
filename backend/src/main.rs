@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use mangiamundo::config::{Config, ProviderKind};
 use mangiamundo::providers::{self, cached::CachedDirectory, osm};
-use mangiamundo::{account, api, auth, calendar, push, store, AppState};
+use mangiamundo::{account, api, auth, calendar, limits, push, store, AppState};
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
@@ -11,7 +11,7 @@ async fn main() -> anyhow::Result<()> {
     let config = Config::from_env()?;
     let (mut places, mut areas) = providers::build(&config)?;
     let db = store::connect(&config.database_url).await?;
-    let limits = api::Limits::default();
+    let limits = limits::Limits::default();
     if config.provider == ProviderKind::Osm {
         // Belgium comes from a daily import, so searches there skip the slow live query.
         let http = reqwest::Client::builder()
@@ -32,7 +32,7 @@ async fn main() -> anyhow::Result<()> {
     )
     .await?;
     let state = AppState {
-        loads: Default::default(),
+        loads: mangiamundo::areas::Loads::default(),
         limits,
         db,
         places,
@@ -47,7 +47,12 @@ async fn main() -> anyhow::Result<()> {
                 .chain(config.apple_services_id.clone())
                 .collect(),
             apple_web_client_id: config.apple_services_id.clone(),
-            google_client_ids: config.google_web_client_id.iter().chain(&config.google_ios_client_id).cloned().collect(),
+            google_client_ids: config
+                .google_web_client_id
+                .iter()
+                .chain(&config.google_ios_client_id)
+                .cloned()
+                .collect(),
             google_web_client_id: config.google_web_client_id.clone(),
             resend_key: config.resend_api_key.clone(),
             mail_from: config.mail_from.clone(),

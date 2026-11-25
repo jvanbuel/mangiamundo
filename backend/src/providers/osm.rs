@@ -7,6 +7,7 @@ use serde::Deserialize;
 use serde_json::Value;
 use sqlx::SqlitePool;
 use std::collections::HashMap;
+use std::fmt::Write as _;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
@@ -15,7 +16,7 @@ use super::{
     Refused,
 };
 use crate::geo::{Bbox, Shape};
-use crate::{catalog, store};
+use crate::{catalog, store, AppState};
 
 /// The area kept as a local copy: Belgium plus a margin, so border towns such as
 /// Lille, Maastricht and Aachen are covered too.
@@ -27,7 +28,7 @@ pub const IMPORT_BBOX: Bbox = Bbox {
 };
 /// How often the local copy is refreshed, and how soon a failed import is retried.
 const IMPORT_EVERY_SECS: i64 = 86_400;
-const IMPORT_RETRY: Duration = Duration::from_secs(3600);
+const IMPORT_RETRY: Duration = Duration::from_hours(1);
 const IMPORTED_AT: &str = "osm_import_at";
 /// For an area: how long a server gets before the next one is asked too.
 const NEXT_SERVER_AFTER: Duration = Duration::from_secs(15);
@@ -116,7 +117,7 @@ impl Overpass {
                         true
                     }
                 },
-                _ = tokio::time::sleep(wait.unwrap_or_default()), if wait.is_some() => {
+                () = tokio::time::sleep(wait.unwrap_or_default()), if wait.is_some() => {
                     tracing::info!("overpass server slow, asking the next one too");
                     true
                 }
@@ -369,16 +370,16 @@ fn parse_api(kind: &str, id: u64, body: &str) -> anyhow::Result<Lookup> {
     };
     if kind == "way" && !coords.is_empty() {
         let (lats, lngs): (Vec<f64>, Vec<f64>) = coords.into_iter().unzip();
-        let min = |v: &[f64]| v.iter().cloned().fold(f64::MAX, f64::min);
-        let max = |v: &[f64]| v.iter().cloned().fold(f64::MIN, f64::max);
+        let min = |v: &[f64]| v.iter().copied().fold(f64::MAX, f64::min);
+        let max = |v: &[f64]| v.iter().copied().fold(f64::MIN, f64::max);
         // No building is half a world wide: it crosses the antimeridian, where the plain
         // midpoint lands on the other side. Rare enough to leave to Overpass.
         if max(&lngs) - min(&lngs) > 180.0 {
             anyhow::bail!("way {id} crosses the antimeridian");
         }
         el.center = Some(Center {
-            lat: (min(&lats) + max(&lats)) / 2.0,
-            lon: (min(&lngs) + max(&lngs)) / 2.0,
+            lat: f64::midpoint(min(&lats), max(&lats)),
+            lon: f64::midpoint(min(&lngs), max(&lngs)),
         });
     }
     // Same filter as the Overpass element query.
@@ -554,10 +555,7 @@ fn covered(b: Bbox) -> bool {
 }
 
 /// The places in an area from the local copy, or `None` when the copy doesn't cover it.
-async fn from_import(
-    db: &SqlitePool,
-    area: &Boundary,
-) -> anyhow::Result<Option<Vec<FoundPlace>>> {
+async fn from_import(db: &SqlitePool, area: &Boundary) -> anyhow::Result<Option<Vec<FoundPlace>>> {
     let bbox = area.shape.bbox();
     if !covered(bbox) || store::setting(db, IMPORTED_AT).await?.is_none() {
         return Ok(None);
@@ -918,10 +916,10 @@ pub fn missing_place_note(place: &store::NewPlace) -> String {
         place.name, place.cuisine
     );
     if let Some(url) = &place.url {
-        text += &format!("website={url}\n");
+        let _ = writeln!(text, "website={url}");
     }
     if let Some(address) = &place.address {
-        text += &format!("\nAddress: {address}\n");
+        let _ = write!(text, "\nAddress: {address}\n");
     }
     text + "\nCould someone check and add it?"
 }
@@ -944,9 +942,40 @@ pub fn closed_note(name: &str, page: &str) -> String {
     )
 }
 
+/// In the background, tells mappers about a place a user added (or suggested a cuisine for),
+/// and keeps the note's id with the pending place. Nothing when notes are off.
+pub fn note_added(state: &AppState, place_id: String, lat: f64, lng: f64, text: String) {
+    let Some(url) = state.osm_notes_url.clone() else {
+        return;
+    };
+    let (db, token) = (state.db.clone(), state.osm_notes_token.clone());
+    tokio::spawn(async move {
+        if let Some(note) = post_note(url, token, lat, lng, text).await {
+            if let Err(error) = store::set_osm_note(&db, &place_id, note).await {
+                tracing::warn!(%error, "could not keep the osm note id");
+            }
+        }
+    });
+}
+
+/// In the background, tells mappers that an OSM place has closed. Nothing when notes are
+/// off or the place isn't from OSM.
+pub fn note_closed(state: &AppState, place_id: &str, name: &str, lat: f64, lng: f64) {
+    let (Some(url), Some(page)) = (state.osm_notes_url.clone(), link(place_id)) else {
+        return;
+    };
+    tokio::spawn(post_note(
+        url,
+        state.osm_notes_token.clone(),
+        lat,
+        lng,
+        closed_note(name, &page),
+    ));
+}
+
 /// Posts an OSM note, as the account `token` belongs to or anonymously, and returns its id.
 /// Best effort: a failure is logged, not retried.
-pub async fn post_note(
+async fn post_note(
     url: String,
     token: Option<String>,
     lat: f64,
@@ -1167,7 +1196,7 @@ mod tests {
             (unknown[0].id.as_str(), unknown[0].address.as_deref()),
             ("osm-node-1", Some("Leuven"))
         );
-        assert!(places(all).is_empty());
+        assert_eq!(places(all), [] as [FoundPlace; 0]);
         let q = import_query(IMPORT_BBOX, 300);
         assert!(
             q.contains("[!\"cuisine\"][\"name\"](49.4,2.4,51.6,6.5)"),
@@ -1179,15 +1208,15 @@ mod tests {
     fn reads_photon_cities_and_postal_codes() {
         let found = serde_json::json!({"features": [
             {"geometry": {"coordinates": [4.70, 50.88]}, "properties":
-             {"osm_type": "R", "osm_id": 3366463, "osm_value": "postcode", "type": "other", "name": "3000",
+             {"osm_type": "R", "osm_id": 3_366_463, "osm_value": "postcode", "type": "other", "name": "3000",
               "city": "Leuven", "state": "Flemish Brabant", "country": "Belgium"}},
             {"geometry": {"coordinates": [4.70, 50.88]}, "properties":
              {"osm_type": "N", "osm_id": 1, "osm_value": "sports_centre", "type": "house", "name": "Laser 3000"}},
             {"geometry": {"coordinates": [4.70, 50.88]}, "properties":
-             {"osm_type": "R", "osm_id": 196311, "osm_value": "city", "type": "city", "name": "Leuven",
+             {"osm_type": "R", "osm_id": 196_311, "osm_value": "city", "type": "city", "name": "Leuven",
               "state": "Flemish Brabant", "country": "Belgium"}},
             {"geometry": {"coordinates": [4.69, 50.88]}, "properties":
-             {"osm_type": "R", "osm_id": 3921680, "osm_value": "administrative", "type": "district", "name": "Leuven"}}
+             {"osm_type": "R", "osm_id": 3_921_680, "osm_value": "administrative", "type": "district", "name": "Leuven"}}
         ]});
         let areas = photon_areas(&found);
         assert_eq!(areas.len(), 2);
@@ -1206,13 +1235,13 @@ mod tests {
     #[test]
     fn reads_cities_and_postal_codes_and_skips_other_results() {
         let found = serde_json::json!([
-            {"osm_type": "relation", "osm_id": 196311, "category": "boundary", "type": "administrative",
+            {"osm_type": "relation", "osm_id": 196_311, "category": "boundary", "type": "administrative",
              "addresstype": "city", "name": "Leuven", "lat": "50.879", "lon": "4.701",
              "address": {"city": "Leuven", "state": "Flemish Brabant", "country": "Belgium"}},
-            {"osm_type": "relation", "osm_id": 3366463, "category": "boundary", "type": "postal_code",
+            {"osm_type": "relation", "osm_id": 3_366_463, "category": "boundary", "type": "postal_code",
              "addresstype": "postcode", "name": "3000", "lat": "50.878", "lon": "4.702",
              "address": {"postcode": "3000", "city_district": "Leuven", "city": "Leuven", "country": "Belgium"}},
-            {"osm_type": "relation", "osm_id": 3921680, "category": "boundary", "type": "administrative",
+            {"osm_type": "relation", "osm_id": 3_921_680, "category": "boundary", "type": "administrative",
              "addresstype": "city_district", "name": "Leuven", "lat": "50.88", "lon": "4.70"},
             {"osm_type": "node", "osm_id": 1, "category": "place", "type": "city", "name": "Leuven", "lat": "50.88", "lon": "4.70"}
         ]);
@@ -1237,10 +1266,10 @@ mod tests {
         };
         assert!(query(b, 60).contains("(50.82,4.64,50.94,4.77)"));
         let precise = Bbox {
-            south: 50.8242081,
-            west: 4.000006,
-            north: 50.9440737,
-            east: 4.7704248,
+            south: 50.824_208_1,
+            west: 4.000_006,
+            north: 50.944_073_7,
+            east: 4.770_424_8,
         };
         assert!(
             query(precise, 60).contains("(50.8242081,4.000006,50.9440737,4.7704248)"),
@@ -1295,7 +1324,7 @@ mod tests {
             tokio::time::sleep(Duration::from_millis(10)).await;
             nominatim.search("Gent").await
         });
-        assert!(first.unwrap().is_empty());
+        assert_eq!(first.unwrap(), [] as [AreaInfo; 0]);
         let error = second.unwrap_err();
         assert_eq!(error.downcast_ref::<Refused>(), Some(&Refused::Busy));
     }

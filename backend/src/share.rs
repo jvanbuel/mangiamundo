@@ -3,6 +3,7 @@
 
 use std::collections::HashMap;
 use std::fmt::Write as _;
+use std::hash::BuildHasher;
 use std::sync::{Arc, OnceLock};
 
 use resvg::{tiny_skia, usvg};
@@ -10,8 +11,8 @@ use serde::Deserialize;
 use sqlx::{Row, SqlitePool};
 
 use crate::account::random_code;
-use crate::game::{Status, Summary};
 use crate::catalog;
+use crate::game::{Status, Summary};
 
 /// 10 symbols, 50 bits: unguessable for a read-only page.
 const SLUG_LEN: usize = 10;
@@ -21,7 +22,12 @@ fn new_slug() -> String {
 }
 
 /// Turns the user's public page on, or moves it to `area_id`, and returns its slug.
-pub async fn publish_profile(db: &SqlitePool, user: &str, area_id: &str, now: i64) -> sqlx::Result<String> {
+pub async fn publish_profile(
+    db: &SqlitePool,
+    user: &str,
+    area_id: &str,
+    now: i64,
+) -> sqlx::Result<String> {
     sqlx::query_scalar(
         "INSERT INTO public_profiles (user_id, slug, area_id, created_at) VALUES (?, ?, ?, ?)
          ON CONFLICT (user_id) DO UPDATE SET area_id = excluded.area_id
@@ -62,7 +68,12 @@ pub async fn find_profile(db: &SqlitePool, slug: &str) -> sqlx::Result<Option<(S
 
 /// Shares one of the user's check-ins and returns its slug, the same one each time.
 /// `None` when the user has no such check-in.
-pub async fn share_visit(db: &SqlitePool, user: &str, visit_id: i64, now: i64) -> sqlx::Result<Option<String>> {
+pub async fn share_visit(
+    db: &SqlitePool,
+    user: &str,
+    visit_id: i64,
+    now: i64,
+) -> sqlx::Result<Option<String>> {
     sqlx::query_scalar(
         "INSERT INTO shared_visits (slug, visit_id, created_at)
          SELECT ?, id, ? FROM visits WHERE id = ? AND user_id = ?
@@ -98,10 +109,12 @@ pub async fn find_visit(db: &SqlitePool, slug: &str) -> sqlx::Result<Option<Shar
         return Ok(None);
     };
     let place_id: String = row.get("id");
-    let countries = sqlx::query_scalar("SELECT country FROM place_countries WHERE place_id = ? ORDER BY country")
-        .bind(&place_id)
-        .fetch_all(db)
-        .await?;
+    let countries = sqlx::query_scalar(
+        "SELECT country FROM place_countries WHERE place_id = ? ORDER BY country",
+    )
+    .bind(&place_id)
+    .fetch_all(db)
+    .await?;
     Ok(Some(SharedVisit {
         place: row.get("name"),
         countries,
@@ -128,12 +141,14 @@ pub fn visit_headline(visit: &SharedVisit) -> String {
 /// "22 Nov 2026".
 pub fn pretty_date(date: &str) -> String {
     chrono::NaiveDate::parse_from_str(date, "%Y-%m-%d")
-        .map(|d| d.format("%-d %b %Y").to_string())
-        .unwrap_or_else(|_| date.to_string())
+        .map_or_else(|_| date.to_string(), |d| d.format("%-d %b %Y").to_string())
 }
 
 pub fn profile_headline(summary: &Summary) -> String {
-    format!("{} of {} countries tasted", summary.world.discovered, summary.world.available)
+    format!(
+        "{} of {} countries tasted",
+        summary.world.discovered, summary.world.available
+    )
 }
 
 pub fn profile_text(summary: &Summary, area: &str) -> String {
@@ -174,8 +189,12 @@ fn fonts() -> Arc<usvg::fontdb::Database> {
     FONTS
         .get_or_init(|| {
             let mut db = usvg::fontdb::Database::new();
-            db.load_font_data(include_bytes!("../../shared/fonts/res/font/nunito_extrabold.ttf").to_vec());
-            db.load_font_data(include_bytes!("../../shared/fonts/res/font/nunito_semibold.ttf").to_vec());
+            db.load_font_data(
+                include_bytes!("../../shared/fonts/res/font/nunito_extrabold.ttf").to_vec(),
+            );
+            db.load_font_data(
+                include_bytes!("../../shared/fonts/res/font/nunito_semibold.ttf").to_vec(),
+            );
             Arc::new(db)
         })
         .clone()
@@ -191,11 +210,18 @@ fn fit(text: &str, max: usize) -> String {
 }
 
 fn escape(text: &str) -> String {
-    text.replace('&', "&amp;").replace('<', "&lt;").replace('>', "&gt;").replace('"', "&quot;")
+    text.replace('&', "&amp;")
+        .replace('<', "&lt;")
+        .replace('>', "&gt;")
+        .replace('"', "&quot;")
 }
 
 /// The card as SVG: a flat world map coloured like the app's (light theme), and the caption.
-fn card_svg(statuses: &HashMap<&str, Status>, headline: &str, caption: &str) -> String {
+fn card_svg<S: BuildHasher>(
+    statuses: &HashMap<&str, Status, S>,
+    headline: &str,
+    caption: &str,
+) -> String {
     let map_h = H - STRIP;
     let scale = W / 360.0;
     let top = NORTH;
@@ -216,9 +242,9 @@ fn card_svg(statuses: &HashMap<&str, Status>, headline: &str, caption: &str) -> 
                 shifts.push(-360.0);
             }
             for shift in shifts {
-                for (i, point) in ring.chunks_exact(2).enumerate() {
-                    let x = (point[0] + shift + 180.0) * scale;
-                    let y = (top - point[1]) * scale;
+                for (i, [lng, lat]) in ring.as_chunks::<2>().0.iter().enumerate() {
+                    let x = (lng + shift + 180.0) * scale;
+                    let y = (top - lat) * scale;
                     let _ = write!(path, "{}{:.1} {:.1}", if i == 0 { "M" } else { "L" }, x, y);
                 }
                 path.push('Z');
@@ -240,10 +266,19 @@ fn card_svg(statuses: &HashMap<&str, Status>, headline: &str, caption: &str) -> 
 "##
     );
     // Land first, so lit countries' borders draw on top.
-    for status in [None, Some(Status::Available), Some(Status::Discovered), Some(Status::Platinum), Some(Status::Completed)] {
+    for status in [
+        None,
+        Some(Status::Available),
+        Some(Status::Discovered),
+        Some(Status::Platinum),
+        Some(Status::Completed),
+    ] {
         if let Some(d) = paths.get(&status) {
             let (fill, stroke, width) = fill(status);
-            let _ = writeln!(svg, r#"<path d="{d}" fill="{fill}" stroke="{stroke}" stroke-width="{width}"/>"#);
+            let _ = writeln!(
+                svg,
+                r#"<path d="{d}" fill="{fill}" stroke="{stroke}" stroke-width="{width}"/>"#
+            );
         }
     }
     let _ = write!(
@@ -263,11 +298,22 @@ fn card_svg(statuses: &HashMap<&str, Status>, headline: &str, caption: &str) -> 
 }
 
 /// The card as PNG, 1200 × 630 like link previews.
-pub fn card_png(statuses: &HashMap<&str, Status>, headline: &str, caption: &str) -> anyhow::Result<Vec<u8>> {
-    let options = usvg::Options { fontdb: fonts(), ..Default::default() };
+pub fn card_png<S: BuildHasher>(
+    statuses: &HashMap<&str, Status, S>,
+    headline: &str,
+    caption: &str,
+) -> anyhow::Result<Vec<u8>> {
+    let options = usvg::Options {
+        fontdb: fonts(),
+        ..Default::default()
+    };
     let tree = usvg::Tree::from_str(&card_svg(statuses, headline, caption), &options)?;
-    let mut pixmap = tiny_skia::Pixmap::new(W as u32, H as u32).expect("the card has a size");
-    resvg::render(&tree, tiny_skia::Transform::identity(), &mut pixmap.as_mut());
+    let mut pixmap = tiny_skia::Pixmap::new(1200, 630).expect("the card has a size");
+    resvg::render(
+        &tree,
+        tiny_skia::Transform::identity(),
+        &mut pixmap.as_mut(),
+    );
     Ok(pixmap.encode_png()?)
 }
 
@@ -277,7 +323,7 @@ pub fn card_png(statuses: &HashMap<&str, Status>, headline: &str, caption: &str)
 pub fn page(title: &str, description: &str, image: &str, url: &str, body: &str) -> String {
     let (title, description) = (escape(title), escape(description));
     format!(
-        r##"<!doctype html>
+        r#"<!doctype html>
 <html lang="en">
 <head>
 <meta charset="utf-8">
@@ -312,7 +358,7 @@ pub fn page(title: &str, description: &str, image: &str, url: &str, body: &str) 
 <a class="start" href="/">Start your own map</a>
 </main></body>
 </html>
-"##
+"#
     )
 }
 
@@ -366,9 +412,20 @@ mod tests {
 
     #[test]
     fn card_renders_a_png_with_the_world_and_text() {
-        let statuses = HashMap::from([("PE", Status::Discovered), ("JP", Status::Completed), ("BE", Status::Available)]);
-        let svg = card_svg(&statuses, "2 of 3 countries tasted", "Brussels & co · Level 2");
-        assert!(svg.contains("fill=\"#e0a100\""), "tasted countries are gold");
+        let statuses = HashMap::from([
+            ("PE", Status::Discovered),
+            ("JP", Status::Completed),
+            ("BE", Status::Available),
+        ]);
+        let svg = card_svg(
+            &statuses,
+            "2 of 3 countries tasted",
+            "Brussels & co · Level 2",
+        );
+        assert!(
+            svg.contains("fill=\"#e0a100\""),
+            "tasted countries are gold"
+        );
         assert!(svg.contains("Brussels &amp; co"), "text is escaped");
         let png = card_png(&statuses, "2 of 3 countries tasted", "Brussels · Level 2").unwrap();
         assert!(png.starts_with(b"\x89PNG"));
@@ -379,7 +436,10 @@ mod tests {
     fn visit_headlines_name_the_food() {
         let visit = |countries: &[&str]| SharedVisit {
             place: "Casa".into(),
-            countries: countries.iter().map(|c| c.to_string()).collect(),
+            countries: countries
+                .iter()
+                .map(std::string::ToString::to_string)
+                .collect(),
             date: "2026-11-22".into(),
         };
         assert_eq!(visit_headline(&visit(&["PE"])), "Peruvian food at Casa");

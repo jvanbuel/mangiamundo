@@ -1,0 +1,19 @@
+# Hooks run by prek (https://github.com/j178/prek) before each commit.
+# Install once per clone: prek install
+# The same checks run in CI (.github/workflows/test.yml).
+repos:
+  - repo: local
+    hooks:
+      # Formats the backend; the commit stops when that changed a file, to be staged again.
+      - id: cargo-fmt
+        name: cargo fmt
+        language: system
+        entry: cargo fmt --manifest-path backend/Cargo.toml
+        files: ^backend/.*\.rs$
+        pass_filenames: false
+      - id: cargo-clippy
+        name: cargo clippy
+        language: system
+        entry: cargo clippy --manifest-path backend/Cargo.toml --all-targets --locked -- -D warnings
+        files: ^backend/
+        pass_filenames: false

@@ -17,7 +17,7 @@ pub struct Country {
     pub flag: String,
     pub lat: f64,
     pub lng: f64,
-    /// The OpenStreetMap `cuisine` value for its food, like "sri_lankan"; `null` when the
+    /// The OpenStreetMap `cuisine` value for its food, like `sri_lankan`; `null` when the
     /// catalog has none. Only countries with one can be picked for a new place.
     #[serde(default)]
     #[schema(required = true)]
@@ -279,7 +279,7 @@ pub const CUISINES: &[Cuisine] = &[
     c("NZ", &["new_zealand"]),
 ];
 
-/// The canonical OpenStreetMap `cuisine` value for a country, like "sri_lankan".
+/// The canonical OpenStreetMap `cuisine` value for a country, like `sri_lankan`.
 pub fn cuisine_tag(country: &str) -> Option<&'static str> {
     Some(CUISINES.iter().find(|c| c.country == country)?.osm[0])
 }
@@ -293,8 +293,7 @@ pub fn cuisine_adjective(country: &str) -> Option<String> {
                 let mut chars = word.chars();
                 chars
                     .next()
-                    .map(|first| first.to_uppercase().chain(chars).collect::<String>())
-                    .unwrap_or_default()
+                    .map_or_default(|first| first.to_uppercase().chain(chars).collect::<String>())
             })
             .collect::<Vec<_>>()
             .join(" "),
@@ -335,7 +334,7 @@ mod tests {
                 "unknown country {}",
                 cu.country
             );
-            assert!(!cu.osm.is_empty());
+            assert_ne!(cu.osm, [] as [&str; 0]);
         }
     }
 
@@ -413,6 +412,9 @@ mod tests {
             vec!["TH", "VN"]
         );
         assert_eq!(countries_for_cuisine_tag("Sri Lankan"), vec!["LK"]);
-        assert!(countries_for_cuisine_tag("burger;regional").is_empty());
+        assert_eq!(
+            countries_for_cuisine_tag("burger;regional"),
+            [] as [&str; 0]
+        );
     }
 }

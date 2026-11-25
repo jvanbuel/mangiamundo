@@ -12,7 +12,8 @@ COPY web/ ./
 ARG GIT_COMMIT
 RUN npm run build
 
-FROM rust:1-bookworm AS backend
+# The Rust version in rust-toolchain.toml.
+FROM rust:1.100-bookworm AS backend
 WORKDIR /backend
 # The share card draws the apps' country outlines in their font.
 # It is included from ../../shared, seen from backend/src.

@@ -7,6 +7,7 @@
 //! and on the first of the month what that month's quests are.
 
 use std::collections::{HashMap, HashSet};
+use std::hash::BuildHasher;
 use std::time::Duration as StdDuration;
 
 use base64::engine::general_purpose::URL_SAFE_NO_PAD;
@@ -76,14 +77,15 @@ impl Pusher {
     ) -> anyhow::Result<Self> {
         let private_key = match configured {
             Some(key) => key,
-            None => match store::setting(db, "vapid_private_key").await? {
-                Some(key) => key,
-                None => {
+            None => {
+                if let Some(key) = store::setting(db, "vapid_private_key").await? {
+                    key
+                } else {
                     let key = new_private_key()?;
                     store::set_setting(db, "vapid_private_key", &key).await?;
                     key
                 }
-            },
+            }
         };
         let public_key = URL_SAFE_NO_PAD.encode(
             VapidSignatureBuilder::from_base64_no_sub(&private_key)
@@ -187,9 +189,9 @@ fn one_of(n: u32) -> String {
 }
 
 /// The reminder for a celebration, or None when none of its countries has places nearby.
-pub fn celebration_notification(
+pub fn celebration_notification<S: BuildHasher>(
     celebration: &calendar::Celebration,
-    counts: &HashMap<&str, u32>,
+    counts: &HashMap<&str, u32, S>,
 ) -> Option<Notification> {
     let nearby: Vec<&str> = celebration
         .countries
@@ -231,7 +233,7 @@ pub fn new_food_notification(
         .filter(|r| countries.contains(&r.country.as_str()))
         .map(|r| r.place_id.as_str())
         .collect();
-    let total = serving.len() as u32;
+    let total = crate::count(serving.len());
     let them = if countries.len() == 1 { "it" } else { "them" };
     Some(Notification {
         title: format!("{} food is now near you", cuisine_names(countries, "and")),
@@ -369,7 +371,10 @@ pub async fn plan(
     let rows = store::area_rows(&state.db, area_id, None).await?;
     let counts = progress::places_per_country(&rows);
     let mut out = Vec::new();
-    for local_date in today.iter_days().take(days.max(0) as usize + 1) {
+    for local_date in today
+        .iter_days()
+        .take(usize::try_from(days).unwrap_or(0) + 1)
+    {
         for (key, notification) in due(state, user, local_date, area_id, &rows, &counts).await? {
             out.push(Reminder {
                 key,
@@ -440,7 +445,10 @@ async fn remind(
     }
 
     if !gone {
-        let mut present: Vec<String> = counts.keys().map(|c| c.to_string()).collect();
+        let mut present: Vec<String> = counts
+            .keys()
+            .map(std::string::ToString::to_string)
+            .collect();
         present.sort();
         // Read before marking, so a failure here leaves the countries for the next pass.
         let visited = store::visited_countries(&state.db, user).await?;
@@ -450,8 +458,7 @@ async fn remind(
             .filter(|c| !visited.contains(c))
             .map(String::as_str)
             .collect();
-        if let Some(notification) =
-            new_food_notification(&untried, &rows, &area.boundary.info.name)
+        if let Some(notification) = new_food_notification(&untried, &rows, &area.boundary.info.name)
         {
             match deliver(pusher, sub, &notification).await {
                 Some(Delivery::Sent) => sent += 1,
