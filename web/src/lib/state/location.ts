@@ -1,7 +1,9 @@
 import * as api from '../api';
 import type { Area, Located, Location } from '../types';
-import { closePlace, forgetSpins, refresh } from '../state.svelte';
+import { refresh } from '../state.svelte';
 import { app, message } from './app.svelte';
+import { closePlace } from './details';
+import { forgetSpins } from './spin';
 
 export const LOCATION_KEY = 'mangiamundo.location';
 export const RECENTS_KEY = 'mangiamundo.recentAreas';
