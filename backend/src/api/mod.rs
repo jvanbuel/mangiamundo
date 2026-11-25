@@ -1,16 +1,16 @@
 //! HTTP API. Everything lives under `/api` and speaks JSON, so the web app and the
 //! mobile apps share one contract.
 
+mod error;
+mod extract;
+
 use std::path::Path as FsPath;
 
-use axum::extract::rejection::{JsonRejection, PathRejection, QueryRejection};
-use axum::extract::{FromRequest, FromRequestParts, OptionalFromRequest, Request, State};
-use axum::http::request::Parts;
+use axum::extract::{Request, State};
 use axum::http::{header, StatusCode};
 use axum::response::{IntoResponse, Response};
 use axum::routing::{any, get};
 use axum::{Json, Router};
-use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 use tower_http::cors::CorsLayer;
 use tower_http::services::{ServeDir, ServeFile};
@@ -25,10 +25,14 @@ use std::collections::HashMap;
 use chrono::NaiveDate;
 use chrono_tz::Tz;
 
+pub use error::ApiError;
+use error::{provider_error, ErrorBody};
+use extract::{ApiResult, CurrentSession, JsonBody, MaybeSession, MaybeUser, Path, Query, User};
+
 use crate::calendar::{self, Celebration};
 use crate::game::{self, Summary};
 use crate::progress::{self, Progress, VisitChange};
-use crate::providers::{osm, AreaInfo, Located, Lookup, Refused};
+use crate::providers::{osm, AreaInfo, Located, Lookup};
 use crate::push::{self, Reminder};
 use crate::store::{self, Area, HoursStatus, PlaceView, Visit};
 use crate::{account, areas, auth, catalog, geo, hours, limits, share, AppState};
@@ -188,261 +192,6 @@ async fn not_found() -> ApiError {
     ApiError::NotFound("API endpoint")
 }
 
-/// Every error response, whatever the status.
-#[derive(Serialize, ToSchema)]
-struct ErrorBody {
-    /// For people. It may change, so clients branch on `code` instead.
-    error: String,
-    code: ErrorCode,
-}
-
-/// What went wrong, for clients that react to a specific case:
-///
-/// - `bad_request` (400, 413, 415, 422): invalid or missing parameters, or a malformed,
-///   oversized (over 2 MiB) or non-JSON body.
-/// - `unauthorized` (401): a missing or unknown session token.
-/// - `not_found` (404): an unknown place, area, device, code or `/api` path.
-/// - `method_not_allowed` (405): the path exists, but not with this method.
-/// - `nothing_open` (404): `/api/suggestion` found unvisited places, but none open now;
-///   ask again with `open=false`.
-/// - `nothing_left` (404): `/api/suggestion` found no unvisited place at all.
-/// - `too_many_requests` (429): a limit was reached, such as places added per day or
-///   location lookups per minute.
-/// - `upstream` (502): the places or areas provider failed.
-/// - `internal` (500): anything else, such as a database error.
-#[derive(Serialize, ToSchema, Clone, Copy)]
-#[serde(rename_all = "snake_case")]
-enum ErrorCode {
-    BadRequest,
-    Unauthorized,
-    NotFound,
-    MethodNotAllowed,
-    NothingOpen,
-    NothingLeft,
-    TooManyRequests,
-    Upstream,
-    Internal,
-}
-
-#[derive(Debug, thiserror::Error)]
-pub enum ApiError {
-    #[error("{0}")]
-    BadRequest(String),
-    /// A path, query string or body that axum could not parse, with axum's status
-    /// (400, 413, 415 or 422).
-    #[error("{1}")]
-    Rejected(StatusCode, String),
-    #[error("method not allowed")]
-    MethodNotAllowed,
-    #[error("missing or invalid session token")]
-    Unauthorized,
-    #[error("{0} not found")]
-    NotFound(&'static str),
-    #[error("{0}")]
-    TooManyRequests(&'static str),
-    #[error("no unvisited place is open now")]
-    NothingOpen,
-    #[error("no unvisited place left in the area")]
-    NothingLeft,
-    #[error("the places provider is unavailable")]
-    Upstream(#[source] anyhow::Error),
-    #[error("internal error")]
-    Database(#[from] sqlx::Error),
-    #[error("internal error")]
-    Internal(#[source] anyhow::Error),
-}
-
-impl IntoResponse for ApiError {
-    fn into_response(self) -> Response {
-        let (status, code) = match &self {
-            ApiError::BadRequest(_) => (StatusCode::BAD_REQUEST, ErrorCode::BadRequest),
-            ApiError::Rejected(status, _) => (*status, ErrorCode::BadRequest),
-            ApiError::MethodNotAllowed => {
-                (StatusCode::METHOD_NOT_ALLOWED, ErrorCode::MethodNotAllowed)
-            }
-            ApiError::Unauthorized => (StatusCode::UNAUTHORIZED, ErrorCode::Unauthorized),
-            ApiError::NotFound(_) => (StatusCode::NOT_FOUND, ErrorCode::NotFound),
-            ApiError::NothingOpen => (StatusCode::NOT_FOUND, ErrorCode::NothingOpen),
-            ApiError::NothingLeft => (StatusCode::NOT_FOUND, ErrorCode::NothingLeft),
-            ApiError::TooManyRequests(_) => {
-                (StatusCode::TOO_MANY_REQUESTS, ErrorCode::TooManyRequests)
-            }
-            ApiError::Upstream(error) => {
-                tracing::error!(error = format!("{error:#}"), "provider request failed");
-                (StatusCode::BAD_GATEWAY, ErrorCode::Upstream)
-            }
-            ApiError::Database(error) => {
-                tracing::error!(%error, "database error");
-                (StatusCode::INTERNAL_SERVER_ERROR, ErrorCode::Internal)
-            }
-            ApiError::Internal(error) => {
-                tracing::error!(error = format!("{error:#}"), "internal error");
-                (StatusCode::INTERNAL_SERVER_ERROR, ErrorCode::Internal)
-            }
-        };
-        (
-            status,
-            Json(ErrorBody {
-                error: self.to_string(),
-                code,
-            }),
-        )
-            .into_response()
-    }
-}
-
-/// A provider's failure. When it only refused to ask its server, the client can wait
-/// that out.
-fn provider_error(error: anyhow::Error) -> ApiError {
-    match error.downcast_ref::<Refused>() {
-        Some(Refused::TooMany) => {
-            ApiError::TooManyRequests("too many location lookups; try again in a few minutes")
-        }
-        Some(Refused::Busy) => {
-            ApiError::TooManyRequests("location lookups are busy; try again in a moment")
-        }
-        None => ApiError::Upstream(error),
-    }
-}
-
-impl From<areas::Error> for ApiError {
-    fn from(error: areas::Error) -> Self {
-        match error {
-            areas::Error::Invalid | areas::Error::TooLarge(_) => {
-                ApiError::BadRequest(error.to_string())
-            }
-            areas::Error::NotFound => ApiError::NotFound("area"),
-            areas::Error::Upstream(error) => provider_error(error),
-            areas::Error::Database(error) => ApiError::Database(error),
-        }
-    }
-}
-
-impl From<QueryRejection> for ApiError {
-    fn from(rejection: QueryRejection) -> Self {
-        ApiError::Rejected(rejection.status(), rejection.body_text())
-    }
-}
-
-impl From<PathRejection> for ApiError {
-    fn from(rejection: PathRejection) -> Self {
-        ApiError::Rejected(rejection.status(), rejection.body_text())
-    }
-}
-
-impl From<JsonRejection> for ApiError {
-    fn from(rejection: JsonRejection) -> Self {
-        ApiError::Rejected(rejection.status(), rejection.body_text())
-    }
-}
-
-/// axum's `Query`, but a malformed query string is a JSON error like any other.
-struct Query<T>(T);
-
-impl<S: Send + Sync, T: DeserializeOwned> FromRequestParts<S> for Query<T> {
-    type Rejection = ApiError;
-
-    async fn from_request_parts(parts: &mut Parts, state: &S) -> Result<Self, ApiError> {
-        let axum::extract::Query(value) =
-            axum::extract::Query::from_request_parts(parts, state).await?;
-        Ok(Query(value))
-    }
-}
-
-/// axum's `Path`, but a path segment that does not decode is a JSON error like any other.
-struct Path<T>(T);
-
-impl<S: Send + Sync, T: DeserializeOwned + Send> FromRequestParts<S> for Path<T> {
-    type Rejection = ApiError;
-
-    async fn from_request_parts(parts: &mut Parts, state: &S) -> Result<Self, ApiError> {
-        let axum::extract::Path(value) =
-            axum::extract::Path::from_request_parts(parts, state).await?;
-        Ok(Path(value))
-    }
-}
-
-/// axum's `Json` for request bodies, but a bad body is a JSON error like any other.
-struct JsonBody<T>(T);
-
-impl<S: Send + Sync, T: DeserializeOwned> FromRequest<S> for JsonBody<T> {
-    type Rejection = ApiError;
-
-    async fn from_request(request: Request, state: &S) -> Result<Self, ApiError> {
-        let Json(value) = <Json<T> as FromRequest<S>>::from_request(request, state).await?;
-        Ok(JsonBody(value))
-    }
-}
-
-/// No body (or no JSON content type) is `None`; a malformed JSON body is still an error.
-impl<S: Send + Sync, T: DeserializeOwned> OptionalFromRequest<S> for JsonBody<T> {
-    type Rejection = ApiError;
-
-    async fn from_request(request: Request, state: &S) -> Result<Option<Self>, ApiError> {
-        let value = <Json<T> as OptionalFromRequest<S>>::from_request(request, state).await?;
-        Ok(value.map(|Json(value)| JsonBody(value)))
-    }
-}
-
-type ApiResult<T> = Result<Json<T>, ApiError>;
-
-/// The session behind the `Authorization: Bearer <token>` header, if there is one.
-struct MaybeSession(Option<account::Session>);
-/// Like [`MaybeSession`] but rejects anonymous requests.
-struct CurrentSession(account::Session);
-/// The user behind the `Authorization: Bearer <token>` header, if there is one.
-struct MaybeUser(Option<String>);
-/// Like [`MaybeUser`] but rejects anonymous requests.
-struct User(String);
-
-impl FromRequestParts<AppState> for MaybeSession {
-    type Rejection = ApiError;
-
-    async fn from_request_parts(parts: &mut Parts, state: &AppState) -> Result<Self, ApiError> {
-        let Some(value) = parts.headers.get(header::AUTHORIZATION) else {
-            return Ok(MaybeSession(None));
-        };
-        let token = value
-            .to_str()
-            .ok()
-            .and_then(|v| v.strip_prefix("Bearer "))
-            .ok_or(ApiError::Unauthorized)?;
-        match account::session_for_token(&state.db, token, state.now()).await? {
-            Some(session) => Ok(MaybeSession(Some(session))),
-            None => Err(ApiError::Unauthorized),
-        }
-    }
-}
-
-impl FromRequestParts<AppState> for CurrentSession {
-    type Rejection = ApiError;
-
-    async fn from_request_parts(parts: &mut Parts, state: &AppState) -> Result<Self, ApiError> {
-        match MaybeSession::from_request_parts(parts, state).await? {
-            MaybeSession(Some(session)) => Ok(CurrentSession(session)),
-            MaybeSession(None) => Err(ApiError::Unauthorized),
-        }
-    }
-}
-
-impl FromRequestParts<AppState> for MaybeUser {
-    type Rejection = ApiError;
-
-    async fn from_request_parts(parts: &mut Parts, state: &AppState) -> Result<Self, ApiError> {
-        let MaybeSession(session) = MaybeSession::from_request_parts(parts, state).await?;
-        Ok(MaybeUser(session.map(|s| s.user)))
-    }
-}
-
-impl FromRequestParts<AppState> for User {
-    type Rejection = ApiError;
-
-    async fn from_request_parts(parts: &mut Parts, state: &AppState) -> Result<Self, ApiError> {
-        let CurrentSession(session) = CurrentSession::from_request_parts(parts, state).await?;
-        Ok(User(session.user))
-    }
-}
-
 #[derive(Serialize, ToSchema)]
 struct Session {
     /// Send it as `Authorization: Bearer <token>`.
@@ -537,18 +286,6 @@ async fn restore_session(
     .await?
     .ok_or(ApiError::NotFound("code"))?;
     Ok(Json(Session { token }))
-}
-
-impl From<auth::AuthError> for ApiError {
-    fn from(error: auth::AuthError) -> Self {
-        match error {
-            // Not a 401: clients take that to mean their own session is gone.
-            auth::AuthError::NotConfigured(_) | auth::AuthError::Invalid => {
-                ApiError::BadRequest(error.to_string())
-            }
-            auth::AuthError::Upstream(_, source) => ApiError::Upstream(source),
-        }
-    }
 }
 
 /// The sign-in methods this server offers, with the public ids the web app needs.
