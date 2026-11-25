@@ -18,11 +18,14 @@ import {
 } from './types';
 import { app, country, load, message, toast, type Theme, type ToastIcon } from './state/app.svelte';
 
+import { PROJECTION_KEY, THEME_KEY } from './state/preferences';
+import { checkReminders, pushTarget } from './state/reminders';
+
 export { app, country, toast, type Theme, type Toast, type ToastIcon } from './state/app.svelte';
+export { setProjection, setTheme } from './state/preferences';
+export { toggleReminders } from './state/reminders';
 
 const LOCATION_KEY = 'mangiamundo.location';
-const PROJECTION_KEY = 'mangiamundo.projection';
-const THEME_KEY = 'mangiamundo.theme';
 const RECENTS_KEY = 'mangiamundo.recentAreas';
 const NOT_TODAY_KEY = 'mangiamundo.notToday';
 /** How long the globe turns before landing on a spin's country. */
@@ -237,48 +240,6 @@ async function loadPlace(id: string) {
 		toast(null, 'Could not load this place', message(error));
 		closePlace();
 	}
-}
-
-async function checkReminders() {
-	if (push.needsInstallForPush()) app.reminders = 'install';
-	else if (!push.pushSupported()) app.reminders = 'unsupported';
-	else app.reminders = (await push.currentSubscription()) && Notification.permission === 'granted' ? 'on' : 'off';
-}
-
-function pushTarget() {
-	return { area: app.location!.area.id };
-}
-
-export async function toggleReminders() {
-	if (!app.location || app.remindersBusy) return;
-	app.remindersBusy = true;
-	try {
-		if (app.reminders === 'on') {
-			await push.disableReminders();
-			app.reminders = 'off';
-		} else {
-			await push.enableReminders(pushTarget());
-			app.reminders = 'on';
-			toast(null, 'Reminders on', 'We will let you know when a country near you has something to celebrate.');
-		}
-	} catch (error) {
-		toast(null, 'Could not change reminders', message(error));
-	} finally {
-		app.remindersBusy = false;
-	}
-}
-
-export function setProjection(projection: 'globe' | 'mercator') {
-	app.projection = projection;
-	localStorage.setItem(PROJECTION_KEY, JSON.stringify(projection));
-}
-
-export function setTheme(theme: Theme) {
-	// The attribute goes first so anything reacting to `app.theme` already sees the new colours.
-	if (theme === 'system') delete document.documentElement.dataset.theme;
-	else document.documentElement.dataset.theme = theme;
-	localStorage.setItem(THEME_KEY, JSON.stringify(theme));
-	app.theme = theme;
 }
 
 export async function setLocation(location: Location) {
