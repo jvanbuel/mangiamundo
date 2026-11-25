@@ -8,7 +8,6 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import app.mangiamundo.core.Account
 import app.mangiamundo.core.ApiClient
-import app.mangiamundo.core.ApiException
 import app.mangiamundo.core.UnknownPlace
 import app.mangiamundo.core.LinkCode
 import app.mangiamundo.core.Camera
@@ -24,7 +23,6 @@ import app.mangiamundo.core.World
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.receiveAsFlow
-import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
@@ -125,10 +123,8 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
 
     /** Picks a city or postal code from a search. */
     fun chooseArea(area: Area) = locations.chooseArea(area)
-
     /** Switches between the city and the postal code found at the GPS position. */
     fun switchArea(area: Area) = locations.switchArea(area)
-
     /** Takes an area off the recent list. */
     fun forgetRecent(id: String) = locations.forgetRecent(id)
 
@@ -140,13 +136,11 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
 
     /** Moves to the device position. With `quiet`, failures leave the current location alone. */
     fun locate(quiet: Boolean = false) = locations.locate(quiet)
-
     fun locationDenied() = locations.locationDenied()
 
     suspend fun search(query: String): List<Area> = api.searchAreas(query)
 
     fun refresh() = loader.refresh()
-
     /** Opens what a notification points at. */
     fun openFromNotification(country: String?, badges: Boolean) = loader.openFromNotification(country, badges)
 
@@ -154,15 +148,12 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     fun setReminders(on: Boolean) = reminders.setReminders(on)
 
     fun select(code: String?) = browsing.select(code)
-
     /** Opens a place's details, with all of the user's visits. */
     fun openPlace(place: Place) = browsing.openPlace(place)
-
     fun closePlace() = browsing.closePlace()
 
     /** Spins the globe: it lands on a country and opens an unvisited place there, open now if any is. */
     fun spin() = spins.spin()
-
     /** "Not today": keeps the place out of spins for 20 hours, and spins again. */
     fun notToday(placeId: String) = spins.notToday(placeId)
 
@@ -170,7 +161,6 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     fun tapCountry(code: String, name: String) = browsing.tapCountry(code, name)
 
     fun toggleVisit(place: Place) = visits.toggleVisit(place)
-
     /** Reports a place as closed for good: it disappears from this user's lists right away. */
     fun reportClosed(place: Place) = visits.reportClosed(place)
 
@@ -178,16 +168,12 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     val refreshingPlace: String? get() = osm.refreshingPlace
     /** True while OpenStreetMap is asked for places just mapped nearby. */
     val lookingNearby: Boolean get() = osm.lookingNearby
-
     /** The user went to edit the place in an OpenStreetMap app: read it again when they come back. */
     fun editingOnOsm(placeId: String) = osm.editingOnOsm(placeId)
-
     /** Back in the app: shows an edit just made to a place on OpenStreetMap. */
     fun onResume() = osm.onResume()
-
     /** Reads a place again from OpenStreetMap and says what changed. With `quiet`, a failure isn't shown. */
     fun refreshPlace(placeId: String, quiet: Boolean = false) = osm.refreshPlace(placeId, quiet)
-
     /** Asks OpenStreetMap for restaurants just mapped around the user. */
     fun lookAgainNearby() = osm.lookAgainNearby()
 
@@ -197,7 +183,6 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     val unknownPlaces: List<UnknownPlace> get() = adding.unknownPlaces
     /** The unknown place whose answer is being saved. One at a time. */
     val answering: String? get() = adding.answering
-
     /** Where the add form's pin starts: the device's position, or the area's centre without one. */
     suspend fun startingPoint(): Pair<Double, Double> = adding.startingPoint()
 
@@ -207,16 +192,13 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
 
     /** Loads [unknownPlaces] for the current area. A failure leaves the list empty. */
     fun loadUnknownPlaces() = adding.loadUnknownPlaces()
-
     /** "It serves food from …" (or, with a null `country`, "nothing specific"). */
     fun answerUnknown(unknown: UnknownPlace, country: String?, onAdded: () -> Unit) = adding.answerUnknown(unknown, country, onAdded)
 
     /** Whether a share sheet is being prepared. */
     val sharing: Boolean get() = shares.sharing
-
     /** Shares the map of the current area through a public page, made on first use. */
     fun shareProgress() = shares.shareProgress()
-
     fun shareVisit(visitId: Long) = shares.shareVisit(visitId)
 
     fun loadAccount() = accounts.loadAccount()
