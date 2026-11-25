@@ -22,7 +22,6 @@ import app.mangiamundo.core.Place
 import app.mangiamundo.core.ProjectionKind
 import app.mangiamundo.core.World
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.Job
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.CancellationException
@@ -41,6 +40,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     internal val reminders = RemindersModel(this)
     private val shares = ShareModel(this)
     private val loader = AreaLoader(this)
+    private val browsing = PlacesModel(this)
 
     var world by mutableStateOf<World?>(null); private set
     var catalog by mutableStateOf<Catalog?>(null); internal set
@@ -58,16 +58,15 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     @Volatile var ready = false; internal set
 
     /** Code of the country whose places are shown. */
-    var selected by mutableStateOf<String?>(null); private set
+    val selected: String? get() = browsing.selected
     var places by mutableStateOf<List<Place>>(emptyList()); internal set
-    var placesLoading by mutableStateOf(false); private set
+    val placesLoading: Boolean get() = browsing.placesLoading
     /** The place a check-in, undo or report is running for. One at a time. */
     val busyPlace: String? get() = visits.busyPlace
     /** The place whose details are open: its card's data until the full place has loaded. */
     var detail by mutableStateOf<Place?>(null); internal set
     /** Whether the details hold all visits yet. Until then they show the card's latest one. */
-    var detailVisits by mutableStateOf(DetailVisits.LOADING); private set
-    private var detailJob: Job? = null
+    val detailVisits: DetailVisits get() = browsing.detailVisits
 
     /** A spin is running: the globe turns and the Spin buttons wait. */
     val spinning: Boolean get() = spins.spinning
@@ -105,7 +104,6 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
 
     /** The last real device position, used to verify check-ins while browsing another city. */
     internal var gpsFix: Triple<Double, Double, Long>? = null
-    private var placesJob: Job? = null
 
     init {
         location?.let { camera = camera.copy(lng = it.lng, lat = it.lat) }
@@ -155,51 +153,12 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     /** Call after the notification permission was granted (or with false when refused). */
     fun setReminders(on: Boolean) = reminders.setReminders(on)
 
-    fun select(code: String?) {
-        selected = code
-        places = emptyList()
-        placesJob?.cancel()
-        val here = location
-        if (code == null || here == null) {
-            placesLoading = false
-            return
-        }
-        placesJob = viewModelScope.launch {
-            placesLoading = true
-            try {
-                places = api.places(here.area.id, code, userPosition())
-            } catch (e: kotlinx.coroutines.CancellationException) {
-                throw e
-            } catch (e: Exception) {
-                messageChannel.trySend("Could not load places: ${e.message}")
-            }
-            placesLoading = false
-        }
-    }
+    fun select(code: String?) = browsing.select(code)
 
     /** Opens a place's details, with all of the user's visits. */
-    fun openPlace(place: Place) {
-        detail = place
-        detailVisits = DetailVisits.LOADING
-        detailJob?.cancel()
-        // Measured from the user when known, otherwise from the map pin.
-        val from = userPosition() ?: location?.let { it.lat to it.lng }
-        detailJob = viewModelScope.launch {
-            try {
-                detail = api.place(place.id, from)
-                detailVisits = DetailVisits.LOADED
-            } catch (e: kotlinx.coroutines.CancellationException) {
-                throw e
-            } catch (e: Exception) {
-                detailVisits = DetailVisits.FAILED
-            }
-        }
-    }
+    fun openPlace(place: Place) = browsing.openPlace(place)
 
-    fun closePlace() {
-        detailJob?.cancel()
-        detail = null
-    }
+    fun closePlace() = browsing.closePlace()
 
     /** Spins the globe: it lands on a country and opens an unvisited place there, open now if any is. */
     fun spin() = spins.spin()
@@ -208,13 +167,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     fun notToday(placeId: String) = spins.notToday(placeId)
 
     /** A tap on the map: open the country if it is available here, otherwise say so. */
-    fun tapCountry(code: String, name: String) {
-        if (discover?.countries?.any { it.code == code } == true) {
-            select(code)
-        } else if (discover != null) {
-            messageChannel.trySend("No places from $name in ${location?.area?.name ?: "this area"}.")
-        }
-    }
+    fun tapCountry(code: String, name: String) = browsing.tapCountry(code, name)
 
     fun toggleVisit(place: Place) = visits.toggleVisit(place)
 
