@@ -26,9 +26,6 @@ import app.mangiamundo.core.Refreshed
 import app.mangiamundo.core.pendingText
 import app.mangiamundo.core.ProjectionKind
 import app.mangiamundo.core.ReminderSchedule
-import app.mangiamundo.core.Visit
-import app.mangiamundo.core.VisitRemoved
-import app.mangiamundo.core.VisitResult
 import app.mangiamundo.core.World
 import app.mangiamundo.core.withRecent
 import kotlinx.coroutines.Dispatchers
@@ -49,13 +46,14 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     internal val api = ApiClient(BuildConfig.API_BASE, settings, android.os.Build.MODEL) { accounts.signedOut() }
     private val accounts = AccountModel(this)
     private val spins = SpinModel(this)
+    private val visits = VisitsModel(this)
 
     var world by mutableStateOf<World?>(null); private set
     var catalog by mutableStateOf<Catalog?>(null); private set
     var location by mutableStateOf(settings.location); private set
     /** Areas chosen recently, newest first, for the location picker. Includes the current one. */
     var recentAreas by mutableStateOf(settings.recentAreas); private set
-    var discover by mutableStateOf<Discover?>(null); private set
+    var discover by mutableStateOf<Discover?>(null); internal set
     var loading by mutableStateOf(false); private set
     var error by mutableStateOf<String?>(null); private set
     /** How far the server is with the area while it loads; null when there is nothing to show. */
@@ -67,11 +65,12 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
 
     /** Code of the country whose places are shown. */
     var selected by mutableStateOf<String?>(null); private set
-    var places by mutableStateOf<List<Place>>(emptyList()); private set
+    var places by mutableStateOf<List<Place>>(emptyList()); internal set
     var placesLoading by mutableStateOf(false); private set
-    var busyPlace by mutableStateOf<String?>(null); private set
+    /** The place a check-in, undo or report is running for. One at a time. */
+    val busyPlace: String? get() = visits.busyPlace
     /** The place whose details are open: its card's data until the full place has loaded. */
-    var detail by mutableStateOf<Place?>(null); private set
+    var detail by mutableStateOf<Place?>(null); internal set
     /** Whether the details hold all visits yet. Until then they show the card's latest one. */
     var detailVisits by mutableStateOf(DetailVisits.LOADING); private set
     private var detailJob: Job? = null
@@ -111,7 +110,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     val messages = messageChannel.receiveAsFlow()
 
     /** The last real device position, used to verify check-ins while browsing another city. */
-    private var gpsFix: Triple<Double, Double, Long>? = null
+    internal var gpsFix: Triple<Double, Double, Long>? = null
     private var refreshJob: Job? = null
     private var remindersJob: Job? = null
     /** A country to open once progress has loaded, from a notification tap. */
@@ -403,80 +402,10 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    fun toggleVisit(place: Place) {
-        if (discover == null) return
-        val here = location ?: return
-        if (busyPlace != null) return
-        busyPlace = place.id
-        val generation = accountGeneration
-        // Nothing of the answer is shown once the device is in another account.
-        val sameAccount = { accountGeneration == generation }
-        // Progress is only shown when it is also still about this area.
-        val stillHere = { location?.area?.id == here.area.id && sameAccount() }
-        viewModelScope.launch {
-            try {
-                // Visited today: undo that visit. Otherwise check in, also when there are older visits.
-                val undoing = place.visitedToday()
-                var checkedIn: VisitResult? = null
-                var progress: Discover? = null
-                val update: (List<Visit>) -> List<Visit> = if (!undoing) {
-                    val fix = gpsFix?.takeIf { System.currentTimeMillis() - it.third < 10 * 60_000 }
-                    val result = api.checkIn(place.id, here.area.id, fix?.let { it.first to it.second })
-                    checkedIn = result
-                    progress = result.progress
-                    val visit = result.visit
-                    // Checking in twice on one day returns that day's visit.
-                    { old -> listOf(visit) + old.filter { it.id != visit.id } }
-                } else {
-                    val result = try {
-                        api.removeVisit(place.visits.first().id, here.area.id)
-                    } catch (e: ApiException) {
-                        if (e.code != "not_found") throw e
-                        // Gone already, from another device or by a retry whose answer was lost: ask what is left.
-                        val after = api.discover(here.area.id)
-                        VisitRemoved(api.place(place.id, null).visits, after.profile, after)
-                    }
-                    progress = result.progress
-                    // The server's list of the visits left: the card only knew the latest.
-                    { _ -> result.visits }
-                }
-                if (!sameAccount()) return@launch
-                setVisits(place.id, update)
-                // Details still loading may have read the visits from before this change.
-                detail?.takeIf { it.id == place.id && detailVisits != DetailVisits.LOADED }?.let { openPlace(it) }
-                progress?.let { if (stillHere()) discover = it }
-                for (unlocked in checkedIn?.unlocked.orEmpty()) messageChannel.trySend(unlocked.announcement(catalog))
-            } catch (e: Exception) {
-                messageChannel.trySend("That did not work: ${e.message}")
-            } finally {
-                busyPlace = null
-            }
-        }
-    }
+    fun toggleVisit(place: Place) = visits.toggleVisit(place)
 
     /** Reports a place as closed for good: it disappears from this user's lists right away. */
-    fun reportClosed(place: Place) {
-        if (busyPlace != null) return
-        busyPlace = place.id
-        viewModelScope.launch {
-            try {
-                val here = location
-                val generation = accountGeneration
-                val result = api.reportClosed(place.id, here?.area?.id)
-                if (accountGeneration != generation) return@launch
-                places = places.filter { it.id != place.id }
-                if (detail?.id == place.id) closePlace()
-                messageChannel.trySend("Thanks for letting us know. ${place.name} is hidden for you now.")
-                // The place no longer counts towards its countries.
-                val progress = result.progress
-                if (progress != null && here != null && location?.area?.id == here.area.id) discover = progress
-            } catch (e: Exception) {
-                messageChannel.trySend("Could not report this place: ${e.message}")
-            } finally {
-                busyPlace = null
-            }
-        }
-    }
+    fun reportClosed(place: Place) = visits.reportClosed(place)
 
     /** The place being read again from OpenStreetMap. */
     var refreshingPlace by mutableStateOf<String?>(null); private set
@@ -684,12 +613,6 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    /** Updates a place's visits on its card (which shows only the latest) and in its details. */
-    private fun setVisits(id: String, update: (List<Visit>) -> List<Visit>) {
-        places = places.map { if (it.id == id) it.copy(visits = update(it.visits).take(1)) else it }
-        detail = detail?.let { if (it.id == id) it.copy(visits = update(it.visits)) else it }
-    }
-
     /** Whether a share sheet is being prepared. */
     var sharing by mutableStateOf(false); private set
 
@@ -733,7 +656,8 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     fun deleteAccount() = accounts.deleteAccount()
 
     /** Goes up with every change of account, so an answer for the previous one can be told apart. */
-    private var accountGeneration = 0
+    internal var accountGeneration = 0
+        private set
 
     /** This device is in another account now: drop what was loaded for the previous one. */
     internal fun accountChanged() {
