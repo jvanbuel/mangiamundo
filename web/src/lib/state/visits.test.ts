@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { area, catalog, deferred, discover, location, place, progress, visit } from '../test/fixtures';
 import type { VisitRemoved, VisitResult } from '../types';
 
@@ -11,6 +11,9 @@ let account: typeof import('./account');
 let where: typeof import('./location');
 
 beforeEach(async () => {
+	// One fixed moment, at midday: a visit made in the test and one made in the expectation
+	// are the same visit, and "today" doesn't depend on when the tests run.
+	vi.useFakeTimers({ toFake: ['Date'], now: new Date(2026, 10, 25, 12) });
 	// The state modules keep their own counters and the app's state: each test starts afresh.
 	vi.resetModules();
 	api = await import('../api');
@@ -22,6 +25,8 @@ beforeEach(async () => {
 	app.location = location();
 	app.discover = discover('before');
 });
+
+afterEach(() => vi.useRealTimers());
 
 const checkedIn = (fields: Partial<VisitResult> = {}): VisitResult => ({
 	visit: visit(7),
