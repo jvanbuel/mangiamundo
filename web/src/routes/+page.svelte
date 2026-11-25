@@ -1,50 +1,28 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
-	import { version } from '$app/env';
-	import Account from '#lib/Account.svelte';
-	import AddPlace from '#lib/AddPlace.svelte';
+	import AddEntry from '#lib/AddEntry.svelte';
 	import Badges from '#lib/Badges.svelte';
 	import CountryDetail from '#lib/CountryDetail.svelte';
 	import ComingUp from '#lib/ComingUp.svelte';
 	import CountryList from '#lib/CountryList.svelte';
 	import LocationPicker from '#lib/LocationPicker.svelte';
+	import MapStage from '#lib/MapStage.svelte';
+	import PanelHeader from '#lib/PanelHeader.svelte';
 	import Passport from '#lib/Passport.svelte';
 	import PlaceDetail from '#lib/PlaceDetail.svelte';
 	import ProgressWheel from '#lib/ProgressWheel.svelte';
+	import SettingsCard from '#lib/SettingsCard.svelte';
 	import Toasts from '#lib/Toasts.svelte';
 	import UnknownFood from '#lib/UnknownFood.svelte';
-	import WorldMap from '#lib/WorldMap.svelte';
-	import MapPin from '@lucide/svelte/icons/map-pin';
-	import Dices from '@lucide/svelte/icons/dices';
-	import Navigation from '@lucide/svelte/icons/navigation';
-	import Settings from '@lucide/svelte/icons/settings';
-	import LogIn from '@lucide/svelte/icons/log-in';
-	import { app, init, lookAgainNearby, refresh, select, setProjection, setTheme, spin, toast, type Theme } from '#lib/state.svelte.ts';
-
+	import { app, init, refresh, select, toast } from '#lib/state.svelte.ts';
 	let pickerOpen = $state(false);
 	let settingsOpen = $state(false);
-	/** Who the header shows as signed in: a name or address, and a photo when Google gave one. */
-	const signedIn = $derived.by(() => {
-		const ids = app.account?.identities ?? [];
-		if (!ids.length) return null;
-		const label =
-			ids.find((i) => i.name)?.name ??
-			ids.find((i) => i.email)?.email ??
-			({ apple: 'Apple', google: 'Google', email: 'Email' } as Record<string, string>)[ids[0].provider] ??
-			'Signed in';
-		return { label, picture: ids.find((i) => i.picture)?.picture ?? null, initial: label.trim().charAt(0).toUpperCase() };
-	});
 	let adding = $state(false);
 
 	const selected = $derived(app.discover?.countries.find((c) => c.code === app.selected) ?? null);
 	const earned = $derived(app.discover?.badges.filter((b) => b.earned).length ?? 0);
 	const place = $derived(app.location?.area.name ?? null);
 
-	const THEMES: { id: Theme; label: string }[] = [
-		{ id: 'system', label: 'Auto' },
-		{ id: 'light', label: 'Light' },
-		{ id: 'dark', label: 'Dark' }
-	];
 	let systemDark = $state(false);
 
 	onMount(() => {
@@ -66,113 +44,17 @@
 	}
 </script>
 
-{#snippet addEntry()}
-	{#if adding}
-		<div class="card"><AddPlace onclose={() => (adding = false)} /></div>
-	{:else}
-		<p class="muted add-place">Is a restaurant missing? <button onclick={() => (adding = true)}>Add it</button></p>
-		<p class="muted add-place">
-			Just added it in an OpenStreetMap app?
-			<button disabled={app.lookingNearby} onclick={lookAgainNearby}>{app.lookingNearby ? 'Looking…' : 'Look again'}</button>
-		</p>
-	{/if}
-{/snippet}
-
 {#if app.areaProgress}<ProgressWheel progress={app.areaProgress} />{/if}
 <Toasts />
 
 <main>
-	<div class="stage">
-		{#if app.catalog}
-			<WorldMap
-				countries={app.catalog.countries}
-				progress={app.discover?.countries ?? []}
-				selected={app.selected}
-				location={app.location}
-				projection={app.projection}
-				theme={`${app.theme}-${systemDark}`}
-				spinning={app.spinning}
-				onselect={pick}
-			/>
-		{/if}
-
-		<div class="controls">
-			{#if app.discover}
-				<button class="spin" disabled={app.spinning} onclick={spin} title="Where shall we eat? Spin for a place to try">
-					<Dices size={16} strokeWidth={2.5} aria-hidden="true" />{app.spinning ? 'Spinning…' : 'Spin'}
-				</button>
-			{/if}
-			<div class="toggle" role="group" aria-label="Map projection">
-				<button aria-pressed={app.projection === 'globe'} onclick={() => setProjection('globe')}>Globe</button>
-				<button aria-pressed={app.projection === 'mercator'} onclick={() => setProjection('mercator')}>Flat</button>
-			</div>
-		</div>
-
-		{#if app.location}<ul class="legend" aria-label="Legend">
-			<li><span class="swatch available"></span>To discover</li>
-			<li><span class="swatch discovered"></span>Gold</li>
-			<li><span class="swatch platinum"></span>Platinum</li>
-			<li><span class="swatch completed"></span>Diamond</li>
-			<li><span class="swatch none"></span>None nearby</li>
-		</ul>{/if}
-	</div>
+	<MapStage {systemDark} onselect={pick} />
 
 	<aside>
-		<header>
-			<h1>
-				<img src="/icon.svg" alt="" width="32" height="32" />Mangiamundo
-				{#if app.account}
-					<!-- Whether this device is signed in, always in view; opens the account settings. -->
-					<button
-						class="who"
-						class:signed={signedIn}
-						onclick={() => { settingsOpen = true; pickerOpen = false; }}
-						title={signedIn ? `Signed in as ${signedIn.label}` : 'Sign in to keep your progress on all your devices'}
-						aria-label={signedIn ? `Signed in as ${signedIn.label}. Account settings` : 'Sign in'}
-					>
-						{#if signedIn}
-							{#if signedIn.picture}
-								<img class="avatar" src={signedIn.picture} alt="" width="30" height="30" referrerpolicy="no-referrer" />
-							{:else}
-								<span class="avatar initial" aria-hidden="true">{signedIn.initial}</span>
-							{/if}
-						{:else}
-							<LogIn size={14} strokeWidth={2.5} aria-hidden="true" /><span class="label">Sign in</span>
-						{/if}
-					</button>
-				{/if}
-				<button class="gear" aria-label="Settings" aria-expanded={settingsOpen} onclick={() => { settingsOpen = !settingsOpen; pickerOpen = false; }}>
-					<Settings size={20} aria-hidden="true" />
-				</button>
-			</h1>
-			{#if !app.location}<p class="tagline">Eat the world, start with your city</p>{/if}
-			{#if app.location}
-				<button class="where" aria-expanded={pickerOpen} onclick={() => { pickerOpen = !pickerOpen; settingsOpen = false; }}>
-					{#if app.location.source === 'gps'}<Navigation size={15} strokeWidth={2.5} aria-hidden="true" />{:else}<MapPin size={15} strokeWidth={2.5} aria-hidden="true" />{/if}
-					<span class="name">{place}</span>
-					{#if app.location.area.kind === 'postal_code'}<span class="muted">· postal code</span>{/if}
-					<span class="change">{pickerOpen ? 'Close' : 'Change'}</span>
-				</button>
-			{/if}
-		</header>
+		<PanelHeader {place} bind:pickerOpen bind:settingsOpen />
 
 		{#if settingsOpen}
-			<div class="card settings">
-				<h2>Settings</h2>
-				<div class="setting">
-					<span id="theme-label">Theme</span>
-					<div class="toggle" role="group" aria-labelledby="theme-label">
-						{#each THEMES as t (t.id)}
-							<button aria-pressed={app.theme === t.id} onclick={() => setTheme(t.id)}>{t.label}</button>
-						{/each}
-					</div>
-				</div>
-				<Account />
-				<p class="build">
-					<a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">Map data © OpenStreetMap contributors</a> ·
-					<a href="/privacy/">Privacy</a> · Web {version}{app.server ? ` · Server ${app.server}` : ''}
-				</p>
-			</div>
+			<SettingsCard />
 		{/if}
 
 		{#if pickerOpen && app.location}
@@ -207,7 +89,7 @@
 					{app.location.area.kind === 'postal_code' ? 'Try the whole city or' : 'Try'} another location.
 				</p>
 			</div>
-			{@render addEntry()}
+			<AddEntry bind:adding />
 		{:else}
 			<!-- Progress is for the overview; a country or place gets the room to itself. -->
 			{#if !selected && !app.placeId}
@@ -234,7 +116,7 @@
 				{#if app.tab === 'countries'}
 					<CountryList discover={app.discover} onselect={select} />
 					{#if !adding}<UnknownFood areaId={app.location.area.id} />{/if}
-					{@render addEntry()}
+					<AddEntry bind:adding />
 				{:else}
 					<Badges badges={app.discover.badges} events={app.discover.events} quests={app.discover.quests} />
 				{/if}
@@ -246,36 +128,10 @@
 </main>
 
 <style>
-	.add-place {
-		margin-top: 20px;
-		text-align: center;
-	}
-
-	.add-place button {
-		color: inherit;
-		text-decoration: underline;
-	}
-
-	.add-place + .add-place {
-		margin-top: 4px;
-	}
-
-	.add-place button:disabled {
-		opacity: 0.6;
-	}
-
 	main {
 		display: grid;
 		grid-template-columns: 400px 1fr;
 		height: 100dvh;
-	}
-
-	.stage {
-		position: relative;
-		grid-column: 2;
-		grid-row: 1;
-		min-height: 0;
-		overflow: hidden;
 	}
 
 	aside {
@@ -307,51 +163,6 @@
 		color: inherit;
 	}
 
-	h1 {
-		font-size: var(--text-xl);
-	}
-
-	h1 {
-		display: flex;
-		align-items: center;
-	}
-
-	.tagline {
-		margin: 2px 0 0 42px;
-		color: var(--muted);
-		font-weight: 700;
-	}
-
-	h1 img {
-		margin-right: 10px;
-		border-radius: 9px;
-	}
-
-	.where {
-		display: flex;
-		align-items: center;
-		gap: 6px;
-		width: 100%;
-		margin-top: 10px;
-		padding: 9px 12px;
-		border-radius: 10px;
-		border: 1px solid var(--line);
-		text-align: left;
-	}
-
-	.where .name {
-		font-weight: 700;
-		overflow: hidden;
-		text-overflow: ellipsis;
-		white-space: nowrap;
-	}
-
-	.where .change {
-		margin-left: auto;
-		color: var(--accent);
-		font-size: var(--text-sm);
-	}
-
 	/* Panels sit on a tinted surface. The heavy lower edge is kept for things you can press. */
 	.card {
 		padding: 16px;
@@ -376,72 +187,6 @@
 	.welcome h2 {
 		font-size: var(--text-xl);
 		line-height: 1.25;
-	}
-
-	/* 44px to tap, without pushing the heading around. */
-	.who {
-		margin-left: auto;
-		display: inline-flex;
-		align-items: center;
-		gap: 5px;
-		max-width: 170px;
-		padding: 5px 10px;
-		border-radius: 999px;
-		border: 1px solid var(--line);
-		background: var(--panel);
-		color: var(--accent-text);
-		font-size: var(--text-xs);
-		font-weight: 700;
-	}
-
-	.who .label {
-		overflow: hidden;
-		text-overflow: ellipsis;
-		white-space: nowrap;
-	}
-
-	/* Signed in: just the round avatar, as most apps show it. */
-	.who.signed {
-		padding: 2px;
-		border: 2px solid var(--accent);
-		background: var(--panel);
-	}
-
-	.avatar {
-		flex: none;
-		width: 30px;
-		height: 30px;
-		border-radius: 50%;
-		object-fit: cover;
-	}
-
-	.avatar.initial {
-		display: grid;
-		place-items: center;
-		background: var(--accent);
-		color: var(--on-accent);
-		font-size: 14px;
-		font-weight: 800;
-	}
-
-	.gear {
-		margin: -12px -12px -12px 4px;
-		display: flex;
-		padding: 12px;
-		color: var(--muted);
-	}
-
-	.settings p.build {
-		margin: 0;
-		padding-top: 14px;
-		border-top: 1px solid var(--line);
-		font-size: var(--text-xs);
-		line-height: 1.6;
-		color: var(--muted);
-	}
-
-	.settings p.build a {
-		color: inherit;
 	}
 
 	.pad {
@@ -482,129 +227,10 @@
 		margin-left: 4px;
 	}
 
-	.controls {
-		position: absolute;
-		top: 16px;
-		right: 16px;
-		z-index: 1;
-		display: flex;
-		gap: 8px;
-	}
-
-	.spin {
-		display: inline-flex;
-		align-items: center;
-		gap: 6px;
-		padding: 6px 16px;
-		border-radius: 999px;
-		background: var(--accent);
-		color: var(--on-accent);
-		font-size: var(--text-sm);
-		font-weight: 700;
-		box-shadow: inset 0 -3px 0 color-mix(in srgb, var(--accent) 70%, #000);
-	}
-
-	.spin:disabled {
-		opacity: 0.8;
-	}
-
-	.setting {
-		display: flex;
-		align-items: center;
-		justify-content: space-between;
-		gap: 12px;
-		margin: 10px 0 14px;
-		font-weight: 700;
-	}
-
-	.settings .toggle {
-		background: var(--panel);
-	}
-
-	.toggle {
-		display: flex;
-		padding: 3px;
-		border-radius: 999px;
-		background: var(--glass);
-		border: 1px solid var(--line);
-	}
-
-	.toggle button {
-		padding: 6px 16px;
-		border-radius: 999px;
-		font-size: var(--text-sm);
-		font-weight: 700;
-		color: var(--muted);
-	}
-
-	.toggle button[aria-pressed='true'] {
-		background: var(--accent);
-		color: var(--on-accent);
-	}
-
-	.legend {
-		position: absolute;
-		left: 16px;
-		bottom: 16px;
-		z-index: 1;
-		list-style: none;
-		margin: 0;
-		padding: 8px 12px;
-		display: flex;
-		flex-wrap: wrap;
-		gap: 4px 14px;
-		border-radius: 10px;
-		background: var(--glass);
-		border: 1px solid var(--line);
-		font-size: var(--text-xs);
-		color: var(--muted);
-	}
-
-	.legend li {
-		display: flex;
-		align-items: center;
-		gap: 6px;
-	}
-
-	/* The same shapes as the list's status marks, so the states don't rest on colour alone. */
-	.swatch {
-		width: 12px;
-		height: 12px;
-		border-radius: 50%;
-		border: 2px solid var(--available-edge);
-		background: var(--available);
-	}
-
-	.swatch.discovered {
-		border-color: var(--discovered);
-		background: linear-gradient(to top, var(--discovered) 50%, transparent 50%);
-	}
-
-	.swatch.platinum {
-		border-color: var(--platinum-edge);
-		background: var(--platinum-metal);
-	}
-
-	.swatch.completed {
-		border-color: var(--completed-edge);
-		background: var(--diamond);
-	}
-
-	.swatch.none {
-		border-radius: 3px;
-		border: 1px solid rgb(0 0 0 / 0.15);
-		background: var(--land);
-	}
-
 	@media (max-width: 760px) {
 		main {
 			grid-template-columns: 1fr;
 			grid-template-rows: 34dvh 1fr;
-		}
-
-		.stage {
-			grid-column: 1;
-			grid-row: 1;
 		}
 
 		aside {
@@ -613,18 +239,6 @@
 			border-right: 0;
 			border-top: 1px solid var(--line);
 			padding: 14px 16px 28px;
-		}
-
-		.legend {
-			left: 8px;
-			bottom: 8px;
-			padding: 6px 10px;
-			gap: 2px 10px;
-		}
-
-		.controls {
-			top: 8px;
-			right: 8px;
 		}
 	}
 </style>
