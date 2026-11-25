@@ -31,6 +31,7 @@ class ApiClientTest {
                 token == null && (exchange.requestMethod != "GET" || path == "/api/account") -> 401 to """{"error":"x","code":"unauthorized"}"""
                 path == "/api/account" -> 200 to """{"created_at":1,"devices":[{"id":"d","created_at":1,"last_used_at":1,"current":true}]}"""
                 path == "/api/additions" -> 200 to "[]"
+                path.endsWith("/closed") -> 200 to """{"progress":null}"""
                 exchange.requestMethod == "GET" -> 200 to """{"id":"p","name":"P","lat":0,"lng":0,"distance_m":0,"visits":[]}"""
                 else -> 204 to ""
             }

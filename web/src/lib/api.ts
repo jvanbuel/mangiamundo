@@ -1,4 +1,4 @@
-import type { Account, AuthProviders, AddPlace, AddedPlace, Addition, NearbyResult, RefreshResult, Area, AreaProgress, Catalog, Celebration, Discover, Health, Located, Place, ShareLink, Suggestion, UnknownPlace, VisitResult } from './types';
+import type { Account, AuthProviders, AddPlace, AddedPlace, Addition, NearbyResult, RefreshResult, Area, AreaProgress, Catalog, Celebration, Discover, Health, Located, Place, ShareLink, Suggestion, UnknownPlace, VisitRemoved, VisitResult, ClosedResult } from './types';
 
 const BASE = import.meta.env.VITE_API_BASE ?? '';
 const TOKEN_KEY = 'mangiamundo.token';
@@ -173,7 +173,9 @@ export const checkIn = (placeId: string, areaId: string, here: { lat: number; ln
 		position: here
 	});
 
-export const removeVisit = (visitId: number) => write<void>('DELETE', `/api/visits/${visitId}`);
+/** Takes a check-in back. The answer has the visits left at the place and the progress in the area. */
+export const removeVisit = (visitId: number, areaId: string) =>
+	write<VisitRemoved>('DELETE', `/api/visits/${visitId}?${area(areaId)}&${tz()}`);
 
 /** Makes (or moves to this area) the public page of the user's progress. */
 export const shareProgress = (areaId: string) => write<ShareLink>('POST', `/api/share?${area(areaId)}`);
@@ -185,8 +187,8 @@ export const unshareProgress = () => writeMine('DELETE', '/api/share');
 export const shareVisit = (visitId: number) => write<ShareLink>('POST', `/api/visits/${visitId}/share`);
 
 /** "This place has closed": hides it for this user, and for everyone after a second report. */
-export const reportClosed = (placeId: string) =>
-	write<void>('PUT', `/api/places/${encodeURIComponent(placeId)}/closed`);
+export const reportClosed = (placeId: string, areaId: string | null) =>
+	write<ClosedResult>('PUT', `/api/places/${encodeURIComponent(placeId)}/closed?${areaId ? `${area(areaId)}&` : ''}${tz()}`);
 
 /** Adds a restaurant OpenStreetMap lacks. Only this user sees it until OSM has it. */
 export const addPlace = (place: AddPlace) => write<AddedPlace>('POST', '/api/places', place);

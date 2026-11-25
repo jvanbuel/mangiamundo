@@ -138,6 +138,7 @@ private final class StubServer: URLProtocol {
             if path == "/api/account" {
                 return (200, #"{"created_at":1,"devices":[{"id":"d","created_at":1,"last_used_at":1,"current":true}],"identities":[]}"#)
             }
+            if path.hasSuffix("/closed") { return (200, #"{"progress":null}"#) }
             return method == "GET" ? (200, "[]") : (204, "")
         }
     }

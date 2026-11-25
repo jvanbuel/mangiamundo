@@ -454,6 +454,25 @@
         },
         "type": "object"
       },
+      "ClosedResult": {
+        "properties": {
+          "progress": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/Progress",
+                "description": "The progress in `area` without the place; `null` without `area`."
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "progress"
+        ],
+        "type": "object"
+      },
       "Continent": {
         "properties": {
           "code": {
@@ -1844,6 +1863,38 @@
         ],
         "type": "object"
       },
+      "VisitRemoved": {
+        "properties": {
+          "profile": {
+            "$ref": "#/components/schemas/Profile",
+            "description": "After the removal, without the XP of the quests that are no longer finished."
+          },
+          "progress": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/Progress",
+                "description": "The progress in `area` after the removal; `null` without `area`."
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "visits": {
+            "description": "The user's visits to the place that are left, newest first. The place stays visited\nwhile there are any.",
+            "items": {
+              "$ref": "#/components/schemas/Visit"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "visits",
+          "profile",
+          "progress"
+        ],
+        "type": "object"
+      },
       "VisitResult": {
         "properties": {
           "profile": {
@@ -3008,11 +3059,35 @@
             "schema": {
               "type": "string"
             }
+          },
+          {
+            "description": "As for `/api/discover`: the check-in counts for events by its date in this zone.",
+            "in": "query",
+            "name": "tz",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "The area the user is playing in. With it, the answer has the progress there after\nthe change (and for a check-in, what it unlocked), so there is no need to ask\n`/api/discover` again.",
+            "in": "query",
+            "name": "area",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
           }
         ],
         "responses": {
-          "204": {
-            "description": "Reported"
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ClosedResult"
+                }
+              }
+            }
           },
           "default": {
             "content": {
@@ -3125,7 +3200,7 @@
             }
           },
           {
-            "description": "The area the user is playing in. With it, the answer has the progress there after\nthe check-in and what it unlocked, so there is no need to ask `/api/discover` again.",
+            "description": "The area the user is playing in. With it, the answer has the progress there after\nthe change (and for a check-in, what it unlocked), so there is no need to ask\n`/api/discover` again.",
             "in": "query",
             "name": "area",
             "required": false,
@@ -3817,11 +3892,35 @@
               "format": "int64",
               "type": "integer"
             }
+          },
+          {
+            "description": "As for `/api/discover`: the check-in counts for events by its date in this zone.",
+            "in": "query",
+            "name": "tz",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "The area the user is playing in. With it, the answer has the progress there after\nthe change (and for a check-in, what it unlocked), so there is no need to ask\n`/api/discover` again.",
+            "in": "query",
+            "name": "area",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
           }
         ],
         "responses": {
-          "204": {
-            "description": "Removed, or there was no such visit"
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VisitRemoved"
+                }
+              }
+            }
           },
           "default": {
             "content": {
@@ -3831,7 +3930,7 @@
                 }
               }
             },
-            "description": "An error"
+            "description": "An error, `not_found` when the user has no such visit"
           }
         },
         "security": [
@@ -3839,7 +3938,7 @@
             "token": []
           }
         ],
-        "summary": "Removes one visit. The place stays visited while the user has other visits to it. The\nXP of quests that are no longer finished without it is taken back.",
+        "summary": "Removes one visit. The place stays visited while the user has other visits to it. The\nXP of quests that are no longer finished without it is taken back, in every area.",
         "tags": [
           "game"
         ]

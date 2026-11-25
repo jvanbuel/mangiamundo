@@ -1,0 +1,642 @@
+{
+  "profile": {
+    "added": 0,
+    "best_streak": 1,
+    "countries": 1,
+    "level": 2,
+    "level_xp": 100,
+    "next_level_xp": 400,
+    "streak": 1,
+    "visits": 1,
+    "xp": 175
+  },
+  "progress": {
+    "badges": [
+      {
+        "description": "Check in at any place.",
+        "earned": true,
+        "id": "first-bite",
+        "kind": "visits",
+        "progress": 1,
+        "target": 1,
+        "title": "First check-in"
+      },
+      {
+        "description": "Eat the food of 5 countries.",
+        "earned": false,
+        "id": "flags-5",
+        "kind": "countries",
+        "progress": 1,
+        "target": 5,
+        "title": "5 countries"
+      },
+      {
+        "description": "Eat the food of 10 countries.",
+        "earned": false,
+        "id": "flags-10",
+        "kind": "countries",
+        "progress": 1,
+        "target": 10,
+        "title": "10 countries"
+      },
+      {
+        "description": "Eat the food of 25 countries.",
+        "earned": false,
+        "id": "flags-25",
+        "kind": "countries",
+        "progress": 1,
+        "target": 25,
+        "title": "25 countries"
+      },
+      {
+        "description": "Visit 10 places of a country here, or all of them if it has fewer.",
+        "earned": false,
+        "id": "complete-1",
+        "kind": "completed",
+        "progress": 0,
+        "target": 1,
+        "title": "1 diamond country"
+      },
+      {
+        "description": "Reach diamond in 5 countries here.",
+        "earned": false,
+        "id": "complete-5",
+        "kind": "completed",
+        "progress": 0,
+        "target": 5,
+        "title": "5 diamond countries"
+      },
+      {
+        "description": "Add a restaurant that brings a new country to your city.",
+        "earned": false,
+        "id": "pioneer",
+        "kind": "pioneer",
+        "progress": 0,
+        "target": 1,
+        "title": "Pioneer"
+      },
+      {
+        "description": "Check in somewhere every month for 3 months.",
+        "earned": false,
+        "id": "streak-3",
+        "kind": "streak",
+        "progress": 1,
+        "target": 3,
+        "title": "3 months in a row"
+      },
+      {
+        "description": "Check in somewhere every month for 6 months.",
+        "earned": false,
+        "id": "streak-6",
+        "kind": "streak",
+        "progress": 1,
+        "target": 6,
+        "title": "6 months in a row"
+      },
+      {
+        "description": "Check in somewhere every month for 12 months.",
+        "earned": false,
+        "id": "streak-12",
+        "kind": "streak",
+        "progress": 1,
+        "target": 12,
+        "title": "12 months in a row"
+      },
+      {
+        "description": "Eat from every Africa country found here.",
+        "earned": false,
+        "id": "continent-AF",
+        "kind": "continent",
+        "progress": 0,
+        "target": 7,
+        "title": "Africa"
+      },
+      {
+        "description": "Eat from every Asia country found here.",
+        "earned": false,
+        "id": "continent-AS",
+        "kind": "continent",
+        "progress": 1,
+        "target": 13,
+        "title": "Asia"
+      },
+      {
+        "description": "Eat from every Europe country found here.",
+        "earned": false,
+        "id": "continent-EU",
+        "kind": "continent",
+        "progress": 0,
+        "target": 12,
+        "title": "Europe"
+      },
+      {
+        "description": "Eat from every North America country found here.",
+        "earned": false,
+        "id": "continent-NA",
+        "kind": "continent",
+        "progress": 0,
+        "target": 5,
+        "title": "North America"
+      },
+      {
+        "description": "Eat from every Oceania country found here.",
+        "earned": false,
+        "id": "continent-OC",
+        "kind": "continent",
+        "progress": 0,
+        "target": 1,
+        "title": "Oceania"
+      },
+      {
+        "description": "Eat from every South America country found here.",
+        "earned": false,
+        "id": "continent-SA",
+        "kind": "continent",
+        "progress": 0,
+        "target": 2,
+        "title": "South America"
+      },
+      {
+        "description": "Eat from every country found here.",
+        "earned": false,
+        "id": "world",
+        "kind": "world",
+        "progress": 1,
+        "target": 40,
+        "title": "Whole world"
+      },
+      {
+        "description": "Visit every single place here.",
+        "earned": false,
+        "id": "world-complete",
+        "kind": "everything",
+        "progress": 1,
+        "target": 89,
+        "title": "Every place"
+      }
+    ],
+    "continents": [
+      {
+        "available": 7,
+        "code": "AF",
+        "completed": 0,
+        "discovered": 0,
+        "name": "Africa"
+      },
+      {
+        "available": 13,
+        "code": "AS",
+        "completed": 0,
+        "discovered": 1,
+        "name": "Asia"
+      },
+      {
+        "available": 12,
+        "code": "EU",
+        "completed": 0,
+        "discovered": 0,
+        "name": "Europe"
+      },
+      {
+        "available": 5,
+        "code": "NA",
+        "completed": 0,
+        "discovered": 0,
+        "name": "North America"
+      },
+      {
+        "available": 1,
+        "code": "OC",
+        "completed": 0,
+        "discovered": 0,
+        "name": "Oceania"
+      },
+      {
+        "available": 2,
+        "code": "SA",
+        "completed": 0,
+        "discovered": 0,
+        "name": "South America"
+      }
+    ],
+    "countries": [
+      {
+        "code": "AE",
+        "continent": "AS",
+        "goal": 2,
+        "places": 2,
+        "status": "available",
+        "visited": 0
+      },
+      {
+        "code": "AZ",
+        "continent": "AS",
+        "goal": 3,
+        "places": 3,
+        "status": "discovered",
+        "visited": 1
+      },
+      {
+        "code": "BA",
+        "continent": "EU",
+        "goal": 3,
+        "places": 3,
+        "status": "available",
+        "visited": 0
+      },
+      {
+        "code": "BE",
+        "continent": "EU",
+        "goal": 1,
+        "places": 1,
+        "status": "available",
+        "visited": 0
+      },
+      {
+        "code": "BR",
+        "continent": "SA",
+        "goal": 2,
+        "places": 2,
+        "status": "available",
+        "visited": 0
+      },
+      {
+        "code": "CH",
+        "continent": "EU",
+        "goal": 4,
+        "places": 4,
+        "status": "available",
+        "visited": 0
+      },
+      {
+        "code": "CR",
+        "continent": "NA",
+        "goal": 3,
+        "places": 3,
+        "status": "available",
+        "visited": 0
+      },
+      {
+        "code": "DO",
+        "continent": "NA",
+        "goal": 2,
+        "places": 2,
+        "status": "available",
+        "visited": 0
+      },
+      {
+        "code": "DZ",
+        "continent": "AF",
+        "goal": 4,
+        "places": 4,
+        "status": "available",
+        "visited": 0
+      },
+      {
+        "code": "ER",
+        "continent": "AF",
+        "goal": 2,
+        "places": 2,
+        "status": "available",
+        "visited": 0
+      },
+      {
+        "code": "FR",
+        "continent": "EU",
+        "goal": 2,
+        "places": 2,
+        "status": "available",
+        "visited": 0
+      },
+      {
+        "code": "GB",
+        "continent": "EU",
+        "goal": 2,
+        "places": 2,
+        "status": "available",
+        "visited": 0
+      },
+      {
+        "code": "GH",
+        "continent": "AF",
+        "goal": 2,
+        "places": 2,
+        "status": "available",
+        "visited": 0
+      },
+      {
+        "code": "HR",
+        "continent": "EU",
+        "goal": 1,
+        "places": 1,
+        "status": "available",
+        "visited": 0
+      },
+      {
+        "code": "JM",
+        "continent": "NA",
+        "goal": 1,
+        "places": 1,
+        "status": "available",
+        "visited": 0
+      },
+      {
+        "code": "KG",
+        "continent": "AS",
+        "goal": 2,
+        "places": 2,
+        "status": "available",
+        "visited": 0
+      },
+      {
+        "code": "KR",
+        "continent": "AS",
+        "goal": 4,
+        "places": 4,
+        "status": "available",
+        "visited": 0
+      },
+      {
+        "code": "KZ",
+        "continent": "AS",
+        "goal": 1,
+        "places": 1,
+        "status": "available",
+        "visited": 0
+      },
+      {
+        "code": "LT",
+        "continent": "EU",
+        "goal": 2,
+        "places": 2,
+        "status": "available",
+        "visited": 0
+      },
+      {
+        "code": "LU",
+        "continent": "EU",
+        "goal": 4,
+        "places": 4,
+        "status": "available",
+        "visited": 0
+      },
+      {
+        "code": "LV",
+        "continent": "EU",
+        "goal": 2,
+        "places": 2,
+        "status": "available",
+        "visited": 0
+      },
+      {
+        "code": "ME",
+        "continent": "EU",
+        "goal": 4,
+        "places": 4,
+        "status": "available",
+        "visited": 0
+      },
+      {
+        "code": "MM",
+        "continent": "AS",
+        "goal": 3,
+        "places": 3,
+        "status": "available",
+        "visited": 0
+      },
+      {
+        "code": "MU",
+        "continent": "AF",
+        "goal": 2,
+        "places": 2,
+        "status": "available",
+        "visited": 0
+      },
+      {
+        "code": "NP",
+        "continent": "AS",
+        "goal": 4,
+        "places": 4,
+        "status": "available",
+        "visited": 0
+      },
+      {
+        "code": "NZ",
+        "continent": "OC",
+        "goal": 1,
+        "places": 1,
+        "status": "available",
+        "visited": 0
+      },
+      {
+        "code": "PH",
+        "continent": "AS",
+        "goal": 4,
+        "places": 4,
+        "status": "available",
+        "visited": 0
+      },
+      {
+        "code": "PL",
+        "continent": "EU",
+        "goal": 1,
+        "places": 1,
+        "status": "available",
+        "visited": 0
+      },
+      {
+        "code": "PR",
+        "continent": "NA",
+        "goal": 2,
+        "places": 2,
+        "status": "available",
+        "visited": 0
+      },
+      {
+        "code": "PY",
+        "continent": "SA",
+        "goal": 1,
+        "places": 1,
+        "status": "available",
+        "visited": 0
+      },
+      {
+        "code": "RW",
+        "continent": "AF",
+        "goal": 1,
+        "places": 1,
+        "status": "available",
+        "visited": 0
+      },
+      {
+        "code": "SG",
+        "continent": "AS",
+        "goal": 3,
+        "places": 3,
+        "status": "available",
+        "visited": 0
+      },
+      {
+        "code": "TH",
+        "continent": "AS",
+        "goal": 2,
+        "places": 2,
+        "status": "available",
+        "visited": 0
+      },
+      {
+        "code": "TM",
+        "continent": "AS",
+        "goal": 2,
+        "places": 2,
+        "status": "available",
+        "visited": 0
+      },
+      {
+        "code": "TN",
+        "continent": "AF",
+        "goal": 3,
+        "places": 3,
+        "status": "available",
+        "visited": 0
+      },
+      {
+        "code": "TR",
+        "continent": "AS",
+        "goal": 1,
+        "places": 1,
+        "status": "available",
+        "visited": 0
+      },
+      {
+        "code": "TT",
+        "continent": "NA",
+        "goal": 3,
+        "places": 3,
+        "status": "available",
+        "visited": 0
+      },
+      {
+        "code": "TZ",
+        "continent": "AF",
+        "goal": 1,
+        "places": 1,
+        "status": "available",
+        "visited": 0
+      },
+      {
+        "code": "UA",
+        "continent": "EU",
+        "goal": 1,
+        "places": 1,
+        "status": "available",
+        "visited": 0
+      },
+      {
+        "code": "UZ",
+        "continent": "AS",
+        "goal": 1,
+        "places": 1,
+        "status": "available",
+        "visited": 0
+      }
+    ],
+    "events": [
+      {
+        "countries": [
+          "LB",
+          "SY",
+          "JO"
+        ],
+        "description": "Eat at 2 Lebanese, Syrian or Jordanian places in November.",
+        "earned": false,
+        "ends": "2026-11-30",
+        "id": "levant-month-2026-11",
+        "places_nearby": 0,
+        "progress": 0,
+        "starts": "2026-11-01",
+        "status": "active",
+        "target": 2,
+        "title": "Levant month"
+      },
+      {
+        "countries": [
+          "JP"
+        ],
+        "description": "Eat at 3 Japanese places in December.",
+        "earned": false,
+        "ends": "2026-12-31",
+        "id": "japan-month-2026-12",
+        "places_nearby": 0,
+        "progress": 0,
+        "starts": "2026-12-01",
+        "status": "upcoming",
+        "target": 3,
+        "title": "Japan month"
+      }
+    ],
+    "places": 89,
+    "places_visited": 1,
+    "profile": {
+      "added": 0,
+      "best_streak": 1,
+      "countries": 1,
+      "level": 2,
+      "level_xp": 100,
+      "next_level_xp": 400,
+      "streak": 1,
+      "visits": 1,
+      "xp": 175
+    },
+    "quests": {
+      "ends": "2026-11-30",
+      "month": "2026-11",
+      "quests": [
+        {
+          "countries": [
+            "NP"
+          ],
+          "description": "Visit places of a country celebrating this month.",
+          "done": false,
+          "id": "celebration",
+          "kind": "celebration",
+          "progress": 0,
+          "target": 2,
+          "title": "Join the celebration",
+          "xp": 75
+        },
+        {
+          "countries": [],
+          "description": "Eat the food of a country you haven't tried yet.",
+          "done": true,
+          "id": "new-country",
+          "kind": "new_country",
+          "progress": 1,
+          "target": 1,
+          "title": "Taste a new country",
+          "xp": 100
+        },
+        {
+          "countries": [],
+          "description": "Check in at two places this month.",
+          "done": false,
+          "id": "check-ins",
+          "kind": "check_ins",
+          "progress": 1,
+          "target": 2,
+          "title": "Two check-ins",
+          "xp": 50
+        }
+      ],
+      "starts": "2026-11-01"
+    },
+    "world": {
+      "available": 40,
+      "code": "WORLD",
+      "completed": 0,
+      "discovered": 1,
+      "name": "World"
+    }
+  },
+  "visits": []
+}

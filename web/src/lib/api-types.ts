@@ -727,7 +727,7 @@ export interface paths {
         post?: never;
         /**
          * Removes one visit. The place stays visited while the user has other visits to it. The
-         *     XP of quests that are no longer finished without it is taken back.
+         *     XP of quests that are no longer finished without it is taken back, in every area.
          */
         delete: operations["remove_visit"];
         options?: never;
@@ -922,6 +922,9 @@ export interface components {
         };
         CheckIn: {
             position?: components["schemas"]["LatLng"] | null;
+        };
+        ClosedResult: {
+            progress: components["schemas"]["Progress"] | null;
         };
         Continent: {
             code: string;
@@ -1427,6 +1430,16 @@ export interface components {
             id: number;
             /** @description Checked in within walking distance of the place. */
             verified: boolean;
+        };
+        VisitRemoved: {
+            /** @description After the removal, without the XP of the quests that are no longer finished. */
+            profile: components["schemas"]["Profile"];
+            progress: components["schemas"]["Progress"] | null;
+            /**
+             * @description The user's visits to the place that are left, newest first. The place stays visited
+             *     while there are any.
+             */
+            visits: components["schemas"]["Visit"][];
         };
         VisitResult: {
             /** @description After the check-in, with the XP of the quests it finished. */
@@ -2212,7 +2225,16 @@ export interface operations {
     };
     report_closed: {
         parameters: {
-            query?: never;
+            query?: {
+                /** @description As for `/api/discover`: the check-in counts for events by its date in this zone. */
+                tz?: string;
+                /**
+                 * @description The area the user is playing in. With it, the answer has the progress there after
+                 *     the change (and for a check-in, what it unlocked), so there is no need to ask
+                 *     `/api/discover` again.
+                 */
+                area?: string;
+            };
             header?: never;
             path: {
                 /** @description A place id from `/api/places`. */
@@ -2222,12 +2244,13 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description Reported */
-            204: {
+            200: {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["ClosedResult"];
+                };
             };
             /** @description An error */
             default: {
@@ -2282,7 +2305,8 @@ export interface operations {
                 tz?: string;
                 /**
                  * @description The area the user is playing in. With it, the answer has the progress there after
-                 *     the check-in and what it unlocked, so there is no need to ask `/api/discover` again.
+                 *     the change (and for a check-in, what it unlocked), so there is no need to ask
+                 *     `/api/discover` again.
                  */
                 area?: string;
             };
@@ -2727,7 +2751,16 @@ export interface operations {
     };
     remove_visit: {
         parameters: {
-            query?: never;
+            query?: {
+                /** @description As for `/api/discover`: the check-in counts for events by its date in this zone. */
+                tz?: string;
+                /**
+                 * @description The area the user is playing in. With it, the answer has the progress there after
+                 *     the change (and for a check-in, what it unlocked), so there is no need to ask
+                 *     `/api/discover` again.
+                 */
+                area?: string;
+            };
             header?: never;
             path: {
                 /** @description A visit id from a place's `visits`. */
@@ -2737,14 +2770,15 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description Removed, or there was no such visit */
-            204: {
+            200: {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["VisitRemoved"];
+                };
             };
-            /** @description An error */
+            /** @description An error, `not_found` when the user has no such visit */
             default: {
                 headers: {
                     [name: string]: unknown;
