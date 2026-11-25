@@ -5,6 +5,9 @@
 	import type { Feature, FeatureCollection, Geometry } from 'geojson';
 	import { type Country, type CountryProgress, type Location } from './types';
 	import { SPIN_MS } from './state.svelte';
+	import { bbox, centre, fittingZoom, unwrap } from './map/geometry';
+	import { facetImage, sparkleImage } from './map/images';
+	import { SOURCE, SPARKLES, fillOpacity, mapStyle, paint, twinkle } from './map/style';
 
 	interface Props {
 		countries: Country[];
@@ -21,14 +24,6 @@
 
 	let { countries, progress, selected, location, projection, theme, spinning, onselect }: Props = $props();
 
-	/** Zoom at which the globe's diameter fills most of the map's shorter side. */
-	function fittingZoom(el: HTMLElement, lat: number, fill = 0.95): number {
-		const diameter = Math.min(el.clientWidth, el.clientHeight) * fill;
-		// MapLibre draws the globe with radius 512 * 2^zoom / (2π cos(lat)).
-		return Math.log2((diameter * Math.PI * Math.cos((lat * Math.PI) / 180)) / 512);
-	}
-
-	const SOURCE = 'countries';
 	let container: HTMLDivElement;
 	let map = $state<MapLibreMap | null>(null);
 	let hover = $state<{ x: number; y: number; code: string; name: string } | null>(null);
@@ -44,169 +39,6 @@
 
 	const byCode = $derived(new Map(progress.map((p) => [p.code, p])));
 	const hoverInfo = $derived(hover ? { country: countries.find((c) => c.code === hover!.code), progress: byCode.get(hover.code) } : null);
-
-	/**
-	 * The atlas stores countries that cross the antimeridian (Russia, Fiji, ...) as one
-	 * ring whose longitude jumps from +180 to -180. A flat renderer would draw that jump
-	 * as a stripe across the whole world, so make each ring continuous instead, letting
-	 * it run past 180 degrees. MapLibre wraps such geometry correctly.
-	 */
-	function unwrap(geometry: Geometry): Geometry {
-		const ring = (points: number[][]) => {
-			let shift = 0;
-			return points.map(([lng, lat], i) => {
-				if (i > 0) {
-					const jump = lng - points[i - 1][0];
-					if (jump > 180) shift -= 360;
-					else if (jump < -180) shift += 360;
-				}
-				return [lng + shift, lat];
-			});
-		};
-		if (geometry.type === 'Polygon') return { ...geometry, coordinates: geometry.coordinates.map(ring) };
-		if (geometry.type === 'MultiPolygon') {
-			return { ...geometry, coordinates: geometry.coordinates.map((polygon) => polygon.map(ring)) };
-		}
-		return geometry;
-	}
-
-	/** [west, south, east, north] of a (multi)polygon whose rings were unwrapped. */
-	function bbox(geometry: Geometry): [number, number, number, number] {
-		const box: [number, number, number, number] = [Infinity, Infinity, -Infinity, -Infinity];
-		const polygons = geometry.type === 'Polygon' ? [geometry.coordinates] : geometry.type === 'MultiPolygon' ? geometry.coordinates : [];
-		for (const polygon of polygons) {
-			for (const [lng, lat] of polygon[0]) {
-				box[0] = Math.min(box[0], lng);
-				box[1] = Math.min(box[1], lat);
-				box[2] = Math.max(box[2], lng);
-				box[3] = Math.max(box[3], lat);
-			}
-		}
-		return box;
-	}
-
-	/** Where a country's sparkle sits: the area-weighted centre of its largest ring. */
-	function centre(geometry: Geometry): [number, number] {
-		const rings = geometry.type === 'Polygon' ? [geometry.coordinates[0]] : geometry.type === 'MultiPolygon' ? geometry.coordinates.map((p) => p[0]) : [];
-		let best: [number, number] = [0, 0];
-		let largest = -1;
-		for (const ring of rings) {
-			let area = 0, x = 0, y = 0;
-			for (let i = 0; i < ring.length - 1; i++) {
-				const [x0, y0] = ring[i], [x1, y1] = ring[i + 1];
-				const cross = x0 * y1 - x1 * y0;
-				area += cross;
-				x += (x0 + x1) * cross;
-				y += (y0 + y1) * cross;
-			}
-			if (Math.abs(area) > largest && area !== 0) {
-				largest = Math.abs(area);
-				best = [x / (3 * area), y / (3 * area)];
-			}
-		}
-		return best;
-	}
-
-	/** A four-pointed star in the diamond's edge colour with a white heart and a soft
-	    glow: the sparkle. Coloured rather than white, so it shows on the pale diamond. */
-	function sparkleImage(edge: string): ImageData {
-		const size = 64, c = size / 2;
-		const ctx = document.createElement('canvas').getContext('2d')!;
-		ctx.canvas.width = ctx.canvas.height = size;
-		const dirs = [[0, -1], [1, 0], [0, 1], [-1, 0]];
-		const star = (tip: number, waist: number) => {
-			ctx.beginPath();
-			ctx.moveTo(c, c - tip);
-			dirs.forEach(([dx, dy], i) => {
-				const [nx, ny] = dirs[(i + 1) % 4];
-				// Curve in towards the middle between one tip and the next.
-				ctx.quadraticCurveTo(c + (dx + nx) * waist, c + (dy + ny) * waist, c + nx * tip, c + ny * tip);
-			});
-			ctx.closePath();
-		};
-		star(28, 7);
-		ctx.shadowColor = '#ffffff';
-		ctx.shadowBlur = 6;
-		ctx.fillStyle = edge;
-		ctx.fill();
-		ctx.shadowBlur = 0;
-		star(13, 3);
-		ctx.fillStyle = '#ffffff';
-		ctx.fill();
-		return ctx.getImageData(0, 0, size, size);
-	}
-
-	/** Facets cut into a completed country: crossing lines and a few bright glints. */
-	function facetImage(line: string): ImageData {
-		const size = 40;
-		const ctx = document.createElement('canvas').getContext('2d')!;
-		ctx.canvas.width = ctx.canvas.height = size;
-		ctx.strokeStyle = line;
-		ctx.lineWidth = 2;
-		ctx.beginPath();
-		ctx.moveTo(0, 0); ctx.lineTo(size, size);
-		ctx.moveTo(size, 0); ctx.lineTo(0, size);
-		ctx.moveTo(size / 2, 0); ctx.lineTo(size, size / 2); ctx.lineTo(size / 2, size); ctx.lineTo(0, size / 2); ctx.closePath();
-		ctx.stroke();
-		ctx.fillStyle = 'rgb(255 255 255 / 0.8)';
-		ctx.beginPath();
-		ctx.moveTo(size / 2, 2); ctx.lineTo(size * 0.62, size * 0.22); ctx.lineTo(size / 2, size * 0.3); ctx.closePath();
-		ctx.moveTo(4, size / 2); ctx.lineTo(size * 0.16, size * 0.42); ctx.lineTo(size * 0.2, size / 2); ctx.closePath();
-		ctx.fill();
-		return ctx.getImageData(0, 0, size, size);
-	}
-
-	/** Fill opacity: with a country selected, the others step back. */
-	const fillOpacity = (focused: boolean) =>
-		focused ? ['case', flag('selected'), 1, flag('hover'), 0.8, 0.4] : ['case', flag('hover'), 1, 0.86];
-
-	const SPARKLES: [string, number, [number, number]][] = [
-		['sparkle-a', 1.6, [0, 0]],
-		['sparkle-b', 1, [26, -22]],
-		['sparkle-c', 0.8, [-30, 24]]
-	];
-
-	/** A sparkle's brightness, 0 to 1, at a time in seconds: a quick flash every 2.4s,
-	    each sparkle a third of a beat after the last. */
-	function twinkle(seconds: number, index: number): number {
-		const wave = Math.max(0, Math.sin(seconds * 2.6 + index * 2.1));
-		return wave * wave;
-	}
-
-	const featureState = (key: string, fallback: unknown) => ['coalesce', ['feature-state', key], fallback];
-	const flag = (key: string) => ['boolean', featureState(key, false), false];
-
-	/** Paint properties that depend on the theme, read from the CSS custom properties. */
-	function paint(): Record<string, Record<string, unknown>> {
-		const css = getComputedStyle(document.documentElement);
-		const color = (name: string) => css.getPropertyValue(name).trim();
-		return {
-			ocean: { 'background-color': color('--ocean') },
-			land: { 'fill-color': color('--land') },
-			fill: {
-				'fill-color': [
-					'match', featureState('status', 'none'),
-					'available', color('--available'),
-					'discovered', color('--discovered'),
-					'platinum', color('--platinum'),
-					'completed', color('--completed'),
-					color('--land')
-				]
-			},
-			borders: {
-				'line-color': [
-					'case', flag('selected'), color('--text'),
-					['==', featureState('status', 'none'), 'available'], color('--available-edge'),
-					['==', featureState('status', 'none'), 'discovered'], color('--discovered-edge'),
-					['==', featureState('status', 'none'), 'platinum'], color('--platinum-edge'),
-					['==', featureState('status', 'none'), 'completed'], color('--completed-edge'),
-					color('--map-border')
-				]
-			},
-			'here-halo': { 'circle-color': color('--text') },
-			here: { 'circle-color': color('--text'), 'circle-stroke-color': color('--panel') }
-		};
-	}
 
 	onMount(() => {
 		let disposed = false;
@@ -251,66 +83,7 @@
 				maxZoom: 6,
 				attributionControl: { compact: true, customAttribution: 'Borders: Natural Earth' },
 				dragRotate: false,
-				style: {
-					version: 8,
-					projection: { type: projection },
-					sources: {
-						[SOURCE]: { type: 'geojson', data: { type: 'FeatureCollection', features }, promoteId: 'code' },
-						here: { type: 'geojson', data: { type: 'FeatureCollection', features: [] } },
-						// Completed countries and their sparkles, kept in sources of their own because
-						// patterns and symbols can't follow feature state.
-						diamonds: { type: 'geojson', data: { type: 'FeatureCollection', features: [] } },
-						sparkles: { type: 'geojson', data: { type: 'FeatureCollection', features: [] } }
-					},
-					layers: [
-						{ id: 'ocean', type: 'background', paint: themed.ocean },
-						// Solid land under the coloured fill, so countries that step back fade to land, not sea.
-						{ id: 'land', type: 'fill', source: SOURCE, paint: themed.land },
-						{
-							id: 'fill',
-							type: 'fill',
-							source: SOURCE,
-							paint: {
-								...themed.fill,
-								'fill-opacity': fillOpacity(false) as any
-							}
-						},
-						{ id: 'facets', type: 'fill', source: 'diamonds', paint: { 'fill-pattern': 'facets' } },
-						{
-							id: 'borders',
-							type: 'line',
-							source: SOURCE,
-							paint: {
-								...themed.borders,
-								'line-width': [
-									'case', flag('selected'), 2.5,
-									['==', featureState('status', 'none'), 'completed'], 2,
-									['match', featureState('status', 'none'), ['available', 'discovered', 'platinum'], true, false], 1,
-									0.6
-								] as any
-							}
-						},
-						// Three sparkles per diamond, offset in pixels so small countries get them too.
-						...SPARKLES.map(([id, size, offset]) => ({
-							id,
-							type: 'symbol' as const,
-							source: 'sparkles',
-							layout: { 'icon-image': 'sparkle', 'icon-size': size, 'icon-offset': offset, 'icon-allow-overlap': true, 'icon-ignore-placement': true }
-						})),
-						{
-							id: 'here-halo',
-							type: 'circle',
-							source: 'here',
-							paint: { ...themed['here-halo'], 'circle-radius': 13, 'circle-opacity': 0.25 }
-						},
-						{
-							id: 'here',
-							type: 'circle',
-							source: 'here',
-							paint: { ...themed.here, 'circle-radius': 5, 'circle-stroke-width': 2 }
-						}
-					]
-				}
+				style: mapStyle(projection, features, themed)
 			});
 
 			const m = instance;
