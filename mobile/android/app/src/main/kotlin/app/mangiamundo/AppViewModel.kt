@@ -11,8 +11,6 @@ import app.mangiamundo.core.ApiClient
 import app.mangiamundo.core.ApiException
 import app.mangiamundo.core.UnknownPlace
 import app.mangiamundo.core.LinkCode
-import app.mangiamundo.core.ShareLink
-import app.mangiamundo.ui.shareLink
 import app.mangiamundo.core.Camera
 import app.mangiamundo.core.Catalog
 import app.mangiamundo.core.Celebration
@@ -44,6 +42,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     private val adding = AddPlaceModel(this)
     private val locations = LocationModel(this)
     private val reminders = RemindersModel(this)
+    private val shares = ShareModel(this)
 
     var world by mutableStateOf<World?>(null); private set
     var catalog by mutableStateOf<Catalog?>(null); private set
@@ -352,30 +351,12 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     fun answerUnknown(unknown: UnknownPlace, country: String?, onAdded: () -> Unit) = adding.answerUnknown(unknown, country, onAdded)
 
     /** Whether a share sheet is being prepared. */
-    var sharing by mutableStateOf(false); private set
+    val sharing: Boolean get() = shares.sharing
 
     /** Shares the map of the current area through a public page, made on first use. */
-    fun shareProgress() {
-        val areaId = location?.area?.id ?: return
-        share { api.shareProgress(areaId) }
-    }
+    fun shareProgress() = shares.shareProgress()
 
-    fun shareVisit(visitId: Long) = share { api.shareVisit(visitId) }
-
-    private fun share(make: suspend () -> ShareLink) {
-        if (sharing) return
-        sharing = true
-        viewModelScope.launch {
-            try {
-                val link = make()
-                // The settings load the account, public link included, when they open.
-                shareLink(getApplication(), link, api.card(link))
-            } catch (e: Exception) {
-                messageChannel.trySend("Could not share: ${e.message}")
-            }
-            sharing = false
-        }
-    }
+    fun shareVisit(visitId: Long) = shares.shareVisit(visitId)
 
     fun loadAccount() = accounts.loadAccount()
     fun makeRecoveryCode() = accounts.makeRecoveryCode()
