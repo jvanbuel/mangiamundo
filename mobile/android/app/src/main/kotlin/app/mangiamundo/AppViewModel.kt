@@ -24,13 +24,10 @@ import app.mangiamundo.core.World
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.channels.Channel
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-
-private const val NOT_REACHED = "not reached"
 
 class AppViewModel(application: Application) : AndroidViewModel(application) {
     internal val settings = Settings(application)
@@ -39,26 +36,26 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     internal val spins = SpinModel(this)
     private val visits = VisitsModel(this)
     private val osm = OsmRefreshModel(this)
-    private val adding = AddPlaceModel(this)
+    internal val adding = AddPlaceModel(this)
     private val locations = LocationModel(this)
-    private val reminders = RemindersModel(this)
+    internal val reminders = RemindersModel(this)
     private val shares = ShareModel(this)
+    private val loader = AreaLoader(this)
 
     var world by mutableStateOf<World?>(null); private set
-    var catalog by mutableStateOf<Catalog?>(null); private set
+    var catalog by mutableStateOf<Catalog?>(null); internal set
     var location by mutableStateOf(settings.location); internal set
     /** Areas chosen recently, newest first, for the location picker. Includes the current one. */
     val recentAreas: List<Area> get() = locations.recentAreas
     var discover by mutableStateOf<Discover?>(null); internal set
-    var loading by mutableStateOf(false); private set
-    var error by mutableStateOf<String?>(null); private set
+    val loading: Boolean get() = loader.loading
+    val error: String? get() = loader.error
     /** How far the server is with the area while it loads; null when there is nothing to show. */
-    var areaProgress by mutableStateOf<AreaProgress?>(null); private set
+    val areaProgress: AreaProgress? get() = loader.areaProgress
     /** Counts refreshes, so only the latest one shows or clears the progress wheel. */
-    internal var refreshes = 0
-        private set
+    internal val refreshes: Int get() = loader.refreshes
     /** The first data is in (or failed), so the startup loader can go. Read by MainActivity. */
-    @Volatile var ready = false; private set
+    @Volatile var ready = false; internal set
 
     /** Code of the country whose places are shown. */
     var selected by mutableStateOf<String?>(null); private set
@@ -85,7 +82,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     /** 0 = countries, 1 = badges. */
     var tab by mutableStateOf(0)
     /** The server's version and commit; null until it answers, "not reached" after a failure. */
-    var server by mutableStateOf<String?>(null); private set
+    val server: String? get() = loader.server
 
     /** The account's recovery code status and devices, loaded when settings open. */
     val account: Account? get() = accounts.account
@@ -108,32 +105,17 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
 
     /** The last real device position, used to verify check-ins while browsing another city. */
     internal var gpsFix: Triple<Double, Double, Long>? = null
-    private var refreshJob: Job? = null
-    /** A country to open once progress has loaded, from a notification tap. */
-    private var pendingCountry: String? = null
     private var placesJob: Job? = null
 
     init {
         location?.let { camera = camera.copy(lng = it.lng, lat = it.lat) }
-        loadServer()
+        loader.loadServer()
         viewModelScope.launch {
             world = withContext(Dispatchers.IO) {
                 World.parse(application.assets.open("world.json").bufferedReader().use { it.readText() })
             }
         }
-        viewModelScope.launch {
-            try {
-                catalog = api.catalog()
-            } catch (e: Exception) {
-                error = e.message
-                ready = true
-                return@launch
-            }
-            // Without a location the welcome screen shows right away; refresh() sets it otherwise.
-            if (location != null) refresh() else ready = true
-            // Follow the device when there is no location yet or the last one came from GPS.
-            if (location?.fromGps != false && DeviceLocation.hasPermission(application)) locate(quiet = true)
-        }
+        loader.loadCatalog()
     }
 
     fun country(code: String): Country? = catalog?.countries?.firstOrNull { it.code == code }
@@ -165,84 +147,10 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
 
     suspend fun search(query: String): List<Area> = api.searchAreas(query)
 
-    /** Asks for the server's version until it answers once. */
-    private fun loadServer() {
-        if (server != null && server != NOT_REACHED) return
-        viewModelScope.launch {
-            server = runCatching { api.health() }
-                .map { listOfNotNull(it.version ?: "unknown", it.commit).joinToString(" ") }
-                .getOrDefault(NOT_REACHED)
-        }
-    }
-
-    fun refresh() {
-        loadServer()
-        val here = location ?: return
-        refreshJob?.cancel()
-        val refresh = ++refreshes
-        refreshJob = viewModelScope.launch {
-            loading = true
-            error = null
-            // A wheel from the previous area must not linger while this one starts.
-            areaProgress = null
-            try {
-                val polling = launch { followProgress(here.area.id, refresh) }
-                discover = try {
-                    api.discover(here.area.id)
-                } finally {
-                    polling.cancel()
-                    // A cancelled older refresh can end after a newer one started: leave its wheel.
-                    if (refresh == refreshes) areaProgress = null
-                }
-                ready = true
-                pendingCountry?.let { code ->
-                    pendingCountry = null
-                    if (discover?.countries?.any { it.code == code } == true) select(code)
-                }
-                celebrations = runCatching { api.celebrations(here.area.id) }.getOrDefault(emptyList())
-                adding.announceConfirmedAdditions()
-                reminders.rescheduleReminders()
-            } catch (e: kotlinx.coroutines.CancellationException) {
-                throw e
-            } catch (e: Exception) {
-                error = e.message
-                discover = null
-                ready = true
-            }
-            loading = false
-        }
-    }
-
-    /** Polls the area's loading progress, once loading has taken a moment, until cancelled.
-     * Only the latest refresh (`refresh`) shows its wheel. */
-    private suspend fun followProgress(areaId: String, refresh: Int) {
-        delay(300)
-        while (true) {
-            try {
-                // null: not started or just finished; keep what is shown.
-                api.areaProgress(areaId)?.takeIf { refresh == refreshes }?.let {
-                    areaProgress = it
-                    // At startup the loader waits for the data: let the wheel show instead.
-                    ready = true
-                }
-            } catch (e: kotlinx.coroutines.CancellationException) {
-                throw e
-            } catch (e: Exception) {
-                // A missed poll only delays the wheel.
-            }
-            delay(400)
-        }
-    }
+    fun refresh() = loader.refresh()
 
     /** Opens what a notification points at. */
-    fun openFromNotification(country: String?, badges: Boolean) {
-        if (badges) {
-            select(null)
-            tab = 1
-        }
-        if (country == null) return
-        if (discover?.countries?.any { it.code == country } == true) select(country) else pendingCountry = country
-    }
+    fun openFromNotification(country: String?, badges: Boolean) = loader.openFromNotification(country, badges)
 
     /** Call after the notification permission was granted (or with false when refused). */
     fun setReminders(on: Boolean) = reminders.setReminders(on)
