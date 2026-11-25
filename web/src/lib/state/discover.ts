@@ -1,8 +1,8 @@
 import * as api from '../api';
 import * as push from '../push';
 import { hideSplash } from '../splash';
-import { announceConfirmedAdditions } from '../state.svelte';
 import { app, message, toast } from './app.svelte';
+import { announceConfirmedAdditions } from './additions';
 import { closePlace } from './details';
 import { here } from './location';
 import { pushTarget } from './reminders';
