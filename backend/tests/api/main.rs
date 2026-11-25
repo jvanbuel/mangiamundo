@@ -1,6 +1,7 @@
 //! End-to-end tests of the HTTP API against the offline demo provider.
 
 mod account_limits;
+mod addable;
 mod added_places;
 mod additions_xp;
 mod anonymous;
