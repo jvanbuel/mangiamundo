@@ -66,7 +66,7 @@ they are in. It looks in every cached area and in the local copy of Belgium, so 
 Belgium everywhere and elsewhere only the areas someone has played. A place only in the
 local copy is saved as a place when it is listed, so it opens and takes check-ins like
 any other. Places hidden from the user (closed reports, other users' pending additions)
-stay hidden. The web app shows this list when a country without places in the area is
+stay hidden. The web, Android and iOS apps show this list when a country without places in the area is
 tapped on the map (#78).
 
 ## From a place a player adds to a place on OpenStreetMap

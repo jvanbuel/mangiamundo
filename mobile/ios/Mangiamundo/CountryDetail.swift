@@ -1,11 +1,14 @@
 import SwiftUI
 
+/// A country's places. `progress` is nil for a country the area has no place of: the list
+/// is then the nearest places elsewhere, nearest first.
 struct CountryDetail: View {
     @Environment(AppModel.self) private var model
-    let progress: CountryProgress
+    let code: String
+    let progress: CountryProgress?
 
     var body: some View {
-        let info = model.country(progress.code)
+        let info = model.country(code)
         VStack(alignment: .leading, spacing: 10) {
             Button { model.select(nil) } label: {
                 Label("All countries", systemImage: "chevron.left")
@@ -17,21 +20,28 @@ struct CountryDetail: View {
             HStack(spacing: 14) {
                 Text(info?.flag ?? "").font(.system(size: 44))
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(info?.name ?? progress.code).font(Theme.font(.title2, .black))
+                    Text(info?.name ?? code).font(Theme.font(.title2, .black))
                     Text(summary).font(Theme.font(.footnote)).foregroundStyle(Theme.muted)
                 }
             }
-            Bar(
-                part: min(progress.visited, progress.goal),
-                whole: progress.goal,
-                style: barStyle
-            )
+            if let progress {
+                Bar(
+                    part: min(progress.visited, progress.goal),
+                    whole: progress.goal,
+                    style: barStyle(progress.status)
+                )
+            }
 
             if model.placesLoading {
                 Text("Loading places…").foregroundStyle(Theme.muted)
+            } else if progress == nil {
+                Text(model.places.isEmpty
+                    ? "We don't know of anywhere serving food from \(info?.name ?? code) yet. Places are known across Belgium, and wherever someone has opened the game."
+                    : "The nearest we know of:")
+                    .foregroundStyle(Theme.muted)
             }
-            // The API sorts open places first, then closed, then unknown hours.
-            let showGroups = model.places.contains { $0.openNow != nil }
+            // The area's list sorts open places first, then closed, then unknown hours.
+            let showGroups = progress != nil && model.places.contains { $0.openNow != nil }
             ForEach(Array(model.places.enumerated()), id: \.element.id) { index, place in
                 if showGroups && (index == 0 || model.places[index - 1].openNow != place.openNow) {
                     Text(groupName(place.openNow))
@@ -53,8 +63,8 @@ struct CountryDetail: View {
         }
     }
 
-    private var barStyle: AnyShapeStyle {
-        switch progress.status {
+    private func barStyle(_ status: Status) -> AnyShapeStyle {
+        switch status {
         case .available: AnyShapeStyle(Theme.accent)
         case .discovered: AnyShapeStyle(Theme.discovered)
         case .platinum: AnyShapeStyle(Theme.platinumMetal)
@@ -63,6 +73,7 @@ struct CountryDetail: View {
     }
 
     private var summary: String {
+        guard let progress else { return "None in \(model.location?.area.name ?? "this area") yet" }
         var text = "\(progress.visited) of \(progress.places) \(progress.places == 1 ? "place" : "places") visited"
         if progress.status != .available { text = "\(progress.status.label) · " + text }
         if progress.status != .completed { text += " · \(progress.goal - progress.visited) more for diamond" }

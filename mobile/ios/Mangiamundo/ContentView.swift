@@ -179,11 +179,11 @@ struct ContentView: View {
                 addLink
             } else {
                 Passport(discover: discover)
-                if selected == nil && !model.celebrations.isEmpty {
+                if model.selected == nil && !model.celebrations.isEmpty {
                     ComingUp(celebrations: model.celebrations)
                 }
-                if let selected {
-                    CountryDetail(progress: selected)
+                if let open = model.selected {
+                    CountryDetail(code: open, progress: selected)
                 } else {
                     Picker("Section", selection: Binding(get: { model.tab }, set: { model.tab = $0 })) {
                         Text("Countries \(discover.world.available)").tag(0)

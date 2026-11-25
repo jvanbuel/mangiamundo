@@ -51,6 +51,10 @@ class ApiClient(
         return json.decodeFromString(http.read("/api/places?${area(areaId)}&country=$country$position"))
     }
 
+    /** The places serving a country's food nearest to `from` (lat, lng), nearest first, whatever area they are in. */
+    suspend fun nearest(country: String, from: Pair<Double, Double>, limit: Int = 10): List<Place> =
+        json.decodeFromString(http.read("/api/countries/$country/nearest?lat=${from.first}&lng=${from.second}&limit=$limit"))
+
     /** A random unvisited place to try, open now unless `open` is false, skipping `exclude`. */
     suspend fun suggestion(areaId: String, from: Pair<Double, Double>?, exclude: Collection<String>, open: Boolean): Suggestion {
         val position = from?.let { "&lat=${it.first}&lng=${it.second}" }.orEmpty()

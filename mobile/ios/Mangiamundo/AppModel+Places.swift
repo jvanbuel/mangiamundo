@@ -13,7 +13,12 @@ extension AppModel {
         placesTask = Task {
             placesLoading = true
             do {
-                let result = try await api.places(areaID: here.area.id, country: code, from: userPosition)
+                let result: [Place]
+                if elsewhere(code) {
+                    result = try await api.nearest(country: code, from: userPosition ?? (lat: here.lat, lng: here.lng))
+                } else {
+                    result = try await api.places(areaID: here.area.id, country: code, from: userPosition)
+                }
                 guard !Task.isCancelled else { return }
                 places = result
             } catch {
@@ -49,13 +54,20 @@ extension AppModel {
         detail = nil
     }
 
-    /// A tap on the map: open the country if it is available here, otherwise say so.
+    /// A country the area has no place of, once the area's countries are known. Its list is
+    /// then the nearest places elsewhere, measured from the user or else the map pin.
+    func elsewhere(_ code: String) -> Bool {
+        guard let discover else { return false }
+        return !discover.countries.contains { $0.code == code }
+    }
+
+    /// A tap on the map: open the country, with its nearest places elsewhere when the area has none.
     func tapCountry(code: String, name: String) {
-        guard let discover else { return }
-        if discover.countries.contains(where: { $0.code == code }) {
+        guard discover != nil else { return }
+        if country(code) != nil {
             select(code)
         } else {
-            toast("No places from \(name) in \(location?.area.name ?? "this area").")
+            toast("The game has no cuisine for \(name) yet.")
         }
     }
 

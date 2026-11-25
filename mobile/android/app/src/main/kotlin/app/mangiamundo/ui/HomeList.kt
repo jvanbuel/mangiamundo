@@ -60,15 +60,34 @@ internal fun HomeList(
             }
             else -> {
                 item { Passport(discover, sharing = vm.sharing, onShare = vm::shareProgress) }
-                if (selected == null && vm.celebrations.isNotEmpty()) {
+                val open = vm.selected
+                if (open == null && vm.celebrations.isNotEmpty()) {
                     item { ComingUp(vm.celebrations, vm.remindersOn, toggleReminders, vm::country, onOpen = vm::select) }
                 }
-                if (selected != null) {
-                    item { CountryHeader(selected, vm.country(selected.code), onBack = { vm.select(null) }) }
-                    if (vm.placesLoading) item { Note("Loading places…") }
-                    // The API sorts open places first, then closed, then unknown hours.
-                    val showGroups = vm.places.any { it.openNow != null }
-                    for ((openNow, group) in vm.places.groupBy { it.openNow }) {
+                if (open != null) {
+                    val area = vm.location?.area?.name ?: "this area"
+                    val info = vm.country(open)
+                    item { CountryHeader(open, selected, info, area, onBack = { vm.select(null) }) }
+                    if (vm.placesLoading) {
+                        item { Note("Loading places…") }
+                    } else if (selected == null) {
+                        // Nothing in the area: the nearest places elsewhere, nearest first.
+                        item {
+                            Note(
+                                if (vm.places.isEmpty()) {
+                                    "We don't know of anywhere serving food from ${info?.name ?: open} yet. " +
+                                        "Places are known across Belgium, and wherever someone has opened the game."
+                                } else {
+                                    "The nearest we know of:"
+                                },
+                            )
+                        }
+                    }
+                    // The area's list sorts open places first, then closed, then unknown hours.
+                    val showGroups = selected != null && vm.places.any { it.openNow != null }
+                    // Grouping would also reorder the nearest list, which is by distance.
+                    val groups = if (showGroups) vm.places.groupBy { it.openNow } else mapOf(null to vm.places)
+                    for ((openNow, group) in groups) {
                         if (showGroups) item(key = "group-$openNow") { PlaceGroupHeader(openNow) }
                         items(group, key = { it.id }) { place ->
                             PlaceRow(place, busy = vm.busyPlace != null, onOpen = { vm.openPlace(place) }) { vm.toggleVisit(place) }
