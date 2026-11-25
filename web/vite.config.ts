@@ -1,7 +1,7 @@
 import adapter from '@sveltejs/adapter-static';
 import { sveltekit } from '@sveltejs/kit/vite';
 import { execSync } from 'node:child_process';
-import { defineConfig } from 'vite';
+import { defineConfig } from 'vitest/config';
 
 /** The commit shown in the app. Docker builds have no .git and pass GIT_COMMIT instead. */
 function commit(): string | undefined {
@@ -28,5 +28,14 @@ export default defineConfig({
 	],
 	server: {
 		proxy: { '/api': 'http://localhost:8080' }
+	},
+	// The tests load Svelte's browser build, as the app does: there is no server rendering.
+	resolve: process.env.VITEST ? { conditions: ['browser'] } : undefined,
+	test: {
+		include: ['src/**/*.test.ts'],
+		environment: 'jsdom',
+		setupFiles: ['src/lib/test/setup.ts'],
+		restoreMocks: true,
+		unstubGlobals: true
 	}
 });
