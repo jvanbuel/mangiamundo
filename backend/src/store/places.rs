@@ -157,6 +157,10 @@ pub async fn nearest(
     (lat, lng): (f64, f64),
     limit: usize,
 ) -> sqlx::Result<Vec<PlaceView>> {
+    // Both reads and the saves below see one state: without it a place another request
+    // saves in between would be in neither read. IMMEDIATE takes the write lock up front,
+    // so the saves can't fail on a snapshot that went stale.
+    let mut tx = db.begin_with("BEGIN IMMEDIATE").await?;
     // Listed: in a cached area or in the copy. A place gone from OpenStreetMap left both.
     let sql = format!(
         "SELECT {PLACE_COLUMNS}, v.id AS visit_id, v.visited_at, v.verified
@@ -171,7 +175,7 @@ pub async fn nearest(
     let rows = sqlx::query(&sql)
         .bind(user)
         .bind(country)
-        .fetch_all(db)
+        .fetch_all(&mut *tx)
         .await?;
     let mut found: Vec<Nearby> = rows
         .iter()
@@ -190,7 +194,7 @@ pub async fn nearest(
         }
         found.extend(
             query
-                .fetch_all(db)
+                .fetch_all(&mut *tx)
                 .await?
                 .iter()
                 .filter_map(imported::found)
@@ -203,7 +207,6 @@ pub async fn nearest(
         crate::geo::rounded_m(lat, lng, plat, plng)
     });
     found.truncate(limit);
-    let mut tx = db.begin().await?;
     let mut nearest = Vec::with_capacity(found.len());
     for place in found {
         let mut view = match place {

@@ -173,7 +173,8 @@ struct ContentView: View {
                 }
             }
         } else if let discover = model.discover {
-            if discover.world.available == 0 {
+            // A country tapped on the map still opens, with its nearest places elsewhere.
+            if discover.world.available == 0 && model.selected == nil {
                 Text("No restaurants with a national cuisine turned up in \(model.location?.area.name ?? "this area"). \(model.location?.area.kind == .postalCode ? "Try the whole city or another location." : "Try another location.")")
                     .foregroundStyle(Theme.muted)
                 addLink

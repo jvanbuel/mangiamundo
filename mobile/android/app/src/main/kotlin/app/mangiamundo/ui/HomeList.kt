@@ -48,7 +48,8 @@ internal fun HomeList(
             }
             vm.error != null -> item { ErrorCard(vm.error.orEmpty(), vm::refresh) }
             discover == null -> item { Note("Scouting restaurants in ${vm.location?.area?.name}…") }
-            discover.world.available == 0 -> {
+            // A country tapped on the map still opens, with its nearest places elsewhere.
+            discover.world.available == 0 && vm.selected == null -> {
                 item {
                     val postalCode = vm.location?.area?.kind == AreaKind.POSTAL_CODE
                     Note(

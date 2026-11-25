@@ -74,7 +74,8 @@
 			</div>
 		{:else if !app.discover}
 			<p class="muted pad">Scouting restaurants in {place}…</p>
-		{:else if app.discover.world.available === 0}
+		{:else if app.discover.world.available === 0 && !open && !app.placeId}
+			<!-- A country tapped on the map still opens, with its nearest places elsewhere. -->
 			<div class="card">
 				<h2>Nothing found here yet</h2>
 				<p class="muted">
