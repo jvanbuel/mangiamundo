@@ -6,6 +6,10 @@ export const places = (areaId: string, country: string, from: { lat: number; lng
 	read<Place[]>(`/api/places?${area(areaId)}&country=${country}${from ? `&lat=${from.lat}&lng=${from.lng}` : ''}`
 	);
 
+/** The places serving a country's food nearest to `from`, nearest first, whatever area they are in. */
+export const nearest = (country: string, from: { lat: number; lng: number }, limit = 10) =>
+	read<Place[]>(`/api/countries/${country}/nearest?lat=${from.lat}&lng=${from.lng}&limit=${limit}`);
+
 /** A random unvisited place to try, open now unless `open` is false. */
 export const suggestion = (areaId: string, from: { lat: number; lng: number } | null, exclude: string[], open: boolean) =>
 	read<Suggestion>(`/api/suggestion?${area(areaId)}&open=${open}&exclude=${exclude.map(encodeURIComponent).join(',')}${from ? `&lat=${from.lat}&lng=${from.lng}` : ''}`

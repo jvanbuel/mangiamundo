@@ -15,12 +15,14 @@
 	import Toasts from '#lib/Toasts.svelte';
 	import UnknownFood from '#lib/UnknownFood.svelte';
 	import Welcome from '#lib/Welcome.svelte';
-	import { app, init, refresh, select, toast } from '#lib/state.svelte.ts';
+	import { app, country, init, refresh, select, toast } from '#lib/state.svelte.ts';
 	let pickerOpen = $state(false);
 	let settingsOpen = $state(false);
 	let adding = $state(false);
 
 	const selected = $derived(app.discover?.countries.find((c) => c.code === app.selected) ?? null);
+	/** Open: a country's list, with its progress when the area has places of it. */
+	const open = $derived(app.selected && app.discover ? app.selected : null);
 	const earned = $derived(app.discover?.badges.filter((b) => b.earned).length ?? 0);
 	const place = $derived(app.location?.area.name ?? null);
 
@@ -35,13 +37,14 @@
 		return () => media.removeEventListener('change', update);
 	});
 
-	function pick(code: string, name: string, available: boolean) {
-		if (available) {
-			app.tab = 'countries';
-			select(code);
-		} else {
-			toast(null, `No ${name} food here yet`, `No places from ${name} were found in ${place}.`);
+	/** A country with no place in the area opens the nearest places elsewhere. */
+	function pick(code: string, name: string) {
+		if (!country(code)) {
+			toast(null, `No ${name} food known`, `The game has no cuisine for ${name} yet.`);
+			return;
 		}
+		app.tab = 'countries';
+		select(code);
 	}
 </script>
 
@@ -82,18 +85,18 @@
 			<AddEntry bind:adding />
 		{:else}
 			<!-- Progress is for the overview; a country or place gets the room to itself. -->
-			{#if !selected && !app.placeId}
+			{#if !open && !app.placeId}
 				<div class="card" class:dim={app.loading}><Passport discover={app.discover} areaId={app.location.area.id} /></div>
 			{/if}
 
-			{#if app.celebrations.length && !selected && !app.placeId}
+			{#if app.celebrations.length && !open && !app.placeId}
 				<div class="card"><ComingUp celebrations={app.celebrations} /></div>
 			{/if}
 
 			{#if app.placeId}
 				<section><PlaceDetail place={app.detail} /></section>
-			{:else if selected}
-				<section><CountryDetail progress={selected} onback={() => select(null)} /></section>
+			{:else if open}
+				<section><CountryDetail code={open} progress={selected} onback={() => select(null)} /></section>
 			{:else}
 				<div class="tabs" role="tablist">
 					<button role="tab" aria-selected={app.tab === 'countries'} onclick={() => (app.tab = 'countries')}>

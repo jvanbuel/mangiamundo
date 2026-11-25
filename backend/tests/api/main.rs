@@ -17,6 +17,7 @@ mod devices;
 mod errors;
 mod events;
 mod fake_osm;
+mod nearest;
 mod osm_nearby;
 mod osm_refresh;
 mod quests;

@@ -15,7 +15,9 @@ pub use adding::{add_place, set_osm_note, AddedPlace, NewPlace};
 pub use additions::{additions, mark_additions_seen, Addition, AdditionStatus};
 pub use areas::{areas_containing, areas_of_place, find_area, save_area, Area};
 pub use imported::{add_nearby, imported_in, refresh_place, replace_imported, Refreshed};
-pub use places::{area_places, place, place_summary, report_closed, Hours, HoursStatus, PlaceView};
+pub use places::{
+    area_places, nearest, place, place_summary, report_closed, Hours, HoursStatus, PlaceView,
+};
 pub use progress::{area_rows, lifetime, reward_quests, tasted, unreward_quest};
 pub use subscriptions::{
     forget_countries, mark_push_sent, push_subscriptions, remove_push_subscription,

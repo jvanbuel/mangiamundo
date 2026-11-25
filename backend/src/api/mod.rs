@@ -83,6 +83,7 @@ fn api_router() -> (Router<AppState>, utoipa::openapi::OpenApi) {
         .routes(routes!(account::new_link_code))
         .routes(routes!(account::remove_device))
         .routes(routes!(meta::countries))
+        .routes(routes!(places::nearest))
         .routes(routes!(discover::discover))
         .routes(routes!(places::places, additions::add_place))
         .routes(routes!(unknown::unknown_places))

@@ -4,16 +4,18 @@
 	import { app, country, openPlace } from './state.svelte';
 	import { distance, STATUS_LABELS, type CountryProgress, type Place } from './types';
 
-	let { progress, onback }: { progress: CountryProgress; onback: () => void } = $props();
+	/** `progress` is null for a country the area has no place of: the list is then the
+	 * nearest places elsewhere, nearest first. */
+	let { code, progress, onback }: { code: string; progress: CountryProgress | null; onback: () => void } = $props();
 
-	const info = $derived(country(progress.code));
-	const status = $derived(progress.status);
+	const info = $derived(country(code));
+	const area = $derived(app.location?.area.name ?? 'this area');
 
 	// The API sorts open places first, then closed, then unknown hours.
 	const groupName = (open: boolean | null) =>
 		open === true ? 'Open now' : open === false ? 'Closed' : 'Hours unknown';
 	const openNow = (p: Place) => p.hours?.status?.open ?? null;
-	const showGroups = $derived(app.places.some((p) => openNow(p) !== null));
+	const showGroups = $derived(progress !== null && app.places.some((p) => openNow(p) !== null));
 
 	/** Gives focus back to the link of the place whose details just closed. */
 	const refocus = (id: string) => (link: HTMLElement) => {
@@ -35,18 +37,30 @@
 <header>
 	<span class="flag" aria-hidden="true">{info?.flag}</span>
 	<div>
-		<h2>{info?.name ?? progress.code}</h2>
+		<h2>{info?.name ?? code}</h2>
 		<p class="muted">
-			{#if status !== 'available'}{STATUS_LABELS[status]} · {/if}{progress.visited} of {progress.places} {progress.places === 1 ? 'place' : 'places'} visited
-			{#if status !== 'completed'}· {progress.goal - progress.visited} more for diamond{/if}
+			{#if !progress}
+				None in {area} yet
+			{:else}
+				{#if progress.status !== 'available'}{STATUS_LABELS[progress.status]} · {/if}{progress.visited} of {progress.places} {progress.places === 1 ? 'place' : 'places'} visited
+				{#if progress.status !== 'completed'}· {progress.goal - progress.visited} more for diamond{/if}
+			{/if}
 		</p>
 	</div>
 </header>
-<div class="bar"><span class={status} style:width="{Math.min(progress.visited / progress.goal, 1) * 100}%"></span></div>
+{#if progress}
+	<div class="bar"><span class={progress.status} style:width="{Math.min(progress.visited / progress.goal, 1) * 100}%"></span></div>
+{/if}
 
 {#if app.placesLoading}
 	<p class="muted">Loading places…</p>
+{:else if !progress && app.places.length === 0}
+	<p class="muted">
+		We don't know of anywhere serving food from {info?.name ?? code} yet. Places are known across Belgium, and wherever someone has
+		opened the game.
+	</p>
 {:else}
+	{#if !progress}<p class="muted lead">The nearest we know of:</p>{/if}
 	<ul>
 		{#each app.places as place, i (place.id)}
 			{@const now = place.hours?.status}
@@ -103,6 +117,10 @@
 	p {
 		margin: 2px 0 0;
 		font-size: var(--text-sm);
+	}
+
+	p.lead {
+		margin-top: 4px;
 	}
 
 	.bar span.discovered {

@@ -2,7 +2,7 @@ import * as api from '../api';
 import type { Place } from '../types';
 import { app, message, toast } from './app.svelte';
 import { closePlace, loadPlace } from './details';
-import { refresh } from './discover';
+import { placesOf, refresh } from './discover';
 import { here, position, rememberFix } from './location';
 
 /** The place whose OpenStreetMap page the user opened to edit it, read again when they come back. */
@@ -97,7 +97,7 @@ export async function lookAgainNearby() {
 		const code = app.selected;
 		const location = app.location;
 		if (code && location) {
-			const list = await api.places(location.area.id, code, here());
+			const list = await placesOf(code, location);
 			if (app.selected === code && app.location === location) app.places = list;
 		}
 	} catch (error) {

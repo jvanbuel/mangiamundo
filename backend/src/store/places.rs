@@ -3,7 +3,10 @@
 use serde::Serialize;
 use sqlx::{Row, SqlitePool};
 
-use super::{visits, Visit};
+use super::areas::upsert_place;
+use super::{imported, now, visits, Visit};
+use crate::catalog;
+use crate::providers::FoundPlace;
 
 /// Places added by users are pending: only whoever added them can see them. The user is
 /// parameter `?1`.
@@ -109,9 +112,7 @@ pub async fn area_places(
         "SELECT {PLACE_COLUMNS}, v.id AS visit_id, v.visited_at, v.verified
          FROM area_places ap
          JOIN places p ON p.id = ap.place_id
-         LEFT JOIN visits v ON v.id = (
-             SELECT id FROM visits WHERE user_id = ?1 AND place_id = p.id
-             ORDER BY visited_at DESC, id DESC LIMIT 1)
+         {LATEST_VISIT}
          WHERE ap.area_id = ?2
            AND (?3 IS NULL OR EXISTS (
                 SELECT 1 FROM place_countries WHERE place_id = p.id AND country = ?3))
@@ -124,20 +125,132 @@ pub async fn area_places(
         .bind(country)
         .fetch_all(db)
         .await?;
-    Ok(rows
+    Ok(rows.iter().map(with_latest_visit).collect())
+}
+
+/// Joins the user's latest visit to a place, as `v`. The user is parameter `?1`.
+const LATEST_VISIT: &str = "LEFT JOIN visits v ON v.id = (
+             SELECT id FROM visits WHERE user_id = ?1 AND place_id = p.id
+             ORDER BY visited_at DESC, id DESC LIMIT 1)";
+
+/// A place from a row with [`PLACE_COLUMNS`] and the columns of [`LATEST_VISIT`].
+fn with_latest_visit(r: &sqlx::sqlite::SqliteRow) -> PlaceView {
+    let mut place = place_view(r);
+    if let Some(id) = r.get::<Option<i64>, _>("visit_id") {
+        place.visits.push(Visit {
+            id,
+            at: r.get("visited_at"),
+            verified: r.get("verified"),
+        });
+    }
+    place
+}
+
+/// The `limit` places serving a country's food nearest to a point, nearest first, whatever
+/// area they are in, each with the user's latest visit and `distance_m` filled in. Places
+/// come from the cached areas and from the local copy of OpenStreetMap; one only in the
+/// copy is saved as a place first, so it can be opened and checked in at like any other.
+pub async fn nearest(
+    db: &SqlitePool,
+    country: &str,
+    user: Option<&str>,
+    (lat, lng): (f64, f64),
+    limit: usize,
+) -> sqlx::Result<Vec<PlaceView>> {
+    // Listed: in a cached area or in the copy. A place gone from OpenStreetMap left both.
+    let sql = format!(
+        "SELECT {PLACE_COLUMNS}, v.id AS visit_id, v.visited_at, v.verified
+         FROM places p
+         {LATEST_VISIT}
+         WHERE EXISTS (SELECT 1 FROM place_countries WHERE place_id = p.id AND country = ?2)
+           AND (EXISTS (SELECT 1 FROM area_places WHERE place_id = p.id)
+                OR EXISTS (SELECT 1 FROM osm_places WHERE id = p.id))
+           AND {visible}",
+        visible = visible()
+    );
+    let rows = sqlx::query(&sql)
+        .bind(user)
+        .bind(country)
+        .fetch_all(db)
+        .await?;
+    let mut found: Vec<Nearby> = rows
         .iter()
-        .map(|r| {
-            let mut place = place_view(r);
-            if let Some(id) = r.get::<Option<i64>, _>("visit_id") {
-                place.visits.push(Visit {
-                    id,
-                    at: r.get("visited_at"),
-                    verified: r.get("verified"),
-                });
+        .map(|r| Nearby::Listed(with_latest_visit(r)))
+        .collect();
+    // The copy keeps raw `cuisine` values, so match their tags loosely here and exactly below.
+    let tags = catalog::cuisine_tags(country);
+    if !tags.is_empty() {
+        let like = vec!["lower(replace(cuisine, ' ', '_')) LIKE ?"; tags.len()].join(" OR ");
+        let sql = format!(
+            "SELECT * FROM osm_places WHERE id NOT IN (SELECT id FROM places) AND ({like})"
+        );
+        let mut query = sqlx::query(&sql);
+        for tag in tags {
+            query = query.bind(format!("%{tag}%"));
+        }
+        found.extend(
+            query
+                .fetch_all(db)
+                .await?
+                .iter()
+                .filter_map(imported::found)
+                .filter(|p| p.countries.contains(&country))
+                .map(Nearby::Imported),
+        );
+    }
+    found.sort_by_cached_key(|p| {
+        let (plat, plng) = p.position();
+        crate::geo::rounded_m(lat, lng, plat, plng)
+    });
+    found.truncate(limit);
+    let mut tx = db.begin().await?;
+    let mut nearest = Vec::with_capacity(found.len());
+    for place in found {
+        let mut view = match place {
+            Nearby::Listed(view) => view,
+            Nearby::Imported(place) => {
+                upsert_place(&mut tx, &place, now()).await?;
+                PlaceView {
+                    id: place.id,
+                    name: place.name,
+                    lat: place.lat,
+                    lng: place.lng,
+                    address: place.address,
+                    url: place.url,
+                    cuisine: place.cuisine,
+                    hours: place.opening_hours.map(|raw| Hours {
+                        raw,
+                        status: None,
+                        week: None,
+                    }),
+                    countries: place.countries.iter().map(|c| (*c).to_string()).collect(),
+                    distance_m: 0,
+                    visits: Vec::new(),
+                    osm_url: None,
+                }
             }
-            place
-        })
-        .collect())
+        };
+        view.distance_m = crate::geo::rounded_m(lat, lng, view.lat, view.lng);
+        nearest.push(view);
+    }
+    tx.commit().await?;
+    Ok(nearest)
+}
+
+/// A candidate for [`nearest`].
+enum Nearby {
+    Listed(PlaceView),
+    /// Only in the local copy of OpenStreetMap so far.
+    Imported(FoundPlace),
+}
+
+impl Nearby {
+    fn position(&self) -> (f64, f64) {
+        match self {
+            Nearby::Listed(p) => (p.lat, p.lng),
+            Nearby::Imported(p) => (p.lat, p.lng),
+        }
+    }
 }
 
 /// One place with all of the user's visits, whatever area it is in. `distance_m` and the

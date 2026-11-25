@@ -324,6 +324,28 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/countries/{code}/nearest": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * The places serving a country's food nearest to a point, nearest first, whatever area
+         *     they are in: for a country with nothing in the user's area, or to look further afield.
+         *     Places come from the cached areas and the daily import, so far-away places are known only
+         *     where somebody has played. An unknown country is a 404; one with no known place an empty list.
+         */
+        get: operations["nearest"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/discover": {
         parameters: {
             query?: never;
@@ -2029,6 +2051,43 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["Catalog"];
+                };
+            };
+        };
+    };
+    nearest: {
+        parameters: {
+            query: {
+                /** @description Where the user is, or the centre of their area. */
+                lat: number;
+                lng: number;
+                /** @description How many places, 1 to 50. Defaults to 10. */
+                limit?: number;
+            };
+            header?: never;
+            path: {
+                /** @description ISO 3166-1 alpha-2, as in `/api/countries`. */
+                code: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PlaceView"][];
+                };
+            };
+            /** @description An error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
                 };
             };
         };

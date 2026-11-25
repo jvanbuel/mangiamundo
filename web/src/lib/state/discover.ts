@@ -1,6 +1,7 @@
 import * as api from '../api';
 import * as push from '../push';
 import { hideSplash } from '../splash';
+import type { Location, Place } from '../types';
 import { app, message, toast } from './app.svelte';
 import { announceConfirmedAdditions } from './additions';
 import { closePlace } from './details';
@@ -103,11 +104,24 @@ export async function loadPlaces(code: string | null) {
 	if (!code || !location) return;
 	app.placesLoading = true;
 	try {
-		const result = await api.places(location.area.id, code, here());
+		const result = await placesOf(code, location);
 		if (list === lists) app.places = result;
 	} catch (error) {
 		if (list === lists) toast(null, 'Could not load places', message(error));
 	} finally {
 		if (list === lists) app.placesLoading = false;
 	}
+}
+
+/** A country the area has no place of, once the area's countries are known. Its list is
+ * then the nearest places elsewhere. */
+export function elsewhere(code: string): boolean {
+	return !!app.discover && !app.discover.countries.some((c) => c.code === code);
+}
+
+/** A country's list: its places in the area, or the nearest elsewhere when there are none,
+ * measured from the user when known, otherwise from the map pin. */
+export function placesOf(code: string, location: Location): Promise<Place[]> {
+	if (!elsewhere(code)) return api.places(location.area.id, code, here());
+	return api.nearest(code, here() ?? { lat: location.lat, lng: location.lng });
 }

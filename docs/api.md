@@ -30,7 +30,7 @@ address asked for too many new things or the lookups are busy; see
 ## Sessions and accounts
 
 Accounts are anonymous, and made late. What a client shows before anyone does anything
-(`/api/discover`, `/api/places`, `/api/places/{id}`, `/api/suggestion`,
+(`/api/discover`, `/api/places`, `/api/places/{id}`, `/api/countries/{code}/nearest`, `/api/suggestion`,
 `/api/unknown-places`, `/api/reminders`, and everything that is the same for everyone)
 answers without a token, as for someone with no visits. A device asks
 `POST /api/session` for a token with its first write (a check-in, an added place, a
