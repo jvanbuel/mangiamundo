@@ -591,7 +591,7 @@ async function loadPlaces(code: string | null) {
 }
 
 /** Announces what the server says a check-in unlocked. */
-function celebrate(unlocked: Unlocked[]) {
+function announce(unlocked: Unlocked[]) {
 	for (const u of unlocked) {
 		const icon: ToastIcon =
 			u.kind === 'country' ? { text: country(u.country ?? '')?.flag ?? '' }
@@ -624,7 +624,7 @@ export async function toggleVisit(place: Place) {
 			// Details still loading may have read the visits from before this change.
 			if (app.placeId === place.id && !app.detail) void loadPlace(place.id);
 			if (result.progress && stillHere()) app.discover = { ...result.progress, area: before.area };
-			celebrate(result.unlocked);
+			announce(result.unlocked);
 		} else {
 			const result = await api.removeVisit(place.visits[0].id, location.area.id).catch(async (error) => {
 				if (!(error instanceof api.ApiError && error.code === 'not_found')) throw error;
