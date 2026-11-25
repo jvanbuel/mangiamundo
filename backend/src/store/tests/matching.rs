@@ -1,4 +1,6 @@
 use super::*;
+use crate::store::areas::upsert_place;
+use crate::store::matching::similar_names;
 
 #[test]
 fn names_match_ignoring_case_punctuation_and_extra_words() {

@@ -4,6 +4,10 @@ mod matching;
 
 use chrono::NaiveDate;
 
+use crate::game::Bonus;
+use crate::geo::{Bbox, Shape};
+use crate::providers::FoundPlace;
+
 use super::*;
 
 /// A new anonymous user's id.
